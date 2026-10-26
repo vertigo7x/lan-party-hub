@@ -5,7 +5,8 @@ created: 2026-10-26
 updated: 2026-10-26
 phase: "Fase B — Product Requirements Document"
 checkpoint: "Checkpoint B"
-checkpoint_status: ready-for-review
+checkpoint_status: approved
+checkpoint_approved: 2026-10-26
 source: docs/plan.md
 product_brief: ../briefs/brief-lan-party-hub-2026-10-26/brief.md
 ---
@@ -455,11 +456,12 @@ este documento ni se adelantan aquí.
 - **Product Brief:** `../briefs/brief-lan-party-hub-2026-10-26/brief.md`, aprobado en el
   Checkpoint A.
 - **Fase:** B — Product Requirements Document. **Estado:** `final` — PRD completado, revisado y
-  listo para el Checkpoint B; su aprobación no está implícita en este documento.
+  **aprobado en el Checkpoint B el 2026-10-26**; la aprobación humana es explícita y no queda
+  implícita en el estado `final` del documento.
 - **Decisiones no cerradas:** R3, R5 y P2P quedan explícitamente abiertas con responsable y
   fase de resolución (§4, §10, §12). Este PRD no las decide y no inventa mecanismos técnicos.
   FR-4 cierra el comportamiento observable de compatibilidad de versión sin introducir
   autenticación o autorización de clientes.
-- **Siguiente checkpoint:** Checkpoint B — validación del PRD.
+- **Siguiente checkpoint:** Checkpoint C — validación de los flujos UX (Fase C).
 - **Alcance de esta fase:** brief aprobado y PRD. Quedan fuera de esta ejecución UX,
   arquitectura, ADRs, backlog de épicas e historias, scaffold y código.
