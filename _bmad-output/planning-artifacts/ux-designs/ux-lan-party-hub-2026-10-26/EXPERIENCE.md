@@ -7,6 +7,10 @@ sources:
   - {planning_artifacts}/briefs/brief-lan-party-hub-2026-10-26/brief.md
   - {project-root}/docs/plan.md
 updated: 2026-10-26
+checkpoint: "Checkpoint C"
+checkpoint_status: approved
+checkpoint_approved: 2026-10-26
+next_checkpoint: "Checkpoint D — validación de arquitectura y riesgos (Fase D)"
 ---
 
 # LAN Party Hub — Espina de experiencia
@@ -508,4 +512,6 @@ error nombra la causa y el paso siguiente en Diagnóstico.
   Product Brief aprobado en el Checkpoint A (`briefs/brief-lan-party-hub-2026-10-26/brief.md`) y
   `docs/plan.md`. Ninguna decisión técnica abierta (R3, R5, P2P) se cierra aquí.
 - **Fase:** C — Experiencia de usuario. Estado `final`.
-- **Siguiente checkpoint:** Checkpoint C — validación de los flujos UX.
+- **Checkpoint:** Checkpoint C — validación de los flujos UX, **aprobado el 2026-10-26**; la
+  aprobación humana es explícita y no queda implícita en el estado `final` del documento.
+- **Siguiente checkpoint:** Checkpoint D — validación de arquitectura y riesgos (Fase D).

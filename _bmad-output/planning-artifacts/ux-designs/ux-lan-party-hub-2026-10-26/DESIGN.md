@@ -2,6 +2,10 @@
 name: LAN Party Hub
 status: final
 updated: 2026-10-26
+checkpoint: "Checkpoint C"
+checkpoint_status: approved
+checkpoint_approved: 2026-10-26
+next_checkpoint: "Checkpoint D — validación de arquitectura y riesgos (Fase D)"
 description: "Biblioteca de videojuegos de escritorio para una LAN party local: descubre el servidor, baja el paquete, instálalo en modo portable y lánzalo, sin Internet."
 colors:
   surface-base: '#12141A'
