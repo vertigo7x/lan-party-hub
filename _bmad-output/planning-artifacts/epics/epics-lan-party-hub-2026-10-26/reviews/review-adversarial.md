@@ -8,15 +8,17 @@
 - **Modo:** headless, ejecución secuencial (sin subagentes disponibles)
 - **Base:** `bde708d97766dfc607528abb9d3a28bc82487f0e` (arquitectura con Checkpoint D aprobado)
 - **Estado:** revisión re-ejecutada sobre el backlog de cierre de Fase E (13 épicas / 47 historias /
-  239 AC). Los hallazgos se mantienen como registro del análisis y quedan **cerrados** en
+  243 AC). Los hallazgos se mantienen como registro del análisis y quedan **cerrados** en
   `epics.md`; el bloque de resolución está al final de este documento. El hallazgo **D-5** se
   **reabre** con la incorporación de **AD-30** y vuelve a quedar **resuelto** con la regla exigible
-  correspondiente (ver «Reapertura y resolución de D-5»).
+  correspondiente (ver «Reapertura y resolución de D-5»). La propagación de **AD-31** (derivación
+  acotada del nombre efectivo) y **AD-32** (contrato único del registro) añade los criterios AC11..AC14
+  de la Story 9.1 y la restricción heredada **R-MVP-10** (ver «Propagación de AD-31 y AD-32»).
 
 ## Veredicto
 
-**ADECUADO CON FALLOS REALES, YA CERRADOS.** El backlog respeta las nueve restricciones heredadas
-(R-MVP-1..9) y no introduce ninguna capacidad fuera del MVP. En su primera redacción dejaba
+**ADECUADO CON FALLOS REALES, YA CERRADOS.** El backlog respeta las diez restricciones heredadas
+(R-MVP-1..10) y no introduce ninguna capacidad fuera del MVP. En su primera redacción dejaba
 **cinco divergencias construibles** y **dos huecos de cobertura** que un implementador podía
 materializar sin salirse de ninguna AC.
 
@@ -27,12 +29,12 @@ todas lo endurecen.
 Se evaluaron **doce pares** de unidades. **Cinco divergen** (D-1..D-5), cada uno cerrado con un AC
 o una regla exigible. Se detectaron además **dos huecos de cobertura** (H-1, H-2).
 
-> **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30):** 13 épicas,
-> 47 historias, 239 criterios de aceptación. Conteo confirmado mecánicamente sobre `epics.md`:
-> 13 encabezados `## Epic N`, 47 encabezados `### Story N.M` y 239 ocurrencias de `**Given**` /
-> `**When**` / `**Then**` (239/239/239). El verificador `verify_epics.py` devuelve `stories: 47`,
-> `acceptance_criteria: 239`, `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`,
-> `total_findings: 0`.
+> **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):** 13
+> épicas, 47 historias, 243 criterios de aceptación. Conteo confirmado mecánicamente sobre
+> `epics.md`: 13 encabezados `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de
+> `**Given**` / `**When**` / `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve
+> `stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`,
+> `ok: true`, `total_findings: 0`.
 
 ---
 
@@ -273,7 +275,7 @@ lote, sin duplicar reglas.
 | Pares cliente ↔ cliente divergentes | 5 evaluados, **3 divergentes** (D-1, D-3, D-5) |
 | Pares servidor ↔ cliente divergentes | 5 evaluados, **2 divergentes** (D-2, D-4) |
 | Pares servidor ↔ servidor divergentes | 2 evaluados, **0 divergentes** |
-| Restricciones heredadas R-MVP-1..9 violadas por el backlog | **0** |
+| Restricciones heredadas R-MVP-1..10 violadas por el backlog | **0** |
 | Capacidades fuera del MVP introducidas por una AC | **0** |
 | Alcance de Fase F (sprint planning, scaffold, código) en el backlog | **0** |
 
@@ -290,6 +292,13 @@ lote, sin duplicar reglas.
 | R-MVP-7 (`Shared` solo contratos, tablas únicas) | **Sí** | Story 1.1 AC4/AC5, Story 3.3 AC4 |
 | R-MVP-8 (microcopia solo de las tablas) | **Parcial** | **D-2**: `Paquete retirado del catálogo` no tiene tabla asignada |
 | R-MVP-9 (vista de clientes solo por REST) | **Sí** | Story 9.1 AC4 |
+| R-MVP-10 (registro en un único punto de entrada, derivación acotada y terminante del nombre efectivo, colisión no es error) | **Sí** | Story 9.1 AC11/AC12/AC13/AC14 |
+
+> **Nota de recuento.** La verificación explícita de las restricciones heredadas se hizo
+> originariamente sobre **9** restricciones (`R-MVP-1..R-MVP-9`). La propagación de **AD-31** y
+> **AD-32** añadió **R-MVP-10**, de modo que la tabla vigente cubre **10** restricciones
+> (`R-MVP-1..R-MVP-10`); la cifra de nueve es **histórica** y se conserva aquí solo como
+> referencia del corte de análisis.
 
 ---
 
@@ -315,7 +324,7 @@ cobertura dentro del contrato ya aprobado por el PRD, la UX y la arquitectura.
 | Mención de cada AR-1..AR-25 | PASS — mínimo 1 mención (**AR-21 y AR-25 solo en la definición → H-1**) |
 | Mención de cada AD-1..AD-30 | PASS — mínimo 1 mención |
 | Secuencia de IDs de historia 1.1..13.1 | PASS — 47 historias, numeración continua sin huecos |
-| Presencia de `**Given**`/`**When**`/`**Then**` | PASS — 239/239 en las tres |
+| Presencia de `**Given**`/`**When**`/`**Then**` | PASS — 243/243 en las tres |
 | Placeholders `{{...}}` residuales | PASS — 0 |
 | Caracteres CJK / U+FFFD | PASS — 0 / 0 |
 | Estados de `DownloadState` de la arquitectura citados en AC | **FALLA** — `Cancelled` no aparece en ninguna AC (**D-1**) |
@@ -364,14 +373,101 @@ tienen la Divergencia del par original como caso covered:
 filas de **AR-4** (`9.1 AC7`) y **AR-20** (`9.1 AC8`) incorporan los AC nuevos que las citan.
 
 **Verificación.** `verify_epics.py` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
-`stories: 47`, `acceptance_criteria: 239`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
-arquitectónico del documento es 13 épicas / 47 historias / 239 AC, confirmado mecánicamente
-(13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 239 ocurrencias de `**Given**` /
-`**When**` / `**Then**`, 239/239/239). `lint_spine.py` sobre `ARCHITECTURE-SPINE.md` devuelve
-`ok: true`, `total_findings: 0`.
+`stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
+arquitectónico **actual** del documento es 13 épicas / 47 historias / **243** AC, confirmado
+mecánicamente (13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 243 ocurrencias de
+`**Given**` / `**When**` / `**Then**`, 243/243/243). El corte de cierre por **AD-30** —antes de la
+propagación de AD-31/AD-32— tenía 239 AC; esa cifra es **histórica** y no describe el documento
+actual. `lint_spine.py` sobre `ARCHITECTURE-SPINE.md` devuelve `ok: true`, `total_findings: 0`.
 
 **Veredicto.** **D-5 queda RESUELTO.** La divergencia del par original —el servidor que acepta o
 rechaza al segundo cliente homónimo— deja de ser construible: ambas unidades construyen el mismo
 sistema, porque el nombre único derivado, la notificación al cliente, la adopción del nombre
 efectivo y el rechazo por forma **están escritos como AC exigibles**, y el `clientId` permanece
 como la clave en todo caso.
+
+---
+
+## Propagación de AD-31 y AD-32 (cierre mecánico restante)
+
+**Por qué se propaga.** La resolución de D-5 por **AD-30** dejó el `machineName` único y validado
+por el servidor, pero dejó **dos huecos construibles** que la propia lente adversarial detecta al
+releer el backlog tras el cierre por AD-30:
+
+- **El algoritmo de derivación no estaba acotado.** AD-30 fijaba que ante una colisión el servidor
+  asigna un nombre «único derivado» (`<nombre>-2`, `-3`, …), pero **no** decía **cómo** se derivaba
+  el siguiente candidato, **hasta dónde** se recortaba el `stem` ni **cuándo** el bucle de búsqueda
+  de un nombre libre **terminaba**. Dos unidades podían derivar nombres distintos —una recortando
+  por bytes y otra por puntos de código, una deteniéndose en `-9` y otra en `-10`— y producir
+  **tablas de clientes incompatibles** para el mismo conjunto de entradas.
+- **El contrato del registro no estaba cerrado.** El backlog nombraba la colisión, el rechazo por
+  forma y el renombrado, pero **no** fijaba la forma exacta del cuerpo ni de la respuesta, ni el
+  **estado HTTP** de cada desenlace, ni la regla de que el **renombrado no tiene endpoint propio**.
+  Dos unidades podían construir el registro con cuerpos distintos, o resolver la colisión con un
+  `201 Created` y con un `409 Conflict` —contradiciendo que «la colisión no es un error»— o
+  materializar el renombrado como un endpoint de administración, **ampliando la superficie REST**
+  que AD-30 declara fuera del MVP.
+
+**Qué deciden AD-31 y AD-32.** Son dos decisiones de arquitectura que **precisan** AD-30 sin
+ampliar el MVP (AD-30 L432: «no añaden superficie nueva»):
+
+- **AD-31 — Derivación acotada del nombre efectivo.** El nombre efectivo derivado se construye con
+  un algoritmo **determinista y acotado**: `stem_truncado + "-<n>"` con `n >= 2` decimal en ASCII y
+  sin ceros a la izquierda; el `stem` es el nombre propuesto **ya recortado**, y la derivación **no**
+  normaliza, **no** minúscula y **no** quita diacríticos. La cota dura es **≤ 64 puntos de código
+  Unicode** (medidos con `System.Text.Rune`, no en bytes ni en unidades UTF-16), el recorte cae
+  **siempre en un límite de punto de código** —ningún emoji ni ideograma queda partido— y el
+  `stem` truncado **no puede quedar vacío** (se recurre al `stem` de reserva `equipo`). La búsqueda
+  del nombre libre compara la **forma canónica** (NFKC → eliminación de marcas diacríticas →
+  minúsculas Unicode invariantes, en ese orden), **incrementa `n`** y vuelve a truncar con el nuevo
+  ancho de sufijo, y el bucle **termina** en el primer `n` libre. Por construcción, el nombre
+  efectivo **nunca excede la cota**, **nunca necesita volver a ser derivado** y **no altera** el
+  `clientId` ni fusiona ni reasigna filas.
+- **AD-32 — Contrato REST del registro, la reconexión y el renombrado.** `POST /api/v1/clients` es
+  el **único** punto de entrada del cliente al servidor, para el **alta**, la **reconexión** y el
+  **renombrado**; no existe endpoint adicional de registro, de renombrado ni de administración de
+  nombres. El cuerpo es `RegisterClientRequest` `{ clientId, machineName, clientVersion,
+  protocolVersion }` —los mismos valores de versión que las cabeceras `X-Client-Version` y
+  `X-Protocol-Version`, sin segunda fuente de verdad— y **no** lleva `schemaVersion`: el registro es
+  la **única** mutación exenta. La respuesta es `RegisterClientResponse` `{ clientId, machineName,
+  connectionState, lastSeenAt, renamed }`, donde `machineName` es **siempre el nombre efectivo** y
+  `renamed` es `true` **únicamente** cuando hubo colisión y el nombre devuelto difiere del
+  propuesto. Estados HTTP: **`200 OK`** en el éxito —no `201 Created`, porque la fila es
+  actualizable—, **`422 Unprocessable Content`** ante nombre mal formado, **`426 Upgrade
+  Required`** ante versión incompatible, y esa comprobación ocurre **antes** de cualquier
+  validación de nombre. La **colisión no es un error**: el registro tiene éxito con `renamed: true`.
+  La **reconexión** reconoce la fila por `clientId`, actualiza `connectionState`, `lastSeenAt` y
+  `clientVersion`, **no** asigna nombre nuevo y **no** dispara la derivación: un cliente
+  reconectado nunca colisiona consigo mismo.
+
+**Cómo lo cierra el backlog.** Story 9.1 incorpora cuatro criterios exigibles (AC11..AC14) que
+tienen los dos huecos anteriores como caso covered:
+
+| AC | Qué fija | Cita |
+| --- | --- | --- |
+| 9.1 AC11 | Derivación acotada del nombre efectivo: `stem_truncado + "-<n>"` con `n >= 2` en ASCII sin ceros a la izquierda; **≤ 64 puntos de código Unicode** (`System.Text.Rune`, no bytes ni UTF-16); truncación **siempre en límite de punto de código**; `stem` truncado no vacío (`equipo` de reserva); ancho de sufijo ajustado al número de dígitos (`-2`, `-10`, `-100` → misma longitud); el nombre derivado **vuelve a ser admisible** y **nunca necesita volver a ser derivado** | *(FR-10, AR-14, AD-30, AD-31)* |
+| 9.1 AC12 | Búsqueda del nombre libre por **forma canónica** (NFKC → eliminación de marcas diacríticas → minúsculas Unicode invariantes, en ese orden), **incrementando `n`** y volviendo a truncar el `stem`; el bucle **termina**; el `clientId` no cambia, no se fusiona filas ni se reasigna la fila de otro cliente | *(FR-10, AR-14, AD-30, AD-31)* |
+| 9.1 AC13 | Forma exacta del cuerpo (`RegisterClientRequest` `{ clientId, machineName, clientVersion, protocolVersion }`, sin `schemaVersion` y con la **única** exención de mutación) y de la respuesta (`RegisterClientResponse` `{ clientId, machineName, connectionState, lastSeenAt, renamed }`), con `machineName` **siempre efectivo** y `renamed` `true` **solo** ante colisión con nombre distinto | *(FR-10, AR-14, AD-5, AD-6, AD-22, AD-23, AD-30, AD-32)* |
+| 9.1 AC14 | Alta, reconexión y renombrado en la **misma** operación de registro, **único** punto de entrada (sin endpoint adicional); **`200 OK`** en el éxito (no `201 Created`), **`422`** ante nombre mal formado con la forma única `ApiError`, **`426`** ante versión incompatible **antes** de validar el nombre; **la colisión no es un error** (`renamed: true`); la **reconexión conserva** fila y nombre, **no** deriva y **no** colisiona consigo misma | *(FR-10, AR-14, AD-5, AD-6, AD-15, AD-22, AD-23, AD-25, AD-29, AD-30, AD-32)* |
+
+Se añade además la **restricción heredada R-MVP-10** a la tabla «Restricciones heredadas que
+gobiernan todo el desglose» de `epics.md`: el alta, la reconexión y el renombrado ocurren en **una
+sola** operación de registro, que es el **único** punto de entrada del cliente al servidor; el
+nombre efectivo derivado es **acotado** (`stem_truncado + "-<n>"`, `n >= 2`, ≤ 64 **puntos de
+código Unicode**, truncación que **no parte** ningún carácter) y la derivación **siempre termina**;
+la colisión **no es un error**: el registro tiene éxito con `renamed: true` y el nombre efectivo.
+La fila de la tabla de trazabilidad de **AR-14** pasa a `1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC14`.
+
+**Efecto sobre la lente adversarial.** Ninguno de los dos huecos **reabre** un hallazgo: D-5
+sigue **RESUELTO** (el `clientId` permanece como clave y la unicidad del nombre sigue siendo una
+regla de nombres, no un control de acceso). Lo que hacen AD-31 y AD-32 es **endurecer** el cierre
+de D-5, sustituyendo dos lecturas divergentes por reglas exigibles. Se mantiene el veredicto
+general: **ADECUADO CON FALLOS REALES, YA CERRADOS**, ahora con **13 épicas / 47 historias / 243
+AC** y **diez** restricciones heredadas (`R-MVP-1..R-MVP-10`) verificadas.
+
+**Verificación.** `verify_epics.py` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
+`stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
+arquitectónico del documento es 13 épicas / 47 historias / 243 AC, confirmado mecánicamente
+(13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 243 ocurrencias de `**Given**` /
+`**When**` / `**Then**`, 243/243/243) y 10 filas `R-MVP-1..R-MVP-10`. `lint_spine.py` sobre
+`ARCHITECTURE-SPINE.md` devuelve `ok: true`, `total_findings: 0`.

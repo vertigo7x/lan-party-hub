@@ -27,7 +27,7 @@ verificables.
 **Fase:** E — Épicas e historias. **Base:** commit `bde708d97766dfc607528abb9d3a28bc82487f0e`
 (arquitectura con Checkpoint D aprobado). **Checkpoint E:** pendiente de aprobación humana.
 
-**Cierre documental de Fase E:** 13 épicas, 47 historias y 239 criterios de aceptación. Las revisiones
+**Cierre documental de Fase E:** 13 épicas, 47 historias y 243 criterios de aceptación. Las revisiones
 `reviews/review-coverage-traceability.md`, `reviews/review-adversarial.md` y
 `reviews/review-editorial.md` quedan actualizadas con los conteos reales y las resoluciones
 E-TRACE, AR-25 y R-MVP-8. La verificación mecánica final de `verify_epics.py` devuelve `ok: true`,
@@ -41,7 +41,20 @@ exposición del nombre efectivo—; la fila de la tabla de trazabilidad de AR-14
 `9.1 AC8` respectivamente. El hallazgo **D-5** de `reviews/review-adversarial.md` se reabre y se
 resuelve: la unicidad del `machineName` deja de ser una ambigüedad del backlog y pasa a ser una
 regla exigible de la arquitectura (**AD-30**), con el recuento real de AC del documento
-(13/47/239).
+(**13/47/239** — cifra **histórica** de ese corte de cierre, anterior a la propagación de AD-31 y
+AD-32; el recuento **vigente** del documento es **13/47/243**).
+
+**Cierre por AD-31 y AD-32 (derivación acotada y contrato único del registro):** Story 9.1
+incorpora los criterios AC11..AC14 —derivación acotada del nombre efectivo (≤ 64 puntos de
+código Unicode, truncación que no parte caracteres, derivación terminante y estable),
+cálculo de la forma canónica y búsqueda del nombre libre, forma exacta del cuerpo y de la
+respuesta del registro, y contrato de estado HTTP (`200` en el éxito, `422` ante nombre mal
+formado, `426` ante versión incompatible) con la colisión como éxito y la reconexión sin
+derivación—; la fila de la tabla de trazabilidad de AR-14 pasa a `9.1 AC5..AC14`. Se añade la
+restricción heredada **R-MVP-10** (punto de entrada único de registro, derivación acotada y
+terminante, colisión no es error), gobernada por AD-31 y AD-32. El recuento real de AC del
+documento pasa a **13/47/243**, que es el recuento **vigente** del documento (el **13/47/239** del
+cierre por AD-30 queda como cifra **histórica** de ese corte).
 
 ### Alcance y límites de esta fase
 
@@ -66,6 +79,7 @@ cada historia de este documento:
 | R-MVP-7 | `Shared` contiene **solo contratos**, con la regla «un concepto, un tipo, un lugar». `StateDisplayMap` y `ErrorCatalog` son tablas **únicas y exhaustivas**. `ApiError` es el **único** tipo de error del sistema. | AD-18, AD-25 | 1.1, 3.3, 6.2, 9.2, 11.4 |
 | R-MVP-8 | La microcopia de estado y los errores visibles al usuario salen **solo** de `StateDisplayMap` y `ErrorCatalog`. Un texto que no está en la tabla no existe. | AD-10, AD-15, AD-25 | 3.1, 3.3, 6.2, 9.2, 11.4 |
 | R-MVP-9 | La vista de clientes se obtiene **exclusivamente** por REST (`GET /api/v1/clients`). No existe el evento `ClientsSnapshotChanged`. | AD-29 | 4.5, 9.1 |
+| R-MVP-10 | El **alta, la reconexión y el renombrado** del nombre del equipo ocurren en **una sola operación de registro**, que es el **único** punto de entrada del cliente al servidor (`POST /api/v1/clients`). No existe un endpoint adicional de registro, de renombrado ni de administración de nombres. El nombre efectivo derivado ante una colisión es **acotado** (`stem_truncado + "-<n>"`, `n >= 2`, ≤ 64 **puntos de código Unicode**, truncación que **no parte** ningún carácter) y la derivación **siempre termina**. La colisión **no es un error**: el registro tiene éxito con `renamed: true` y el nombre efectivo. | AD-31, AD-32 | 9.1 |
 
 ## Requirements Inventory
 
@@ -240,10 +254,20 @@ implementación. Se expresan como requisitos exigibles, no como decisiones de di
   propuesto, lo **persiste** y se lo **notifica**, y el cliente lo **adopta**; los dos equipos
   coexisten en la tabla con **nombres efectivos distintos**. Un `machineName` que no cumple las
   reglas de forma se **rechaza en el registro** y el cliente **queda sin registrar y no opera**.
-  Esta regla **no introduce credenciales, autenticación ni autorización**: el `machineName` **no**
+  La **derivación del nombre efectivo es acotada y terminante** (AD-31): el nombre efectivo es
+  `stem_truncado + "-<n>"` con `n >= 2`, la longitud se mide en **puntos de código Unicode** y
+  **nunca excede 64**, el recorte **no parte ningún carácter por la mitad** y el nombre derivado
+  **vuelve a ser admisible** y **nunca necesita volver a ser derivado**. El **alta, la
+  reconexión y el renombrado** ocurren en **una sola operación de registro**, que es el **único**
+  punto de entrada del cliente al servidor (AD-32): cuerpo `{ clientId, machineName,
+  clientVersion, protocolVersion }`, respuesta `{ clientId, machineName, connectionState,
+  lastSeenAt, renamed }` con el **nombre efectivo**, `200 OK` en el éxito, `422` ante nombre mal
+  formado y `426` ante versión incompatible; la **colisión no es un error** (`renamed: true` con
+  éxito) y la **reconexión conserva el nombre** sin derivar. Esta regla **no introduce
+  credenciales, autenticación ni autorización**: el `machineName` **no**
   viaja como credencial, no autentica ninguna petición y no confiere roles ni permisos; el único
   control de acceso al protocolo sigue siendo la compatibilidad de versión (AD-6, AD-12).
-  *(AD-23, AD-30)*
+  *(AD-23, AD-30, AD-31, AD-32)*
 - **AR-15 (Estados de máquina).** `DownloadState` e `InstallationState` son enumeraciones cerradas
   con transiciones explícitas y estado terminal por operación, **idénticas** en cliente y servidor.
   El cliente es la única fuente de verdad del estado local de una operación; el servidor lo
@@ -658,7 +682,7 @@ esta tabla es la forma de auditarlas sin re-leer el documento entero.
 | AR-11 | 1.3 AC3, 5.1 AC5, 5.2 AC5, AC6, 5.3 AC1, AC2 | Estructural (progreso persistido) |
 | AR-12 | 1.2 AC3, AC4, 1.3 AC3 | Estructural (persistencia por rol) |
 | AR-13 | 2.1 AC5, 2.2 AC6, 5.2 AC1, 7.1 AC7, 9.1 AC5, 9.2 AC3, AC4 | Estructural (propietario de entidad) |
-| AR-14 | 1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC10 | Estructural (identidad del cliente) |
+| AR-14 | 1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC14 | Estructural (identidad del cliente) |
 | AR-15 | 1.1 AC6, 5.2 AC5, AC6, 5.3 AC6, 7.1 AC4, AC5, AC6, AC7 | Estructural (máquinas de estado) |
 | AR-16 | 2.3 AC2, AC3, 3.1 AC1, AC4, AC5, AC6, 4.5 AC6, 9.2 AC5, 10.2 AC4 | Estructural (consistencia del catálogo) |
 | AR-17 | 1.2 AC1 | Estructural (superficie de red) |
@@ -2069,6 +2093,68 @@ el nombre propuesto que colisionó,
 **And** el `machineName` **no** es una credencial: no hay contraseña, token, sesión ni rol asociados,
 no se usa para autenticar ninguna petición y no confiere permisos
 *(FR-10, AR-14, AD-6, AD-12, AD-30)*.
+
+**Given** un cliente cuyo `machineName` propuesto está en la longitud máxima admitida y **colisiona**
+con el de otro equipo ya registrado,
+**When** el servidor deriva el nombre efectivo,
+**Then** el nombre efectivo es `stem_truncado + "-<n>"`, con `n` un entero decimal `>= 2`, en ASCII y
+sin ceros a la izquierda,
+**And** la longitud del nombre efectivo **nunca excede 64 puntos de código Unicode**, medidos en
+puntos de código (`System.Text.Rune`), no en bytes ni en unidades de código UTF-16: un `stem` de 64
+ideogramas CJK se recorta a 62 ideogramas, y uno con emoji se recorta sin partir ningún emoji,
+**And** la truncación del `stem` **cae siempre en un límite de punto de código** y el `stem`
+truncado **no puede quedar vacío** (si lo estuviera, se usa el `stem` de reserva `equipo`),
+**And** el ancho del sufijo se ajusta al número de dígitos, de modo que `-2`, `-10` y `-100`
+producen nombres efectivos de la **misma** longitud (64 puntos de código) y el sufijo **nunca**
+empuja el nombre por encima de la cota,
+**And** el nombre efectivo derivado **vuelve a ser admisible** por las reglas de forma (longitud y
+set de caracteres) y **nunca necesita volver a ser derivado**
+*(FR-10, AR-14, AD-30, AD-31)*.
+
+**Given** un nombre propuesto que colisiona con el de otro `clientId` ya registrado,
+**When** el servidor busca un nombre efectivo libre,
+**Then** compara la **forma canónica** del nombre candidato (Unicode NFKC, eliminación de marcas
+diacríticas y minúsculas Unicode invariantes, en ese orden) y, si colisiona, **incrementa** `n` y
+vuelve a truncar el `stem` con el nuevo ancho de sufijo,
+**And** el bucle **termina** en el primer `n` cuyo nombre efectivo esté libre,
+**And** el `clientId` del cliente **no cambia**, no se fusiona ninguna fila y no se reasigna la fila de
+otro cliente
+*(FR-10, AR-14, AD-30, AD-31)*.
+
+**Given** un cliente que se registra,
+**When** llama al punto de entrada del registro del cliente,
+**Then** envía un cuerpo con la forma exacta `{ clientId, machineName, clientVersion,
+protocolVersion }`, donde `clientId` es el UUID v7 emitido por el cliente, `machineName` es el
+**nombre propuesto** y `clientVersion` y `protocolVersion` son los **mismos valores** que las
+cabeceras `X-Client-Version` y `X-Protocol-Version` (el cuerpo no introduce una segunda versión ni
+una segunda fuente de verdad),
+**And** el cuerpo **no** lleva `schemaVersion`: el registro es la **única** mutación exenta de
+`schemaVersion` y ninguna otra mutación puede usar esa exención,
+**And** recibe una respuesta con la forma exacta `{ clientId, machineName, connectionState,
+lastSeenAt, renamed }`, donde `machineName` es **siempre el nombre efectivo** y `renamed` es un
+booleano que vale `true` **únicamente** cuando el servidor resolvió una colisión y el `machineName`
+devuelto **difiere** del propuesto
+*(FR-10, AR-14, AD-5, AD-6, AD-22, AD-23, AD-30, AD-32)*.
+
+**Given** un cliente que se registra ante el servidor,
+**When** el servidor responde al registro,
+**Then** el **alta**, la **reconexión** y el **renombrado** ocurren en **la misma** operación de
+registro, que es el **único** punto de entrada del cliente al servidor: no existe un endpoint
+adicional de registro, de renombrado ni de administración de nombres,
+**And** el éxito responde **`200 OK`** —no `201 Created`, porque la fila es actualizable—, con el
+nombre efectivo y el indicador `renamed`,
+**And** un nombre mal formado responde **`422 Unprocessable Content`** con la forma única `ApiError`
+(`code`, `message`, `cause`, `nextStep`) y un `code` **propio**,
+**And** una versión incompatible responde **`426 Upgrade Required`** con la versión de servidor
+requerida y el rango mínimo soportado, y esa comprobación ocurre **antes** de cualquier validación
+de nombre,
+**And** la **colisión no es un error**: el registro **tiene éxito** con `renamed: true` y el nombre
+efectivo en la respuesta,
+**And** una **reconexión** (el cliente registra de nuevo con su `clientId` y su nombre efectivo
+actual) **conserva** la fila y el nombre: el servidor actualiza `connectionState`, `lastSeenAt` y
+`clientVersion`, **no** asigna un nombre nuevo y **no** dispara la derivación, de modo que un
+cliente reconectado **nunca colisiona consigo mismo**
+*(FR-10, AR-14, AD-5, AD-6, AD-15, AD-22, AD-23, AD-25, AD-29, AD-30, AD-32)*.
 
 ### Story 9.2: Proyección de instalaciones y de operaciones en curso
 

@@ -9,13 +9,23 @@
 
 ## Veredicto
 
-**ADECUADO CON RESERVAS.** El documento está bien construido: 46 historias con la forma
-`Como / quiero / so que`, 218 AC en forma `Given / When / Then`, marcadores de énfasis balanceados
-(2478, par), frontmatter íntegro y cero placeholders. LaVoice de las historias es **coherente** con el
+**ADECUADO CON RESERVAS.** El documento está bien construido: 47 historias con la forma
+`Como / quiero / so que`, 243 AC en forma `Given / When / Then`, marcadores de énfasis balanceados
+(par), frontmatter íntegro y cero placeholders. LaVoice de las historias es **coherente** con el
 contrato de UX: segunda persona, sin emojis, sin superlativos.
 
 Sin embargo, hay **cinco defectos editoriales reales** y **dos inconsistencias de trazabilidad**.
 Ninguno es bloqueante; todos se cierran con una corrección local, sin decisión de producto.
+
+> **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):**
+> 13 épicas, 47 historias, 243 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
+> `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de `**Given**` / `**When**` /
+> `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve `stories: 47`,
+> `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`,
+> `total_findings: 0`.
+>
+> **Recuento equivalente de las restricciones heredadas:** 10 filas `R-MVP-1..R-MVP-10`, de las
+> que **R-MVP-10** es la añadida por la propagación de AD-31 y AD-32.
 
 ---
 
@@ -23,7 +33,7 @@ Ninguno es bloqueante; todos se cierran con una corrección local, sin decisión
 
 ### 1. Forma de las historias (`Como / quiero / so que`) — **CUMPLE**
 
-Las 46 historias tienen las tres partes. Ninguna historia abre con una descripción técnica en lugar
+Las 47 historias tienen las tres partes. Ninguna historia abre con una descripción técnica en lugar
 de la necesidad de una persona. La persona declarada es la correcta por historia (Marta en la
 épica 2, Ana en las épicas 3-8 y 10, Luis en la 9, «arquitecto del producto» e «ingeniero de
 seguridad» en las fundacionales y de seguridad). La Skill exige que cada historia sea completable
@@ -31,7 +41,7 @@ por un agente de desarrollo con su valor declarado: la forma lo cumple.
 
 ### 2. Forma de los AC (`Given / When / Then / And`) — **CUMPLE**
 
-218 de 218. Cada AC es una frase condicional completa, con precondición, acción y resultado
+243 de 243. Cada AC es una frase condicional completa, con precondición, acción y resultado
 esperado. Ningún AC es una frase suelta ni una lista de tareas.
 
 ### 3. Microcopia literal — **CUMPLE CON RESERVA (E-1)**
@@ -150,7 +160,8 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 - **Ubicación:** `### Additional Requirements` → AR-21 (L244), AR-25 (L267).
 - **Evidencia:** verificación mecánica de menciones: **AR-21 = 1**, **AR-25 = 1**. En ambos casos la
-  única mención es la definición. Ninguna de las 218 AC cita AR-21 ni AR-25. Lo mismo ocurre, en
+  única mención es la definición. Ninguna de las 218 AC del estado revisado en este lote cita
+  AR-21 ni AR-25 (el cierre posterior los hace exigibles). Lo mismo ocurre, en
   menor grado, con **AR-19** (2 menciones: definición + Story 1.2 AC3) y **AR-17** (2: definición +
   Story 1.2 AC1) — estas dos sí tienen al menos un AC que las respalda.
 - **Por qué importa:** AR-21 fija la estrategia de pruebas en tres niveles y, sobre todo, declara
@@ -166,7 +177,9 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 ### E-4 — La tabla `R-MVP-*` no tiene columna de trazabilidad hacia la historia que la aplica — **BAJA**
 
-- **Ubicación:** `### Restricciones heredadas que gobiernan todo el desglose` (tabla de 9 filas).
+- **Ubicación:** `### Restricciones heredadas que gobiernan todo el desglose` (tabla de 9 filas —
+  recuento **histórico** de esta revisión; la tabla **vigente** tiene **10** filas, con **R-MVP-10**
+  añadida por la propagación de AD-31 y AD-32).
 - **Evidencia:** la tabla declara 9 restricciones con su origen arquitectónico (`AD-4, AD-13,
   AD-28`…), pero **no dice qué historia las aplica**. La información existe dispersa en las AC
   (R-MVP-1 en Story 5.1/5.3/12.5, R-MVP-2 en Story 4.3, R-MVP-3 en Story 4.4/6.1/7.1, R-MVP-4 en
@@ -208,10 +221,10 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 | Verificación | Resultado |
 | --- | --- |
-| Historias con forma `Como / quiero / so que` | PASS — 46/46 en las tres partes |
-| Historias con `**Acceptance Criteria:**` | PASS — 46/46 |
-| AC `**Given**` / `**When**` / `**Then**` | PASS — 218/218 en las tres |
-| Marcadores `**` balanceados | PASS — 2478 (par) |
+| Historias con forma `Como / quiero / so que` | PASS — 47/47 en las tres partes |
+| Historias con `**Acceptance Criteria:**` | PASS — 47/47 |
+| AC `**Given**` / `**When**` / `**Then**` | PASS — 243/243 en las tres |
+| Marcadores `**` balanceados | PASS — par |
 | Placeholders `{{...}}` | PASS — 0 |
 | Placeholders `TODO`/`TBD`/`FIXME`/`XXX` | PASS — 0 |
 | Placeholders `<MAYUSCULAS>` | PASS — 0 (los `<n> %` / `<causa>` son parámetros de microcopia definidos) |

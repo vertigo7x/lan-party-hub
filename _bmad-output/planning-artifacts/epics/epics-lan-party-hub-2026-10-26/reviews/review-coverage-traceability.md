@@ -9,14 +9,19 @@
 ## Veredicto
 
 **ADECUADO CON RESERVAS.** El documento cubre el 100 % de FR-1..FR-11, NFR-1..NFR-10 y
-UX-DR-1..UX-DR-45, con 13 épicas y 47 historias y 234 criterios de aceptación. Tres hallazgos
+UX-DR-1..UX-DR-45, con 13 épicas y 47 historias y 243 criterios de aceptación. Tres hallazgos
 **medios** de cobertura y dos **bajos** de consistencia. Ninguno bloqueante.
 
-> **Conteo arquitectónico final (cierre documental de Fase E):** 13 épicas, 47 historias, 234 AC.
-> Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados `## Epic N`, 47 encabezados
-> `### Story N.M` y 234 ocurrencias de `**Given**` / `**When**` / `**Then**` (234/234/234). El
-> verificador `verify_epics.py` devuelve `stories: 47`, `acceptance_criteria: 234`,
-> `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`, `total_findings: 0`.
+> **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):**
+> 13 épicas, 47 historias, 243 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
+> `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de `**Given**` / `**When**` /
+> `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve `stories: 47`,
+> `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`,
+> `total_findings: 0`.
+>
+> **Recuento equivalente de las restricciones heredadas:** 10 filas `R-MVP-1..R-MVP-10`, de las
+> que **R-MVP-10** es la añadida por la propagación de AD-31 y AD-32 (punto de entrada único del
+> registro, derivación acotada y terminante del nombre efectivo, colisión no es error).
 
 ---
 
@@ -310,12 +315,12 @@ trazabilidad dentro del contrato ya aprobado por el PRD, la UX y la arquitectura
 | Mención de cada FR-1..FR-11 | PASS — mínimo 13 menciones |
 | Mención de cada NFR-1..NFR-10 | PASS — mínimo 4 menciones |
 | Mención de cada UX-DR-1..UX-DR-45 | PASS — mínimo 2 menciones |
-| Mención de cada AD-1..AD-29 | PASS — 0 con cero menciones |
+| Mención de cada AD-1..AD-32 | PASS — 0 con cero menciones |
 | Secuencia de IDs de historia 1.1..13.1 | PASS — 47 historias, numeración continua sin huecos |
-| Presencia de `**Given**` en cada historia | PASS — 47/47; mínimo 3 AC por historia, 234 en total |
+| Presencia de `**Given**` en cada historia | PASS — 47/47; mínimo 3 AC por historia, 243 en total |
 | Secciones de plantilla (`Overview`, `Requirements Inventory`, `FR Coverage Map`, `Epic List`, `## Epic N`) | PASS — todas presentes y en orden |
 | Placeholders `{{...}}` residuales | PASS — 0 |
-| `verify_epics.py` (verificador oficial de trazabilidad) | PASS — `ok: true`, `total_findings: 0`, `stories: 47`, `acceptance_criteria: 234`, `ar_definitions: 25`, `ar_table_rows: 25` |
+| `verify_epics.py` (verificador oficial de trazabilidad) | PASS — `ok: true`, `total_findings: 0`, `stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25` |
 | Barrido de codificación (UTF-8 válido, CJK, U+FFFD) | PASS — 0 CJK, 0 U+FFFD, 0 archivos con UTF-8 inválido |
 | Barrido de placeholders (`{{token}}`, `TODO`/`TBD`/`FIXME`/`XXX`, `<MAYUSCULAS>`) | PASS — 0 |
 | Barrido de marcadores de énfasis `**` desbalanceados | PASS — par |

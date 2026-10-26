@@ -241,6 +241,8 @@ definitivo.
 | Nombre propuesto **colisiona** con el de otro equipo ya registrado | El servidor **no rechaza** al cliente ni lo deja invisible: le asigna un **nombre único derivado** del propuesto y se lo notifica. El cliente **adopta** ese nombre efectivo y lo muestra en el panel de estado. La tabla del servidor muestra el nombre efectivo, y el cliente que ya usaba el nombre propuesto conserva el suyo |
 | Nombre propuesto **inválido** | El registro se **rechaza** con un error que dice causa y siguiente paso (qué no cumple y qué hacer: elegir otro nombre). El cliente **queda sin registrar y no opera**; el estado de conexión lo refleja y el motivo es visible, no oculto en el log |
 | El equipo cambia su nombre en el cliente | El cliente propone el nuevo nombre en su siguiente registro. Si está libre, se adopta; si colisiona, el servidor aplica la misma regla y asigna el nombre derivado. El **identificador técnico del cliente no cambia** en ningún caso |
+| El cliente **se reconecta** con el servidor | El cliente registra de nuevo con su identificador y su **nombre efectivo actual**. El servidor **le conserva el nombre**: no le asigna uno nuevo ni vuelve a derivarlo, aunque otro equipo haya ocupado el nombre propuesto original. El panel de estado del cliente y la tabla del servidor muestran el **mismo nombre efectivo** que antes de la desconexión |
+| El servidor ha **renombrado** al equipo por colisión | El cliente recibe el **nombre efectivo** y el aviso de que el servidor lo renombró. La interfaz **adopta** el nombre recibido y lo muestra como el vigente |
 
 Reglas transversales:
 
@@ -250,6 +252,21 @@ Reglas transversales:
 - **El nombre efectivo es el único que se muestra.** Una vez resuelto, la interfaz muestra el
   nombre bajo el que el equipo está registrado. El nombre propuesto que colisionó **no** se
   muestra en ningún sitio como si fuera el vigente.
+- **El nombre recibido del servidor es el vigente, sin excepción.** La interfaz **no** decide por su
+  cuenta qué nombre mostrar: muestra el **nombre efectivo** que el servidor devuelve al registrar,
+  tanto en el alta como en la reconexión y en el renombrado. Un nombre propuesto que el servidor
+  **no** confirmó **no** se muestra como vigente en ninguna superficie, ni en el panel del cliente,
+  ni en la tabla del organizador.
+- **El aviso de renombrado es informativo, no un error.** Cuando el servidor renombra al equipo por
+  colisión, la interfaz lo comunica como un **cambio de nombre** —no como un fallo ni como una
+  incidencia— y el equipo **queda registrado y visible** en la tabla del organizador.
+- **El nombre efectivo derivado es siempre admisible.** El nombre que el servidor devuelve **no**
+  excede la longitud máxima admitida y **no** necesita volver a ser derivado: la interfaz no
+  comprueba, recorta ni reescribe ese nombre, porque el servidor ya lo entrega conforme a las
+  reglas de forma.
+- **La reconexión no renombra.** Tras una desconexión y una reconexión, el cliente muestra **el
+  mismo nombre efectivo** que antes: la reconexión no es un alta nueva y no produce un nombre
+  distinto del que el equipo ya tenía.
 - **La colisión no es un error del cliente.** Un equipo homónimo se registra y aparece en la tabla:
   el problema resuelto es la ambigüedad de la vista, no el acceso del equipo.
 - **La unicidad del nombre no autentica nada.** No hay campo de credencial, ni pantalla de

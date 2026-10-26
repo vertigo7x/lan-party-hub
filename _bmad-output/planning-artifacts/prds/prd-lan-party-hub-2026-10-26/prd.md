@@ -266,6 +266,36 @@ acceso: el producto sigue siendo una **LAN confiada sin autenticación ni autori
 clientes**, y el nombre del equipo **no** es una credencial, no se usa para autenticar ninguna
 petición y no confiere permisos ni roles.
 
+**La derivación del nombre efectivo es acotada.** El nombre único derivado que el servidor asigna
+ante una colisión se construye **añadiendo un sufijo numérico** (`-2`, `-3`, …) al nombre
+propuesto, y **recortando el nombre propuesto** lo necesario para que el resultado **nunca exceda
+la longitud máxima admitida**. Esa longitud se mide en **puntos de código Unicode**, no en bytes ni
+en unidades de código UTF-16, de modo que un nombre con ideogramas CJK o con emoji se acota por
+los **caracteres visibles** que el organizador ve y el recorte **nunca parte un carácter por la
+mitad**. El algoritmo **siempre termina**: encuentra el primer sufijo cuyo nombre resultante esté
+libre, y el nombre efectivo derivado **vuelve a ser admisible** por las mismas reglas que el
+propuesto. El nombre efectivo derivado no es un nombre que el servidor vuelve a derivar: la
+derivación es estable.
+
+**El registro del cliente tiene un contrato único.** El alta, la **reconexión** y el **renombrado**
+del nombre del equipo ocurren en **la misma operación de registro** del cliente: el cliente llama
+a ese punto de entrada con su identificador técnico, su nombre propuesto (el nombre efectivo que ya
+tiene, en una reconexión; el nombre nuevo, en un renombrado) y sus versiones. El servidor responde
+con el **nombre efectivo** bajo el que la fila queda registrada y con un indicador de si el nombre
+fue **renombrado** por el servidor, que vale verdadero **solo** cuando hubo colisión y el nombre
+devuelto difiere del propuesto. El contrato de esa operación distingue tres resultados:
+
+| Resultado | Cuándo ocurre | Qué ve el cliente |
+| --- | --- | --- |
+| **Éxito** (`200 OK`) | El nombre propuesto es admisible y está libre, o el cliente se reconecta con su nombre efectivo | El **nombre efectivo** y el indicador de renombrado en `false`. En la reconexión, el servidor **no** asigna un nombre nuevo ni vuelve a derivar |
+| **Rechazo por nombre** (`422 Unprocessable Content`) | El nombre propuesto no cumple las reglas de forma | El **error** con la causa y el siguiente paso. El cliente **queda sin registrar y no opera** |
+| **Versión incompatible** (`426 Upgrade Required`) | El cliente no cumple la compatibilidad de versión | El **diagnóstico** con la versión del cliente y la del servidor. Se comprueba **antes** que el nombre |
+
+La colisión **no es un error**: el registro **tiene éxito** con el nombre efectivo y el indicador de
+renombrado en `true`. El servidor **no ofrece una operación de renombrado de otro cliente** en el
+MVP, y esta operación de registro **no amplía la superficie de la API**: no introduce
+administración de nombres, cuentas de usuario ni campos de credencial, rol o permiso.
+
 **Consecuencias verificables:**
 - El servidor refleja la conexión y desconexión de un cliente compatible.
 - El servidor muestra el progreso de una descarga o instalación activa.
@@ -277,6 +307,24 @@ petición y no confiere permisos ni roles.
 - Dos equipos que proponen el mismo nombre de equipo quedan **ambos registrados y visibles**: el
   servidor asigna al segundo un nombre único derivado del propuesto y le notifica ese nombre
   efectivo, que es el que aparece en el panel.
+- El nombre efectivo derivado ante una colisión **nunca excede la longitud máxima admitida**, y esa
+  longitud se mide en **puntos de código Unicode**: un nombre propuesto de longitud máxima con
+  ideogramas CJK o con emoji produce un nombre efectivo de la **misma** longitud en caracteres
+  visibles, y el recorte **no parte ningún carácter por la mitad**.
+- La derivación del nombre efectivo **siempre termina** y produce un nombre **admisible** por las
+  mismas reglas que el propuesto: el cliente no recibe un nombre que el propio servidor rechazaría.
+- Un cliente que **se reconecta** con su identificador y su nombre efectivo conserva su fila y su
+  nombre: el servidor **no** le asigna un nombre nuevo ni vuelve a derivar, aunque otro equipo haya
+  ocupado el nombre propuesto original.
+- Un cliente que **cambia el nombre de su equipo** lo hace por la **misma** operación de registro, y
+  el nombre nuevo se adopta si está libre o se deriva si colisiona, **sin** que el servidor ofrezca
+  una operación de renombrado de otro cliente.
+- El nombre recibido por el cliente es **siempre el nombre efectivo** bajo el que su fila queda
+  registrada, y el indicador de renombrado vale **verdadero solo** cuando el servidor resolvió una
+  colisión y el nombre devuelto difiere del propuesto.
+- El cliente con un nombre mal formado recibe el **código de rechazo por nombre** y el que tiene
+  una versión incompatible recibe el **código de versión incompatible**, ambos con la causa y el
+  siguiente paso; y el de versión incompatible se rechaza **antes** de validar el nombre.
 - El identificador técnico del cliente **no cambia** ante un rechazo por nombre, ante una colisión
   resuelta ni ante un cambio de nombre del equipo.
 
