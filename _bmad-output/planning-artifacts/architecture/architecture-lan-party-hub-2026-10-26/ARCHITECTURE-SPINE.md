@@ -157,10 +157,11 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-10 — Estados de descarga e instalación: máquinas de estado explícitas y microcopia única
 
-- **Binds:** FR-5, FR-8, FR-10, FR-11, NFR-7, NFR-9, SM-2, SM-3, AD-18, AD-22
+- **Binds:** FR-5, FR-8, FR-10, FR-11, NFR-7, NFR-9, SM-2, SM-3, AD-18, AD-22, AD-33
 - **Prevents:** que dos unidades construyan listas de estados distintas; que la UI invente estados que el dominio no reconoce; que el servidor y el cliente discrepen sobre el estado de una operación; que cada unidad traduzca el estado a texto por su cuenta.
 - **Rule:** `DownloadState` e `InstallationState` son **enumeraciones cerradas con transiciones explícitas** en el dominio, con estado terminal por operación. Los estados son los mismos en cliente y servidor. El **cliente es la única fuente de verdad** del estado local de una operación (la ejecuta); el servidor **proyecta** ese estado para la vista de organización. Toda transición inválida se rechaza.
-  - **Mapa de estados a microcopia: una sola tabla, en `Shared`.** Existe **un único** diccionario `StateDisplayMap` (en `Shared`) que traduce cada valor de `DownloadState` y de `InstallationState` a su texto de interfaz. Servidor y cliente **consumen** esa tabla; **ninguno** define su propia. Un texto de estado que no esté en la tabla **no se puede mostrar**: la tabla es exhaustiva y es la única fuente de microcopia de estado.
+  - **El resultado de una operación terminada es otra enumeración cerrada, y distinta.** El resultado global de una operación que termina no es un valor de `DownloadState` ni de `InstallationState`: es el valor de `OperationOutcome` (`Succeeded`, `PackageWithdrawn`, `Failed`), una enumeración **cerrada** que declara sus tres valores de forma **exhaustiva** (AD-33). `PackageWithdrawn` es un resultado **distinto del fallo**: **no** es un error, **no** se persiste como `ClientError` y **no** añade ningún valor nuevo a `DownloadState` ni a `InstallationState`, que siguen cerradas.
+  - **Mapa de estados a microcopia: una sola tabla, en `Shared`.** Existe **un único** diccionario `StateDisplayMap` (en `Shared`) que traduce cada valor de `DownloadState`, de `InstallationState` y de `OperationOutcome` a su texto de interfaz. Servidor y cliente **consumen** esa tabla; **ninguno** define su propia. Un texto de estado o de resultado que no esté en la tabla **no se puede mostrar**: la tabla es exhaustiva y es la única fuente de microcopia de estado.
   - **Los estados de vista derivados de la UX no son estados de máquina.** `EXPERIENCE.md` define insignias que no son estados de dominio —`sincronizando`, `disponible`, `instalado con versión desactualizada`— y quedan **declarados como estados de vista derivados**, con su regla de derivación **fija y única**:
     - `sincronizando` — el cliente tiene un snapshot de catálogo desactualizado respecto al `catalogVersion` del servidor (o está en su primera sincronización). No es un estado de `DownloadState` ni de `InstallationState`.
     - `disponible` — el juego está publicado en el catálogo y **no** tiene instalación validada en el cliente. Se deriva de la ausencia de una `CLIENT_INSTALLATION` en estado `Installed`.
@@ -233,8 +234,9 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `ErrorCatalog` | Entradas `code` → `message`, `cause`, `nextStep` | Catálogo de errores estable, único (AD-15) |
   | `DownloadState` | Enumeración cerrada de estados de descarga | Estados de máquina, no de vista (AD-10) |
   | `InstallationState` | Enumeración cerrada de estados de instalación | Estados de máquina, no de vista (AD-10) |
-  | `StateDisplayMap` | Estado → texto de interfaz | **Única** tabla de microcopia de estado (AD-10) |
-  | `CatalogViewState` | Estados de vista derivados (`sincronizando`, `disponible`, `desactualizado`) | Derivados, no de máquina (AD-10) |
+  | `OperationOutcome` | Enumeración **cerrada** de resultados de operación: `Succeeded`, `PackageWithdrawn`, `Failed` | Resultado de una operación terminada; `PackageWithdrawn` es un resultado **distinto del fallo**, no un error (AD-33) |
+  | `StateDisplayMap` | Estado → texto de interfaz | **Única** tabla de microcopia de estado y de resultado de operación (AD-10, AD-33) |
+  | `CatalogViewState` | Estados de vista derivados (`sincronizando`, `disponible`, `instalado con versión desactualizada`) | Derivados, no de máquina (AD-10). El literal del estado desactualizado es **«instalado con versión desactualizada»**, el mismo que usa la insignia `status-badge` de `EXPERIENCE.md` |
   | `ClientStateChanged` | `clientId`, `connectionState`, `installedGames[]` (`gameId`, `installedVersion`, `validationState`), `activeOperations[]` (`operationId`, `operationType`, `state`) | Forma **exacta**, no «contenido mínimo» (AD-22) |
   | `DownloadProgressUpdated` | `clientId`, `operationId`, `bytesTransferred`, `totalBytes`, `state` (`DownloadState`) | Push de estado (AD-5) |
   | `InstallationProgressUpdated` | `clientId`, `operationId`, `state` (`InstallationState`), `phase` | Push de estado (AD-5) |
@@ -243,10 +245,11 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `ClientRegistrationView` | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Forma **exacta** de la vista de clientes; la consume `GET /api/v1/clients` (AD-29). `machineName` es la etiqueta humana **única** que el servidor expone (AD-30). **No** existe el evento `ClientsSnapshotChanged` |
   | `TrustAnchor` | Clave pública Ed25519 del ancla + su `fingerprint` | Ancla fijada out-of-band y persistida por el cliente (AD-27) |
   | `PackageDescriptor` | `packageId`, `gameId`, `version`, `sizeBytes`, `chunkSizeBytes`, `sha256`, `manifestRef` | **Sin** firma (AD-2, AD-7) |
+  | `GameDescriptor` | `gameId`, `name`, `description`, `categories[]`, `tags[]`, `coverImage`, `images[]`, `version`, `sizeBytes`, `minPlayers`, `maxPlayers`, `operatingSystem`, `distributionType`, `installationType`, `launchConfiguration`, `dependencies[]`, `license`, `distributionRestrictions` | Contrato de metadatos de videojuego, con **forma exacta** y **orden fijo** de campos (AD-34) |
   | `InstallationManifest` + sobre firmado | Manifiesto canónico + `signature` + `keyId` | **Único** objeto firmado (AD-2) |
   | `VersionInfo` | Versión de cliente, de servidor y de protocolo | Origen de las cabeceras de versión (AD-6) |
 
-  Una enumeración compartida es la **única** definición de su concepto: el estado de descarga, el estado de instalación, la microcopia de estado, el catálogo de errores, la versión de protocolo y la forma del error de API se definen **una sola vez**. Ningún tipo de este listado puede declararse también en `Server` o `Client`; una duplicación es un defecto de implementación, no una variante admitida.
+  Una enumeración compartida es la **única** definición de su concepto: el estado de descarga, el estado de instalación, el **resultado de una operación terminada** (`OperationOutcome`), la microcopia de estado, el catálogo de errores, la versión de protocolo y la forma del error de API se definen **una sola vez**. Ningún tipo de este listado puede declararse también en `Server` o `Client`; una duplicación es un defecto de implementación, no una variante admitida.
 
 ### AD-19 — Lanzador de juegos aislado tras un puerto
 
@@ -290,13 +293,14 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `ClientRegistration` | **servidor** | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Vista de organización (FR-10). La **clave** es `clientId`; `machineName` es la **etiqueta humana, única y validada por el servidor** (AD-30) |
   | `ClientInstallationView` | **servidor** | **Proyección** de solo lectura: `clientId`, `gameId`, `installedVersion`, `validationStateText` | Proyección **derivada**, alimentada por SignalR. **No** es `CLIENT_INSTALLATION` |
   | `ClientError` (servidor) | **servidor** | `errorId`, `clientId`, `operationId`, `code`, `message`, `cause`, `nextStep`, `occurredAt` | Registro para la vista de organización; conserva la forma de `ApiError` |
-  | `ClientInstallation` | **cliente** | `gameId`, `installedVersion`, `validationState` (`InstallationState`), `installPath`, `installDirectoryId` | **Estado local real**. Dueño: el cliente (AD-10) |
+  | `ClientInstallation` | **cliente** | `gameId`, `installedVersion`, `validationState` (`InstallationState`), `installPath`, `installDirectoryId` | **Estado local real**. Dueño: el cliente (AD-10). `installDirectoryId` es el **identificador del directorio raíz de instalación elegido por el cliente**; `installPath` es su ruta local y **nunca sale del cliente** |
   | `DownloadOperation` (cliente) | **cliente** | `operationId`, `packageId`, `state` (`DownloadState`), `transferEngine` | Estado local real (AD-10) |
   | `DownloadProgress` | **cliente** | `operationId`, `bytesPersisted`, `totalBytes` | Offset acumulado del camino HTTP (único formato del MVP). **Sin `chunkMap`**: ese mapa no existe en el MVP (AD-24, AD-28) |
   | `ClientIdentity` | **cliente** | `clientId` emitido y persistido | AD-23 |
 
   - **Regla de no-colisión con el estado del cliente:** el servidor **no** persiste el `InstallationState` ni el `DownloadState` de otro cliente. Cuando el servidor necesita mostrarlos, los guarda como **`validationStateText`**, una **cadena de presentación** copiada del `StateDisplayMap` de `Shared` (AD-10), **nunca** como el enum. Si el servidor reinterpreta el texto, no está leyendo un estado de dominio.
   - **`installPath` es una ruta del cliente y no sale del cliente.** El servidor no la persiste; la vista de organización muestra la **versión instalada** y la **existencia** de la instalación, no su ruta.
+  - **`installDirectoryId` es el identificador del directorio raíz de instalación elegido por el cliente, y `installPath` nunca sale del cliente.** `installDirectoryId` identifica **la raíz de instalación configurada** (AD-9) mediante un identificador opaco, de modo que el cliente puede referirse a ella sin exponer su ruta. `installPath` es la **ruta local** de esa raíz: se persiste en el SQLite del cliente y **no** se persiste en el servidor, **no** viaja por ningún contrato de API ni por SignalR, y **no** aparece en la vista de organización. El servidor **no** deriva la ruta a partir del identificador.
   - **La forma del evento `ClientStateChanged` es exacta y está en `Shared`** (AD-18): `clientId`, `connectionState`, `installedGames[]` (con `gameId`, `installedVersion`, `validationState`) y `activeOperations[]` (con `operationId`, `operationType`, `state`). No es un «contenido mínimo»: un servidor no puede esperar un campo que el contrato no declara.
   - **Todos los payloads SignalR tienen forma exacta en `Shared`.** `DownloadProgressUpdated` lleva `clientId`, `operationId`, `bytesTransferred`, `totalBytes` y `state` (`DownloadState`); `InstallationProgressUpdated` lleva `clientId`, `operationId`, `state` (`InstallationState`) y `phase`; `ClientErrorReported` lleva `clientId`, `operationId` y `error` (`ApiError`); `CatalogChanged` lleva `catalogVersion`. **No existe el payload `ClientsSnapshotChanged`**: la vista de clientes no viaja por SignalR, se obtiene por REST (AD-29). Ningún payload admite campos opcionales fuera de esta lista.
 
@@ -331,12 +335,12 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-26 — Consistencia del catálogo frente a operaciones en curso
 
-- **Binds:** FR-2, FR-5, FR-8, FR-11, NFR-9, AD-5, AD-10, AD-11
+- **Binds:** FR-2, FR-5, FR-8, FR-11, NFR-9, AD-5, AD-10, AD-11, AD-33
 - **Prevents:** que un cliente cancele una descarga en curso porque el catálogo retiró el paquete y otro la deje terminar; que una resincronización del catálogo destruya una instalación existente; que el servidor y el cliente discrepen sobre el resultado de una operación retirada.
 - **Rule:** El catálogo se sincroniza por **snapshot completo** (`GET /api/v1/catalog` con `catalogVersion`); el delta queda en `Deferred`. La aplicación de un snapshot nuevo sigue reglas fijas:
   - **Un snapshot nuevo NO cancela operaciones en curso.** Una descarga o instalación en curso **termina**; no se aborta por un cambio de catálogo.
-  - Una operación en curso cuyo paquete o juego **ha sido retirado** del catálogo **no falla por ello**: completa su curso y su resultado se marca explícitamente como **`Paquete retirado del catálogo`**. Ese resultado es **distinto del fallo** y no invalida la instalación ejecutada. La prevalencia es del catálogo, salvo que el propio paquete sea inválido, en cuyo caso manda la validación de integridad (AD-2, AD-8).
-  - **Una instalación existente no se borra** porque el juego se retiró del catálogo. El cliente la conserva, la sigue mostrando en su biblioteca y la marca con el estado de vista correspondiente (`desactualizado` u otro derivado de AD-10); la retirada del catálogo no altera la validez de lo ya instalado.
+  - Una operación en curso cuyo paquete o juego **ha sido retirado** del catálogo **no falla por ello**: completa su curso y su resultado se marca explícitamente como **`Paquete retirado del catálogo`**, que es el valor `PackageWithdrawn` de `OperationOutcome` (AD-33). Ese resultado es **distinto del fallo** y no invalida la instalación ejecutada: **no** es un error, **no** se persiste como `ClientError` y **no** añade ningún estado nuevo a las enumeraciones de máquina. La prevalencia es del catálogo, salvo que el propio paquete sea inválido, en cuyo caso manda la validación de integridad (AD-2, AD-8).
+  - **Una instalación existente no se borra** porque el juego se retiró del catálogo. El cliente la conserva, la sigue mostrando en su biblioteca y la marca con el estado de vista correspondiente (`instalado con versión desactualizada` u otro derivado de AD-10); la retirada del catálogo no altera la validez de lo ya instalado.
   - **El servidor tampoco borra** la `ClientInstallationView` de un cliente cuyo juego se retiró del catálogo: la proyección refleja lo que el cliente réellement tiene instalado, no lo que el catálogo publica.
   - El `catalogVersion` del servidor es **monótono creciente**; el cliente solo aplica un snapshot con versión **mayor** que la que tiene, y descarta uno igual o anterior.
 
@@ -476,6 +480,26 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   - **Estado HTTP.** El registro exitoso responde **`200 OK`**, no `201 Created`: la fila de `ClientRegistration` es **actualizable** (reconexión y renombrado pasan por la misma ruta), de modo que un `201` afirmaría una creación que no siempre ocurre. El rechazo por nombre responde **`422 Unprocessable Content`**, porque el cuerpo es sintácticamente válido pero viola una regla de negocio; los errores de versión siguen respondiendo **`426 Upgrade Required`** con la versión de servidor requerida y el rango mínimo soportado (AD-6), y **antes** de cualquier validación de nombre, porque un cliente incompatible no debe alcanzar la capa de registro.
   - **Alcance.** Este contrato **no amplía la superficie REST** del MVP: reutiliza el registro que ya existía, no añade endpoints de administración ni de renombrado, no introduce campos de credencial, rol ni permiso, y **no cambia** la forma de `ClientRegistrationView` ni de la tabla `GET /api/v1/clients` (AD-29, AD-30).
 
+### AD-33 — Resultado de operación: `OperationOutcome` distingue el retiro del catálogo del fallo
+
+- **Binds:** FR-5, FR-8, FR-10, FR-11, NFR-7, NFR-9, AD-10, AD-15, AD-18, AD-22, AD-25, AD-26
+- **Prevents:** que «paquete retirado del catálogo» se presente como un fallo o como un error persistido; que una enumeración de estados de máquina crezca con un valor que no es un estado; que la microcopia de ese resultado se defina fuera de la tabla que le corresponde; que dos unidades construyan el resultado de una operación terminada de forma distinta.
+- **Rule:** `Shared` incorpora una enumeración **cerrada** `OperationOutcome` con **exactamente tres** valores: **`Succeeded`**, **`PackageWithdrawn`** y **`Failed`**. El resultado global de una operación terminada es el valor de esta enumeración, y **solo** de esta enumeración.
+  - **`PackageWithdrawn` es un resultado distinto del fallo, no un error.** «Paquete retirado del catálogo» es el valor `PackageWithdrawn`: **no** es un error, **no** produce `ApiError`, **no** se persiste como `ClientError` y **no** se registra en el `ErrorCatalog`. Es el resultado de una operación que **terminó correctamente** cuyo paquete dejó de estar en el catálogo (AD-26).
+  - **No se añade ningún estado nuevo a las enumeraciones de máquina.** `DownloadState` e `InstallationState` **siguen cerradas** y **no** incorporan un valor para el retiro del catálogo: el retiro del catálogo no es un estado por el que pase la operación, sino el **resultado** con el que termina (AD-10).
+  - **La microcopia vive en la tabla que ya la cubre.** `StateDisplayMap` mapea **cada** valor de `OperationOutcome` a su texto de usuario, y ese es el **sitio exacto** al que se refiere la «tabla asignada» del backlog: el texto de «Paquete retirado del catálogo» **no** se define en la vista, **no** se escribe en el `ErrorCatalog` y **no** se compone en el cliente. `StateDisplayMap` es **exhaustiva**: un valor de `OperationOutcome` sin entrada en la tabla **no se puede mostrar** (AD-10, AD-25).
+  - **El registro de operación incorpora la columna `outcome`.** El registro de operación del servidor (`DOWNLOAD_INTENT` del ERD) incorpora una columna **`outcome`** que guarda el valor de `OperationOutcome` con el que terminó la operación. `outcome` **no** sustituye a `state`: `state` sigue siendo el estado de la máquina (AD-10) y `outcome` es el resultado terminal. `Failed` es el único valor de `outcome` que **admite** un `ClientError` asociado; `Succeeded` y `PackageWithdrawn` **no** producen ninguno.
+  - **Alcance.** Esta decisión **no amplía el MVP**: no añade endpoints, ni campos de credencial, ni estados nuevos, ni una superficie de error nueva. Solo fija el nombre de la enumeración, sus tres valores, su tabla de microcopia y la columna que la persiste.
+
+### AD-34 — Contrato de metadatos de videojuego: `GameDescriptor`
+
+- **Binds:** FR-1, FR-2, FR-8, FR-11, NFR-3, NFR-8, AD-7, AD-18, AD-22
+- **Prevents:** que dos unidades construyan el DTO de videojuego con campos distintos o en distinto orden; que el formulario del catálogo, la API y el ERD persistan metadatos que no coinciden; que el metadato viva en el servidor y en el cliente con dos formas; que el contrato de la ficha de videojuego quede por definir.
+- **Rule:** `Shared` incorpora el DTO **`GameDescriptor`** con **exactamente** estos campos, en **este orden**: `gameId`, `name`, `description`, `categories[]`, `tags[]`, `coverImage`, `images[]`, `version`, `sizeBytes`, `minPlayers`, `maxPlayers`, `operatingSystem`, `distributionType`, `installationType`, `launchConfiguration`, `dependencies[]`, `license`, `distributionRestrictions`. El orden es **fijo** y la lista es **exacta**: no hay campos opcionales ni campos condicionales.
+  - **El ERD `GAME` se extiende para coincidir con esos mismos campos.** La entidad `GAME` del esquema del servidor (`catalog.sqlite`) persiste **exactamente** los mismos campos, con el **mismo** nombre y en el **mismo** orden, de modo que el DTO y la tabla no puedan divergir. `sizeBytes` se almacena en bytes exactos (AD-7) y `launchConfiguration` recoge la configuración de lanzamiento (ruta, argumentos y directorio de trabajo) que el manifiesto firmado materializa (AD-2, AD-7).
+  - **Un solo concepto, un tipo, un lugar.** `GameDescriptor` es el **único** contrato de metadatos de videojuego del sistema: lo consumen el catálogo, la ficha del videojuego y el alta y la modificación en el servidor. Ningún tipo equivalente puede declararse también en `Server` o `Client` (AD-18).
+  - **Alcance.** Esta decisión **no amplía el MVP**: no añade endpoints ni requisitos nuevos; **materializa el contrato que la historia 2.1 necesita** (FR-1) y da a la ficha del videojuego una forma de datos única en lugar de un «contenido mínimo».
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -483,7 +507,7 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 | Naming | PascalCase para tipos y miembros; `camelCase` para parámetros y variables locales; un solo nombre por concepto en todo el repositorio (`GameId`, `PackageId`, `DownloadOperationId`); sufijos `...Id` para identificadores, `...State` para máquinas de estado, `...Descriptor` para metadatos inmutables, `I...` para puertos. Código, contratos y nombres de tipo en **inglés**; documentación y mensajes de UI en **español**. |
 | Data & formats | JSON canónico (sin espacios superfluos, claves ordenadas) para todo lo que se firma (AD-2). Fechas en UTC ISO-8601. `sizeBytes` siempre en bytes exactos; la conversión a GB decimales es de presentación (AD-7). Identificadores opacos tipo UUID v7; las versiones de juego son cadenas opacas del editor, no números. Toda respuesta de error usa la **misma** forma y el **mismo** tipo: `ApiError` de `Shared` = `{ code, message, cause, nextStep }`, con `code` estable del `ErrorCatalog` y `cause`/`nextStep` **obligatorios** (AD-15, AD-18, AD-25). **El progreso persistido del MVP es `bytesPersisted`** (offset acumulado del camino HTTP, único formato y única columna de progreso del esquema del cliente): `chunkMap` **no existe en el MVP** —ni como columna, ni como tipo, ni como valor opcional— y solo aparece si S-3 valida la PoC P2P, con el formato que fije ese spike (AD-24, AD-28). La regla es **un motor, un formato**: el formato se deduce de `transferEngine`, no de un parámetro configurable. |
 | Contratos API | Prefijo `/api/v1`; `schemaVersion` en el cuerpo de toda mutación; DTOs en `Shared`; los nombres de evento de SignalR son `PascalCase` en pasado (`CatalogChanged`, `DownloadProgressUpdated`, `ClientStateChanged`). La vista de clientes se obtiene por REST, no por evento (AD-29). |
-| State & cross-cutting | Las transiciones de estado solo ocurren por el dominio; ni la UI ni los adaptadores escriben estado directamente. La mutación de datos persistidos ocurre **solo** en `Infrastructure` a través de un puerto de repositorio; la UI nunca toca EF Core. Cada entidad persistida tiene **un** dueño; la proyección del servidor (`ClientInstallationView`) es una entidad **distinta** de la del cliente (`ClientInstallation`) y no comparte nombre (AD-22). El texto de UI de cada estado sale **solo** de `StateDisplayMap`; «sincronizando», «disponible» y «desactualizado» son estados de vista derivados y «error» es la proyección de los estados terminales de fallo, no un estado de máquina (AD-10, AD-25). Configuración por archivo + variables de entorno + flags de línea de comandos, con precedencia `flags > env > archivo`. Logging JSON con correlación `operationId`/`clientId` obligatoria en toda operación (AD-15, AD-23). El `clientId` es la clave técnica y el `machineName` la etiqueta humana única validada por el servidor: la unicidad del nombre es una regla de nombres, **no** un control de acceso (AD-30). |
+| State & cross-cutting | Las transiciones de estado solo ocurren por el dominio; ni la UI ni los adaptadores escriben estado directamente. La mutación de datos persistidos ocurre **solo** en `Infrastructure` a través de un puerto de repositorio; la UI nunca toca EF Core. Cada entidad persistida tiene **un** dueño; la proyección del servidor (`ClientInstallationView`) es una entidad **distinta** de la del cliente (`ClientInstallation`) y no comparte nombre (AD-22). El texto de UI de cada estado sale **solo** de `StateDisplayMap`; «sincronizando», «disponible» e «instalado con versión desactualizada» son estados de vista derivados y «error» es la proyección de los estados terminales de fallo, no un estado de máquina (AD-10, AD-25). Configuración por archivo + variables de entorno + flags de línea de comandos, con precedencia `flags > env > archivo`. Logging JSON con correlación `operationId`/`clientId` obligatoria en toda operación (AD-15, AD-23). El `clientId` es la clave técnica y el `machineName` la etiqueta humana única validada por el servidor: la unicidad del nombre es una regla de nombres, **no** un control de acceso (AD-30). |
 | Errores | Excepciones de dominio tipadas en `Domain`; adaptador que las traduce a la forma de error de API. Ningún mensaje al usuario contiene una excepción sin traducir ni un código interno como texto principal. |
 | Concurrencia | Cada operación de larga duración (descarga, instalación) es una unidad de trabajo con su propio `operationId` y su registro de estado persistido. Las operaciones que tocan el mismo recurso se serializan por recurso, no globalmente. |
 | Configuración y red | El servidor se configura por `--data-dir` y `--http-port`; el cliente, por `serverAddress`, `installDirectory` y `theme`. Ninguna de las dos aplicaciones contacta un servicio en Internet. No existe flag ni selector de motor P2P en el MVP: `BitTorrentTransferEngine` y el módulo `Tracking` aparecen solo tras cerrar S-3 (AD-4, AD-13). |
@@ -671,16 +695,22 @@ erDiagram
     GAME {
         string gameId PK
         string name
+        string description
+        string categories
+        string tags
+        string coverImage
+        string images
         string version
         int64 sizeBytes
-        string licenseInfo
-        string distributionRestrictions
-        string launchExecutable
-        string launchArguments
-        string launchWorkingDirectory
         int minPlayers
         int maxPlayers
-        string osSupport
+        string operatingSystem
+        string distributionType
+        string installationType
+        string launchConfiguration
+        string dependencies
+        string license
+        string distributionRestrictions
     }
     PACKAGE_DESCRIPTOR {
         string packageId PK
@@ -702,6 +732,7 @@ erDiagram
 
 **Archivo del servidor — `catalog.sqlite`:** dueño del catálogo y de la vista de organización. `CLIENT_INSTALLATION_VIEW` es una **proyección de solo lectura**; su `validationStateText` es una **cadena de presentación**, nunca el enum de `Shared` (AD-22).
 
+- `GAME` persiste **exactamente** los mismos campos del DTO `GameDescriptor`, con el **mismo** nombre y en el **mismo** orden: `gameId`, `name`, `description`, `categories[]`, `tags[]`, `coverImage`, `images[]`, `version`, `sizeBytes`, `minPlayers`, `maxPlayers`, `operatingSystem`, `distributionType`, `installationType`, `launchConfiguration`, `dependencies[]`, `license`, `distributionRestrictions`. La tabla y el DTO **no pueden divergir** (AD-34). `sizeBytes` se almacena en bytes exactos (AD-7).
 - `PACKAGE_DESCRIPTOR.chunkSizeBytes` es **opcional e informativo** en el MVP: el camino HTTP no lo usa para calcular rangos (AD-20, AD-24). Es el **único** campo del modelo del MVP que nombra un concepto de troceado, y existe **solo** porque el camino BitTorrent lo necesita si S-3 lo valida; el cliente **no** lo lee en el MVP.
 
 ```mermaid
@@ -730,6 +761,7 @@ erDiagram
         string clientId FK
         string packageId FK
         string state
+        string outcome
     }
     CLIENT_ERROR {
         string errorId PK

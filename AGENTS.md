@@ -25,6 +25,7 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 - Avalonia 12.1.4 ships `net10.0` assets natively plus `net8.0`; it has no `net9.0` assets, so net9.0 falls back to net8.0.
 - Git reports LF→CRLF on every Markdown edit (`core.autocrlf=true`): informational, not an error.
 - Check Markdown encoding before committing: `powershell -NoProfile -File tools/check-encoding.ps1` — fails on stray CJK or U+FFFD.
+- Check the epic backlog before committing: `powershell -NoProfile -File tools/check-epics.ps1` — fails on count/parity gaps, story-ID gaps, out-of-range IDs or AR traceability drift.
 
 ## Conventions that differ from defaults
 
@@ -33,6 +34,6 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 ## Known pitfalls
 
 - Stray CJK has repeatedly been injected into Spanish text by editors, and a review once reported "CJK: PASS - 0" on a corrupted file. `tools/check-encoding.ps1` is the guard; fix what it reports instead of editing around it.
-- `epics/.../reviews/` cite a `verify_epics.py` script that does not exist in this repo; use the counts recorded in each review.
+- `epics/.../reviews/` cite a `verify_epics.py` script that does not exist in this repo; the real guard is `tools/check-epics.ps1` — use the counts recorded in each review.
 
 <!-- /bmad:context -->

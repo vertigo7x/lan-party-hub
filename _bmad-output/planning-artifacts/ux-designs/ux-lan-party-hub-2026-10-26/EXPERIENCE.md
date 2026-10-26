@@ -181,6 +181,7 @@ de progreso se acompaña siempre del texto, y el texto es la fuente de verdad de
 | Paquete corrupto | «Paquete dañado: el hash no coincide · 7,6 GB» |
 | Paquete no confiable | «Paquete no confiable: no se pudo validar contra la raíz de confianza · 7,6 GB» |
 | Instalado | «Instalado · v1.2» |
+| Instalado con versión desactualizada | «instalado con versión desactualizada» + acción «Actualizar» (literal único de la insignia) |
 | Instalación en curso | «Instalando · 68 %» |
 | Instalación existente validada | «Ya instalado · v1.2» + acción «Jugar» habilitada |
 | Instalación existente inválida | «No se puede jugar: <causa>.» + acción «Jugar» bloqueada y acción primaria «Reparar» o «Descargar de nuevo» |
@@ -222,11 +223,11 @@ tabla introduce tokens que no existan en `DESIGN.md`.
   dimensiones, son dos insignias con texto.
 - **Tarjeta de juego**: en la Biblioteca, la acción primaria depende de la validez de la
   instalación, no de su mera presencia. Con instalación **validada**, la primaria es «Jugar»;
-  con instalación **inválida**, «Jugar» aparece bloqueado con el motivo a la vista y la primaria
-  es «Reparar» (o «Descargar de nuevo» si la instalación no es reparable). Con versión
-  desactualizada, «Actualizar» sustituye a la primaria y «Jugar» permanece disponible solo si la
-  instalación sigue siendo válida. La regla completa, con su tabla de situaciones, está en
-  *Estados de instalación y acción primaria*.
+  con instalación **inválida y reparable**, «Jugar» aparece bloqueado con el motivo a la vista y
+  la primaria es «Reparar»; si la instalación no es reparable, la primaria es «Descargar de
+  nuevo». Con la insignia «instalado con versión desactualizada», «Actualizar» sustituye a la
+  primaria y «Jugar» permanece disponible solo si la instalación sigue siendo válida. La regla
+  completa, con su tabla de situaciones, está en *Estados de instalación y acción primaria*.
 
 ### Nombre del equipo: propuesta, validación y adopción
 
@@ -282,7 +283,7 @@ ninguna de las dos superficies puede abrir un camino de lanzamiento distinto.
 
 | Situación | Acción «Jugar» | Acción primaria | Acciones secundarias |
 |---|---|---|---|
-| Instalación validada | Habilitada | «Jugar» | «Actualizar» si la versión está desactualizada; «Reparar» solo bajo petición expresa («Verificar instalación») |
+| Instalación validada | Habilitada | «Jugar» | «Actualizar» si la versión está desactualizada; «Verificar instalación», solo si el usuario la pide de forma expresa, y nunca como acción primaria por defecto |
 | Instalación inválida y reparable | Bloqueada, con el motivo visible junto a la etiqueta | «Reparar» | «Diagnosticar» abre el error registrado |
 | Instalación inválida y no reparable | Bloqueada, con el motivo visible junto a la etiqueta | «Descargar de nuevo» | «Diagnosticar» abre el error registrado |
 
@@ -291,10 +292,21 @@ Reglas transversales:
 - **El motivo del bloqueo es visible sin interactuar.** No está en un tooltip, no está solo en el
   log de Diagnóstico y no requiere hover ni foco: aparece en la propia tarjeta o ficha, junto a la
   etiqueta «Jugar». El tooltip puede repetirlo, nunca ser su único lugar.
+- **El motivo de una acción deshabilitada es visible en la propia acción.** Esta regla es
+  transversal y vale para **toda** acción deshabilitada, no solo para «Jugar»: el motivo se
+  muestra en la propia acción —insignia con el estado y texto que lo explica— y, cuando la acción
+  es un control de la tarjeta o de la ficha, junto a su etiqueta. El tooltip es solo una comodidad
+  que puede **repetir** ese motivo; **nunca** es el único lugar donde aparece. Una acción
+  deshabilitada cuyo motivo solo se puede leer en un tooltip es un defecto de la espina.
 - **«Jugar» bloqueada no es un error de estado; es un estado con su etiqueta.** La insignia
   {colors.state-danger} acompaña al motivo, y el texto del motivo es el que explica qué falta.
 - **No hay segunda vía de lanzamiento.** Mientras la instalación no esté validada, ninguna otra
   superficie (panel de estado, ficha, error de lanzamiento) ofrece ejecutar el juego.
+- **«Reparar» es la acción primaria cuando la instalación es reparable.** En cuanto el cliente
+  detecta una instalación inválida **reparable**, «Reparar» es la acción primaria de la tarjeta y
+  de la ficha, por encima de cualquier otra. «Verificar instalación» es una acción **explícita y
+  solicitada por el usuario**: revalida la instalación bajo demanda y **nunca** ocupa el lugar de
+  la primaria por defecto. Si la instalación no es reparable, la primaria es «Descargar de nuevo».
 - **«Reparar» reutiliza el paquete ya validado.** No vuelve a descargar y no pide una confirmación
   que no tenga consecuencia: la consecuencia es rehacer una instalación inválida, y la interfaz la
   nombra («Se reparará la instalación; la descarga no se repite»).
@@ -329,7 +341,7 @@ no produce ningún cambio de estado.
 | Carga inicial | Catálogo | Esqueletos de tarjetas con la proporción real de la rejilla; no texto «cargando» giratorio |
 | Catálogo vacío | Catálogo | «El catálogo está vacío.» + una acción: «Sincronizar ahora», si el servidor está conectado; si no, «Conectar al servidor» |
 | Sin resultados de búsqueda | Catálogo | «Sin resultados para «<consulta>».» + acción «Quitar filtros» si hay filtros activos; la búsqueda es reversible sin dejar la superficie |
-| Servidor no disponible | Global | Panel derecho en {colors.state-warning}: «Servidor no disponible. Se conserva el último catálogo sincronizado.» Las acciones que requieren servidor se deshabilitan con su motivo visible en el tooltip |
+| Servidor no disponible | Global | Panel derecho en {colors.state-warning}: «Servidor no disponible. Se conserva el último catálogo sincronizado.» Las acciones que requieren servidor se deshabilitan y **el motivo del bloqueo es visible en la propia acción** —insignia con el estado y texto que lo explica—, junto a la etiqueta; el tooltip puede repetirlo, nunca es su único lugar |
 | Reconectando | Global | Punto de presencia en {colors.state-warning}; reintento automático con contador visible «Reintentando · 3 s». No hay modal que interrumpa |
 | Descubrimiento sin resultado | Conexión | «No se encontró ningún servidor en esta red.» + acción primaria «Introducir dirección manualmente». El descubrimiento es una vía, no una puerta única |
 | Cliente incompatible | Conexión, Global | Estado de {colors.state-danger} con la versión del cliente y la del servidor, y el siguiente paso. No hay formulario de credenciales: no las hay |
@@ -341,7 +353,7 @@ no produce ningún cambio de estado.
 | Instalación existente inválida o reparable | Ficha, Biblioteca | «Jugar» aparece **bloqueado** con el motivo visible («No se puede jugar: instalación incompleta», «No se puede jugar: falta el ejecutable», «No se puede jugar: el paquete no coincide con la validación») y la acción primaria pasa a «Reparar», que rehace la instalación desde el paquete ya validado sin volver a descargar. Si la instalación es inválida **y no reparable**, el motivo lo dice y la única acción es «Descargar de nuevo» |
 | Instalación en curso | Descargas | Barra de progreso con fase («Extrayendo», «Aplicando manifiesto») y porcentaje |
 | Instalación fallida | Diagnóstico | Error persistido y reintentable sin reinstalar el cliente. La acción «Reintentar» está disponible |
-| Versión desactualizada | Biblioteca, Ficha | Insignia {colors.state-warning} «Actualización disponible» + acción «Actualizar». La versión instalada y la disponible se muestran en monoespaciada |
+| Versión desactualizada | Biblioteca, Ficha | Insignia {colors.state-warning} con el texto **«instalado con versión desactualizada»** (literal único de la insignia) + acción «Actualizar». La versión instalada y la disponible se muestran en monoespaciada |
 | Error de lanzamiento | Biblioteca | «No se pudo iniciar: <causa>.» con el ejecutable y su ruta exacta cuando el problema es de ruta |
 | Sin juegos instalados | Biblioteca | «No tienes juegos instalados todavía.» + acción «Ver catálogo» |
 | Panel de estado sin operación | Panel derecho | Muestra la última operación terminada con su resultado, no un espacio vacío |

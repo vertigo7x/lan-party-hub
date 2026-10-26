@@ -9,15 +9,16 @@
 ## Veredicto
 
 **ADECUADO CON RESERVAS.** El documento cubre el 100 % de FR-1..FR-11, NFR-1..NFR-10 y
-UX-DR-1..UX-DR-45, con 13 épicas y 47 historias y 243 criterios de aceptación. Tres hallazgos
+UX-DR-1..UX-DR-45, con 13 épicas y 47 historias y 261 criterios de aceptación. Tres hallazgos
 **medios** de cobertura y dos **bajos** de consistencia. Ninguno bloqueante.
 
 > **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):**
-> 13 épicas, 47 historias, 243 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
-> `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de `**Given**` / `**When**` /
-> `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve `stories: 47`,
-> `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`,
-> `total_findings: 0`.
+> 13 épicas, 47 historias, 261 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
+> `## Epic N`, 47 encabezados `### Story N.M` y 261 ocurrencias de `**Given**` / `**When**` /
+> `**Then**` (261/261/261). El guard real `tools/check-epics.ps1` devuelve `Epicas: 13`,
+> `Historias: 47`, `AC (bloques Given): 261`, `Bloques GWT: Given=261 When=261 Then=261`,
+> `Rango de historias: 1.1 .. 13.1` y `OK: todas las comprobaciones de epics pasan.` La tabla de
+> trazabilidad de AR sigue con 25 filas (`AR-1..AR-25`), sin findings.
 >
 > **Recuento equivalente de las restricciones heredadas:** 10 filas `R-MVP-1..R-MVP-10`, de las
 > que **R-MVP-10** es la añadida por la propagación de AD-31 y AD-32 (punto de entrada único del
@@ -317,10 +318,10 @@ trazabilidad dentro del contrato ya aprobado por el PRD, la UX y la arquitectura
 | Mención de cada UX-DR-1..UX-DR-45 | PASS — mínimo 2 menciones |
 | Mención de cada AD-1..AD-32 | PASS — 0 con cero menciones |
 | Secuencia de IDs de historia 1.1..13.1 | PASS — 47 historias, numeración continua sin huecos |
-| Presencia de `**Given**` en cada historia | PASS — 47/47; mínimo 3 AC por historia, 243 en total |
+| Presencia de `**Given**` en cada historia | PASS — 47/47; mínimo 3 AC por historia, 261 en total |
 | Secciones de plantilla (`Overview`, `Requirements Inventory`, `FR Coverage Map`, `Epic List`, `## Epic N`) | PASS — todas presentes y en orden |
 | Placeholders `{{...}}` residuales | PASS — 0 |
-| `verify_epics.py` (verificador oficial de trazabilidad) | PASS — `ok: true`, `total_findings: 0`, `stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25` |
+| `tools/check-epics.ps1` (guard real de trazabilidad del backlog) | PASS — `Epicas: 13`, `Historias: 47`, `AC (bloques Given): 261`, `Bloques GWT: Given=261 When=261 Then=261`, `Rango de historias: 1.1 .. 13.1`, 25 filas en la tabla de trazabilidad de AR (`ar_definitions: 25`, `ar_table_rows: 25`), 0 findings |
 | Barrido de codificación (UTF-8 válido, CJK, U+FFFD) | PASS — 0 CJK, 0 U+FFFD, 0 archivos con UTF-8 inválido |
 | Barrido de placeholders (`{{token}}`, `TODO`/`TBD`/`FIXME`/`XXX`, `<MAYUSCULAS>`) | PASS — 0 |
 | Barrido de marcadores de énfasis `**` desbalanceados | PASS — par |
@@ -343,9 +344,9 @@ el texto ya aprobado.
   la columna «AC que la cita», que declara **la AC concreta que hace exigible cada AR**. Las AR ya
   no se trazan de forma dispersa en el cuerpo del documento: se auditan de un vistazo.
 - **Evidencia:** la tabla declara 25 filas y la columna cita AC reales en las 25. La verificación
-  mecánica `verify_epics.py` confirma `ar_definitions: 25` y `ar_table_rows: 25`, y no emite
-  ningún hallazgo `ar_table_ref`, `ar_table_missing`, `ar_citation` ni `ar_unlisted`
-  (`total_findings: 0`).
+  mecánica `tools/check-epics.ps1` confirma 25 filas de definición y 25 filas de tabla de
+  trazabilidad, y no emite ningún hallazgo `ar_table_ref`, `ar_table_missing`, `ar_citation` ni
+  `ar_unlisted`.
 - **Cierre de AR-21 y AR-25:** ambas quedan citadas **dentro de AC que las hacen exigibles**:
   AR-21 en Story 1.1 AC7 y Story 13.1 AC1 (clasificación de niveles de prueba y exclusión
   explícita del caso P2P del conjunto obligatorio del MVP), y AR-25 en Story 12.1 AC8 y Story 12.2
@@ -361,8 +362,8 @@ el texto ya aprobado.
   MVP**; S-1, S-3, S-4 y S-5 (Story 12.2..12.5) quedan como **NO BLOQUEANTES**, con la regla de que
   su resultado no modifica ningún artefacto del MVP.
 - **Evidencia:** las filas AR-25 de la tabla de trazabilidad son `12.1 AC8, 12.2 AC5`, y ambas AC
-  citan `AR-25` junto con `R-MVP-5` y `AD-21`. `verify_epics.py` no reporta ningún hallazgo de
-  cita inconsistente (`ar_citation: 0`).
+  citan `AR-25` junto con `R-MVP-5` y `AD-21`. `tools/check-epics.ps1` no reporta ningún hallazgo de
+  cita inconsistente.
 - **Efecto de alcance:** ninguno. La resolución hace exigible lo que AD-21 ya fijaba; no introduce
   capacidad nueva ni cambia el carácter de ningún spike.
 

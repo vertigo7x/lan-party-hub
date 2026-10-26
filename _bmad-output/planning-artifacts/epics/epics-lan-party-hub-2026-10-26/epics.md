@@ -2,7 +2,7 @@
 status: final
 checkpoint:
   id: E
-  scope: Aprobación del backlog inicial de la Fase E (13 épicas, 47 historias, 243 criterios de aceptación)
+  scope: Aprobación del backlog inicial de la Fase E (13 épicas, 47 historias, 261 criterios de aceptación)
   status: approved
   approvedBy: user
   approvedOn: '2026-10-26'
@@ -29,21 +29,21 @@ inputDocuments:
 
 Este documento proporciona el desglose completo de épicas e historias de LAN Party Hub,
 decomponiendo los requisitos del PRD, del contrato UX (`DESIGN.md` + `EXPERIENCE.md`) y de las
-decisiones de arquitectura (`ARCHITECTURE-SPINE.md`, AD-1..AD-30) en historias implementables y
+decisiones de arquitectura (`ARCHITECTURE-SPINE.md`, AD-1..AD-34) en historias implementables y
 verificables.
 
 **Fase:** E — Épicas e historias. **Base:** commit `bde708d97766dfc607528abb9d3a28bc82487f0e`
 (arquitectura con Checkpoint D aprobado). **Checkpoint E:** **aprobado por el usuario el
 2026-10-26**. **Siguiente checkpoint:** Sprint Planning (Fase F).
 
-**Cierre documental de Fase E:** 13 épicas, 47 historias y 243 criterios de aceptación. Las revisiones
+**Cierre documental de Fase E:** 13 épicas, 47 historias y 261 criterios de aceptación. Las revisiones
 `reviews/review-coverage-traceability.md`, `reviews/review-adversarial.md` y
 `reviews/review-editorial.md` quedan actualizadas con los conteos reales y las resoluciones
 E-TRACE, AR-25 y R-MVP-8. La verificación mecánica final de `verify_epics.py` devuelve `ok: true`,
 `total_findings: 0`.
 
 **Cierre del Checkpoint E (aprobación humana del backlog inicial):** el usuario aprobó
-explícitamente el backlog inicial de la Fase E —13 épicas, 47 historias y 243 criterios de
+explícitamente el backlog inicial de la Fase E —13 épicas, 47 historias y 261 criterios de
 aceptación— el **2026-10-26**. La aprobación es **humana y explícita**: no queda implícita en el
 estado `final` del documento ni en el mero cierre de la fase. El alcance aprobado es exactamente el
 contenido vigente de este documento; esta entrada **no modifica** ninguna historia, criterio de
@@ -60,7 +60,7 @@ exposición del nombre efectivo—; la fila de la tabla de trazabilidad de AR-14
 resuelve: la unicidad del `machineName` deja de ser una ambigüedad del backlog y pasa a ser una
 regla exigible de la arquitectura (**AD-30**), con el recuento real de AC del documento
 (**13/47/239** — cifra **histórica** de ese corte de cierre, anterior a la propagación de AD-31 y
-AD-32; el recuento **vigente** del documento es **13/47/243**).
+AD-32; el recuento **vigente** del documento es **13/47/261**).
 
 **Cierre por AD-31 y AD-32 (derivación determinista y contrato único del registro):** Story 9.1
 incorpora los criterios AC11..AC14 —derivación determinista y acotada del nombre efectivo
@@ -73,7 +73,7 @@ formado, `426` ante versión incompatible) con la colisión como éxito y la rec
 derivación—; la fila de la tabla de trazabilidad de AR-14 pasa a `9.1 AC5..AC14`. Se añade la
 restricción heredada **R-MVP-10** (punto de entrada único de registro, derivación determinista y
 acotada, colisión no es error), gobernada por AD-31 y AD-32. El recuento real de AC del
-documento pasa a **13/47/243**, que es el recuento **vigente** del documento (el **13/47/239** del
+documento pasa a **13/47/261**, que es el recuento **vigente** del documento (el **13/47/239** del
 cierre por AD-30 queda como cifra **histórica** de ese corte).
 
 ### Alcance y límites de esta fase
@@ -186,7 +186,7 @@ de trackers, DHT ni servicios externos públicos.
 
 ### Additional Requirements
 
-Requisitos técnicos derivados de la arquitectura (AD-1..AD-30) que condicionan la
+Requisitos técnicos derivados de la arquitectura (AD-1..AD-34) que condicionan la
 implementación. Se expresan como requisitos exigibles, no como decisiones de diseño.
 
 - **AR-1 (Clean Architecture modular).** Ningún tipo de `Domain` importa `Infrastructure`, EF Core,
@@ -692,31 +692,31 @@ esta tabla es la forma de auditarlas sin re-leer el documento entero.
 
 | AR | AC que la cita | Verificabilidad |
 | --- | --- | --- |
-| AR-1 | 1.1 AC1, AC2, 2.1 AC5, 4.1 AC1, 5.1 AC1 | Estructural (grafo de dependencias) |
+| AR-1 | 1.1 AC1..AC2, 2.1 AC5, 4.1 AC1, 5.1 AC1 | Estructural (grafo de dependencias) |
 | AR-2 | 4.5 AC6 | Estructural (contrato de API) |
-| AR-3 | 1.1 AC4, AC5, 2.2 AC4, 5.3 AC6, 9.1 AC4, 9.2 AC1, AC2 | Estructural (contenido de `Shared`) |
+| AR-3 | 1.1 AC4..AC5, 2.2 AC4, 5.3 AC6, 9.1 AC4, 9.2 AC1..AC2 | Estructural (contenido de `Shared`) |
 | AR-4 | 1.4 AC3, 4.2 AC3, 6.2 AC3, 9.1 AC7, 9.3 AC1 | Estructural (forma de `ApiError`) |
-| AR-5 | 3.3 AC3, AC4, 7.1 AC7, 9.2 AC3, 10.1 AC1, AC2 | Estructural (`StateDisplayMap`) |
-| AR-6 | 2.2 AC2, AC3 | Estructural (`PackageDescriptor`) |
-| AR-7 | 2.2 AC2, AC4, AC5, AC6, 6.1 AC1, 7.1 AC2 | Estructural (manifiesto canónico) |
-| AR-8 | 3.1 AC7, 3.3 AC4, 6.1 AC1, AC2, AC4, AC5, 7.1 AC1, AC3, AC5, AC6, 9.2 AC6, 10.2 AC2, 11.4 AC1 | Estructural (orden normativo) |
-| AR-9 | 1.3 AC4, 7.1 AC5, AC6, 7.2 AC1, AC2, AC3 | Estructural (confines de ruta) |
+| AR-5 | 3.3 AC3..AC4, 7.1 AC7, 9.2 AC3, 10.1 AC1..AC2 | Estructural (`StateDisplayMap`) |
+| AR-6 | 2.2 AC2..AC3 | Estructural (`PackageDescriptor`) |
+| AR-7 | 2.2 AC2, 2.2 AC4..AC6, 6.1 AC1, 7.1 AC2 | Estructural (manifiesto canónico) |
+| AR-8 | 3.1 AC7, 3.3 AC4, 6.1 AC1..AC2, 6.1 AC4..AC5, 7.1 AC1, 7.1 AC3, 7.1 AC5..AC6, 9.2 AC6, 10.2 AC2, 11.4 AC1 | Estructural (orden normativo) |
+| AR-9 | 1.3 AC4, 7.1 AC5..AC6, 7.2 AC1..AC3 | Estructural (confines de ruta) |
 | AR-10 | 1.3 AC1, 5.3 AC4, 7.1 AC4, 7.2 AC4 | Estructural (layout en disco) |
-| AR-11 | 1.3 AC3, 5.1 AC5, 5.2 AC5, AC6, 5.3 AC1, AC2 | Estructural (progreso persistido) |
-| AR-12 | 1.2 AC3, AC4, 1.3 AC3 | Estructural (persistencia por rol) |
-| AR-13 | 2.1 AC5, 2.2 AC6, 5.2 AC1, 7.1 AC7, 9.1 AC5, 9.2 AC3, AC4 | Estructural (propietario de entidad) |
+| AR-11 | 1.3 AC3, 5.1 AC5, 5.2 AC5..AC6, 5.3 AC1..AC2 | Estructural (progreso persistido) |
+| AR-12 | 1.2 AC3..AC4, 1.3 AC3 | Estructural (persistencia por rol) |
+| AR-13 | 2.1 AC5, 2.2 AC6, 5.2 AC1, 7.1 AC1, 7.1 AC7, 9.1 AC5, 9.2 AC3..AC4 | Estructural (propietario de entidad) |
 | AR-14 | 1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC14 | Estructural (identidad del cliente) |
-| AR-15 | 1.1 AC6, 5.2 AC5, AC6, 5.3 AC6, 7.1 AC4, AC5, AC6, AC7 | Estructural (máquinas de estado) |
-| AR-16 | 2.3 AC2, AC3, 3.1 AC1, AC4, AC5, AC6, 4.5 AC6, 9.2 AC5, 10.2 AC4 | Estructural (consistencia del catálogo) |
+| AR-15 | 1.1 AC6, 5.2 AC5..AC6, 5.3 AC6, 7.1 AC4..AC7 | Estructural (máquinas de estado) |
+| AR-16 | 2.3 AC2..AC3, 3.1 AC1, 3.1 AC4..AC6, 4.5 AC6, 9.2 AC5, 10.2 AC4 | Estructural (consistencia del catálogo) |
 | AR-17 | 1.2 AC1 | Estructural (superficie de red) |
-| AR-18 | 4.4 AC1, AC2, AC3, AC5, AC6, AC7 | Estructural (fijación del ancla) |
-| AR-19 | 1.2 AC3 | Estructural (despliegue) |
-| AR-20 | 1.4 AC1, AC2, AC3, 6.2 AC3, AC4, 9.1 AC8, 9.4 AC3 | Estructural (observabilidad) |
+| AR-18 | 4.4 AC1..AC3, 4.4 AC5..AC7 | Estructural (fijación del ancla) |
+| AR-19 | 1.2 AC3, 1.3 AC5 | Estructural (despliegue) |
+| AR-20 | 1.4 AC1..AC3, 6.2 AC3..AC4, 9.1 AC8, 9.4 AC3 | Estructural (observabilidad) |
 | AR-21 | 1.1 AC7, 13.1 AC1 | **Verificable** (clasificación de niveles de prueba) |
-| AR-22 | 8.1 AC1, AC2, AC5, 9.2 AC2 | Estructural (lanzador aislado) |
+| AR-22 | 8.1 AC1..AC2, 8.1 AC5, 9.2 AC2 | Estructural (lanzador aislado) |
 | AR-23 | 1.2 AC2, 1.3 AC4 | Estructural (configuración y precedencia) |
-| AR-24 | 1.3 AC3, 5.1 AC5, 5.2 AC8 | Estructural (concurrencia) |
-| AR-25 | 12.1 AC8, 12.2 AC5 | **Verificable** (carácter normativo del spike) |
+| AR-24 | 1.3 AC3, 5.1 AC5, 5.2 AC8..AC10 | Estructural (concurrencia) |
+| AR-25 | 12.1 AC8, 12.2 AC5, 12.3 AC5, 12.4 AC6..AC9, 12.5 AC8..AC9, 12.5 AC11..AC12 | **Verificable** (carácter normativo del spike) |
 
 > **Nota de alcance (E-3, resuelta).** AR-21 y AR-25 no admiten una comprobación puramente
 > estructural: la primera se verifica en la **existencia y clasificación** de los niveles de prueba
@@ -874,11 +874,37 @@ Esta épica es **fundacional**: no entrega valor de usuario por sí misma, pero 
 sistema (Clean Architecture, monolito modular, contratos en `Shared`) y el hecho de que **el
 proyecto del MVP no referencia MonoTorrent ni ninguna biblioteca P2P**.
 
+**Dependencias:**
+
+- **Ninguna** — es la épica fundacional: no depende de ninguna otra épica.
+
+
 ### Story 1.1: Estructura de solución y contratos compartidos
 
 Como arquitecto del producto,
 quiero la solución estructurada en servidor, cliente y contratos compartidos,
 so que ninguna regla de negocio se duplique y el dominio no dependa de la infraestructura.
+
+**Dependencias:**
+
+- **Ninguna** — es la historia fundacional que crea la solución y los contratos de `Shared`
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación: la historia no produce fallos de
+operación en tiempo de ejecución, solo fija la forma de la solución y de los contratos de `Shared`.
+
+**Pruebas necesarias:**
+
+**Unitarias.** La forma de la solución y la ausencia de referencias prohibidas se verifican por
+inspección del grafo de dependencias y de los ficheros de proyecto, sin arranque: es el nivel mínimo
+donde el comportamiento «no hay dependencia prohibida» es observable. La clasificación de niveles
+de prueba (AR-21) se verifica por la presencia y el contenido declarado de los tres proyectos de
+prueba.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -943,6 +969,24 @@ Como organizador del evento,
 quiero arrancar el servidor en mi equipo sin instalar nada y sin que abra puertos innecesarios,
 so que el evento arranque en minutos y la superficie expuesta sea la mínima.
 
+**Dependencias:**
+
+- **Story 1.1** — estructura de la solución y contratos de `Shared` que el servidor consume
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación.
+
+**Pruebas necesarias:**
+
+**Integración.** El arranque real del servidor, la creación de `catalog.sqlite`, la aplicación de
+migraciones de EF Core y la exposición del endpoint de métricas solo son observables con el host en
+ejecución y SQLite real en archivo.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** el binario del servidor recién publicado,
@@ -983,6 +1027,25 @@ quiero que el cliente arranque en mi equipo conservando mi configuración y el e
 operaciones,
 so que no pierda nada al reiniciar la aplicación.
 
+**Dependencias:**
+
+- **Story 1.1** — estructura de la solución y contratos de `Shared` que el cliente consume
+
+**Casos de error:**
+
+Un registro persistido cuyo `transferEngine` no exista en la versión activa se **rechaza en el
+arranque** en lugar de reinterpretarse (AC3); el `clientId` no se regenera nunca (AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** El arranque real del cliente sobre `%LOCALAPPDATA%\LanPartyHub`, la creación de
+`state.sqlite`, la aplicación de migraciones y la reconciliación del progreso persistido contra el
+archivo parcial requieren el cliente en ejecución y su base de datos real en archivo.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** un cliente nuevo,
@@ -1019,11 +1082,38 @@ el arranque, en lugar de reinterpretarse
 **And** el directorio nuevo es el único confinado por la regla de confines de extracción
 *(AR-23, AR-9)*.
 
+**Given** el cliente publicado para Windows x64,
+**When** se arranca en un equipo con Windows 10 o Windows 11,
+**Then** el cliente arranca y opera con normalidad en esa plataforma, y el artefacto no declara
+soporte para ninguna otra plataforma del MVP: la evolución multiplataforma se conserva como
+posibilidad, no como alcance
+*(NFR-4, AR-19, AD-17)*.
+
 ### Story 1.4: Observabilidad correlacionada desde el primer arranque
 
 Como ingeniero del producto,
 quiero logs estructurados y correlacionados por operación y por cliente desde el primer arranque,
 so que un fallo posterior sea diagnosticable sin adivinar.
+
+**Dependencias:**
+
+- **Story 1.1** — estructura de la solución y logging estructurado base
+- **Story 1.2** — arranque del servidor que expone el endpoint de métricas del host
+
+**Casos de error:**
+
+Un `code` de error desconocido se muestra con el texto genérico del catálogo y nunca como texto
+principal (AC3).
+
+**Pruebas necesarias:**
+
+**Integración.** La correlación por `operationId` y `clientId` a través de la frontera
+servidor-cliente y la exposición local del endpoint de métricas del host solo son observables con el
+servidor en ejecución.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1053,11 +1143,35 @@ Marta puede registrar un videojuego con todos sus metadatos, adjuntar su paquete
 su manifiesto firmado y sus restricciones de licencia; el catálogo publicado queda disponible para
 que todos los clientes lo sincronicen.
 
+**Dependencias:**
+
+- **Epic 1** — estructura de la solución, contratos de `Shared` y esquema del servidor (`catalog.sqlite`)
+
+
 ### Story 2.1: Alta y modificación de videojuegos con metadatos completos
 
 Como administradora del servidor,
 quiero registrar un videojuego con todos sus metadatos y modificarlo después,
 so que el catálogo refleje la realidad de lo que se puede jugar en el evento.
+
+**Dependencias:**
+
+- **Story 1.2** — esquema del servidor (`catalog.sqlite`) y repositorio de paquetes
+
+**Casos de error:**
+
+La publicación se **bloquea** cuando falta la licencia o las restricciones de distribución, y el
+formulario explica **cuál** de los dos falta (Story 2.2 AC1, heredado de esta historia).
+
+**Pruebas necesarias:**
+
+**Integración.** El alta y la modificación se verifican contra `catalog.sqlite` real y el
+formulario del servidor; la forma exacta de `GameDescriptor` es además comprobable por
+inspección del contrato de `Shared`.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1066,8 +1180,11 @@ so que el catálogo refleje la realidad de lo que se puede jugar en el evento.
 **Then** se registran identificador único, nombre, descripción, categorías, etiquetas, carátula,
 imágenes, versión, tamaño, jugadores mínimo y máximo, sistema operativo, tipo de distribución, tipo
 de instalación, configuración de lanzamiento, dependencias, licencia y restricciones de
-distribución
-*(FR-1)*.
+distribución,
+**And** esos metadatos viajan con la forma exacta del contrato `GameDescriptor` de `Shared` —los
+mismos campos, en el mismo orden, sin campos opcionales ni condicionales— y la entidad `GAME` del
+servidor los persiste con ese mismo nombre y ese mismo orden
+*(FR-1, AD-34, AD-18)*.
 
 **Given** un videojuego persistido,
 **When** se consulta,
@@ -1099,6 +1216,26 @@ versión se muestran en monoespaciada,
 Como administradora del servidor,
 quiero adjuntar el paquete de un videojuego y publicarlo con su manifiesto firmado,
 so que solo se distribuya contenido permitido y verificable.
+
+**Dependencias:**
+
+- **Story 2.1** — videojuego registrado con sus metadatos obligatorios
+
+**Casos de error:**
+
+La publicación se **bloquea** si falta información de licencia o restricciones de distribución
+(AC1). Un manifiesto manipulado que contenga una acción no permitida se rechaza y no se instala
+(Story 7.1 AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** La persistencia de `PackageDescriptor` e `InstallationManifest`, la firma
+Ed25519 sobre el manifiesto canónico y el bloqueo de la publicación sin licencia requieren el servidor
+en ejecución y su base de datos real.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1148,6 +1285,24 @@ Como organizador del evento,
 quiero ver y ajustar qué juegos forman parte del catálogo,
 so que la oferta del evento sea la que yo decido.
 
+**Dependencias:**
+
+- **Story 2.2** — paquete publicado con licencia, restricciones y manifiesto firmado
+
+**Casos de error:**
+
+La retirada de un juego **no** borra la instalación existente de ningún cliente ni la proyección
+de instalación del servidor (AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** El listado de paquetes, la retirada de un juego y el incremento monótono del
+`catalogVersion` son observables sobre el servidor en ejecución con su base de datos real.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** la sección Paquetes del servidor,
@@ -1172,11 +1327,39 @@ información de licencia y restricciones
 Ana ve el catálogo del evento ya sincronizado en su cliente, lo busca, lo filtra y abre la ficha
 completa de un videojuego, siempre sabiendo si el catálogo está al día.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared` y persistencia propia del cliente
+- **Epic 2** — catálogo publicado con `catalogVersion` monótono creciente
+
+
 ### Story 3.1: Sincronización del catálogo por snapshot completo
 
 Como jugador de LAN,
 quiero que el catálogo del evento se sincronice solo en mi cliente,
 so que vea lo que hay disponible sin pedirle nada a nadie.
+
+**Dependencias:**
+
+- **Story 1.3** — persistencia propia del cliente (`state.sqlite`)
+- **Story 2.3** — catálogo publicado con `catalogVersion` monótono creciente
+
+**Casos de error:**
+
+Si el servidor no está disponible, el cliente **conserva** el último catálogo válido y comunica el
+estado de sincronización pendiente (AC3). Si el paquete en curso fue retirado del catálogo, la
+operación **termina** con el resultado explícito `Paquete retirado del catálogo`, **distinto del
+fallo**, que no se persiste como `ClientError` (AC4, AC7).
+
+**Pruebas necesarias:**
+
+**Integración.** La aplicación del snapshot completo, la regla de versión mayor y la
+generación de `CatalogChanged` son observables con el servidor en ejecución y el cliente conectado;
+el escenario de aplicación de snapshot concurrente con una descarga en curso es de **E2E en LAN real**.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1221,17 +1404,38 @@ la marca con el estado de vista derivado correspondiente
 
 **Given** un paquete o juego retirado del catálogo mientras una operación está en curso,
 **When** la operación termina,
-**Then** el resultado `Paquete retirado del catálogo` se presenta desde la tabla única que le
-corresponde en `Shared`,
-**And** no se presenta como fallo ni se persiste como `ClientError`,
+**Then** el resultado `Paquete retirado del catálogo` es el valor `PackageWithdrawn` de la
+enumeración cerrada `OperationOutcome` (`Succeeded`, `PackageWithdrawn`, `Failed`) de `Shared`, y se
+presenta desde la tabla única que le corresponde, el `StateDisplayMap`,
+**And** no se presenta como fallo ni se persiste como `ClientError`: `PackageWithdrawn` no produce
+`ApiError` ni se registra en el `ErrorCatalog`,
 **And** el texto no se define fuera de esa tabla
-*(AR-8, R-MVP-8, AD-25, AD-26)*.
+*(AR-8, R-MVP-8, AD-33, AD-25, AD-26)*.
 
 ### Story 3.2: Búsqueda, filtrado y categorización del catálogo
 
 Como jugador de LAN,
 quiero buscar y filtrar los juegos por nombre y categoría mientras escribo,
 so que encuentre el que busco sin navegar tarjetas.
+
+**Dependencias:**
+
+- **Story 3.1** — catálogo sincronizado sobre el que se busca y se filtra
+
+**Casos de error:**
+
+Una búsqueda sin resultados con filtros activos muestra «Sin resultados para «<consulta>».» y
+ofrece «Quitar filtros» (AC3). Un catálogo vacío muestra «El catálogo está vacío.» con «Sincronizar
+ahora» o «Conectar al servidor» según el servidor esté conectado o no (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** El filtrado al escribir con retardo, el filtro por categoría y los estados
+vacíos se verifican sobre el cliente con el catálogo sincronizado.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1265,12 +1469,36 @@ filtros»,
 infinito
 *(UX-DR-27)*.
 
+**Given** la carga inicial de la superficie de catálogo,
+**When** todavía no hay tarjetas que mostrar,
+**Then** la rejilla muestra **esqueletos de tarjetas** con la proporción real de la rejilla, y no un
+texto «cargando» giratorio
+*(UX-DR-28, UX-DR-27)*.
+
 ### Story 3.3: Ficha del videojuego con su estado de vista
 
 Como jugador de LAN,
 quiero abrir la ficha de un juego y ver su versión, tamaño, jugadores, sistema operativo y
 requisitos,
 so que sepa si me sirve antes de descargar.
+
+**Dependencias:**
+
+- **Story 3.2** — rejilla del catálogo desde la que se abre la ficha
+- **Story 7.1** — reglas de certificación `Installed` / `Repairable` que originan la insignia de vista
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación.
+
+**Pruebas necesarias:**
+
+**Integración.** La ficha, sus valores exactos y las insignias de estado de vista se verifican
+sobre el cliente con el catálogo sincronizado y una instalación registrada.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1311,11 +1539,35 @@ Ana localiza el servidor de la LAN —por descubrimiento automático o por direc
 que su cliente es compatible con el servidor, fija el ancla de confianza out-of-band y, ante una
 interrupción, recupera la conexión sin perder el control.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared`, `ServerEndpoint` y versión de protocolo
+
+
 ### Story 4.1: Descubrimiento automático del servidor por mDNS
 
 Como jugador de LAN,
 quiero que el cliente encuentre el servidor solo, sin teclear nada,
 so que no dependa de que alguien me pase la dirección.
+
+**Dependencias:**
+
+- **Story 1.1** — contrato `ServerEndpoint` de `Shared`
+
+**Casos de error:**
+
+Si el descubrimiento mDNS está bloqueado por la política de la red, el cliente **no** falla de
+forma fatal y la vía manual permanece operativa (AC4). Si el descubrimiento no devuelve nada, la
+superficie ofrece «Introducir dirección manualmente» (AC3).
+
+**Pruebas necesarias:**
+
+**Integración.** El descubrimiento mDNS y la resolución al contrato `ServerEndpoint` requieren
+un servidor real escuchando en la red de prueba.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1350,6 +1602,24 @@ Como jugador de LAN,
 quiero teclear la dirección del servidor cuando el descubrimiento no me sirve,
 so que siempre tenga una salida y no dependa de una sola puerta.
 
+**Dependencias:**
+
+- **Story 1.1** — contrato `ServerEndpoint` de `Shared`
+
+**Casos de error:**
+
+Una dirección mal formada se presenta con las tres partes obligatorias (qué falló, por qué, qué
+hacer ahora) y **no** muestra el código interno como texto principal (AC3).
+
+**Pruebas necesarias:**
+
+**Integración.** La conexión por dirección manual y la presentación del error de dirección
+mal formada requieren un servidor real al que conectarse.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** la superficie de Conexión,
@@ -1376,6 +1646,24 @@ y **no** muestra el código interno como texto principal
 Como jugador de LAN,
 quiero saber con claridad si mi cliente es compatible con el servidor,
 so que entienda por qué no puedo operar y qué tengo que hacer.
+
+**Dependencias:**
+
+- **Story 1.1** — versión de protocolo y `VersionInfo` de `Shared`
+
+**Casos de error:**
+
+Un cliente incompatible recibe **`426 Upgrade Required`** con la versión de servidor requerida y el
+rango mínimo soportado, y **no** completa sincronización, descarga ni instalación (AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** El `426 Upgrade Required` y la forma del diagnóstico de versión son observables
+con el servidor en ejecución y peticiones con cabeceras de versión manipuladas.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1418,6 +1706,28 @@ Como organizador del evento,
 quiero que el fingerprint de la clave del servidor se entregue a los jugadores por un canal que no
 pasa por la LAN,
 so que un intermediario no pueda sustituir la clave en el primer emparejamiento.
+
+**Dependencias:**
+
+- **Story 4.3** — diagnóstico de versión ya resuelto antes de fijar el ancla
+
+**Casos de error:**
+
+Si el fingerprint **no coincide**, el cliente **rechaza**: no persiste el ancla, no descarga, no
+instala, no escribe nada en la caché `manifests/`, no crea archivo parcial y no registra operación, y
+usa un `code` del `ErrorCatalog` **distinto** del de «firma inválida» (AC2). Un ancla ya fijada no se
+sustituye por una clave distinta: se rechaza y exige un emparejamiento out-of-band nuevo (AC6).
+
+**Pruebas necesarias:**
+
+**Unitarias.** La comparación de fingerprints, el rechazo previo a persistir y la negativa a
+sustituir un ancla fijada son verificables en el cliente sin necesidad de una LAN: es el nivel mínimo
+donde «no se persiste nada» es observable (AD-16 clasifica este caso como unitario o de
+integración).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1476,6 +1786,27 @@ quiero ver siempre el estado de mi conexión y que el cliente se recupere solo t
 servidor,
 so que no tenga que preguntar qué está pasando.
 
+**Dependencias:**
+
+- **Story 4.2** — vía de conexión disponible (dirección manual)
+- **Story 4.3** — comprobación de compatibilidad de versión ya resuelta
+
+**Casos de error:**
+
+Si el servidor está temporalmente inaccesible, el panel derecho pasa a `{colors.state-warning}`
+con «Servidor no disponible. Se conserva el último catálogo sincronizado.», el punto de presencia
+pasa a `{colors.state-warning}` con reintento automático y contador visible, y **no** hay modal que
+interrumpa; las acciones que requieren servidor se deshabilitan con su motivo visible (AC3, AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La persistencia del panel derecho, la reconexión automática y el contador de
+reintento son observables con el servidor real al que se corta el acceso.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** el cliente conectado,
@@ -1520,11 +1851,35 @@ Ana descarga un paquete del servidor con progreso visible, puede pausar y reanud
 se reinicia o el servidor cae, la descarga se recupera desde el progreso persistido sin empezar de
 cero.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared`, layout en disco del cliente y persistencia propia
+
+
 ### Story 5.1: Abstracción de transferencia con un único camino HTTP
 
 Como arquitecto del producto,
 quiero que la transferencia de bytes tenga un puerto propio y una única implementación en el MVP,
 so que el dominio no dependa de ninguna biblioteca de transferencia.
+
+**Dependencias:**
+
+- **Story 1.1** — contratos de `Shared` y puerto `ITransferEngine` declarado en la capa de aplicación
+
+**Casos de error:**
+
+Un registro cuyo `transferEngine` no exista en la versión activa se rechaza al arrancar en lugar
+de reinterpretarse (Story 1.3 AC3).
+
+**Pruebas necesarias:**
+
+**Unitarias.** La forma del puerto `ITransferEngine`, la ausencia de referencias a HTTP, P2P y
+*trackers* en el dominio y el valor único y cerrado de `transferEngine` son verificables por
+inspección del grafo de dependencias y del dominio, sin arranque.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1566,6 +1921,28 @@ parámetro configurable y no reinterpretar un valor desconocido
 Como jugador de LAN,
 quiero ver el progreso de la descarga y poder pausarla y reanudarla,
 so que atienda otra cosa sin perder lo descargado.
+
+**Dependencias:**
+
+- **Story 5.1** — puerto `ITransferEngine` y única implementación `HttpRangeTransferEngine`
+- **Story 1.3** — layout en disco del cliente (`downloads/`) y persistencia propia
+
+**Casos de error:**
+
+El servidor devuelve **`416`** cuando el rango no es satisfacible (AC7). Al cancelar, el estado
+pasa a `Cancelled`, que es terminal, y se **borra** el archivo parcial y se **reinicia** el registro
+de progreso persistido: `bytesPersisted` vuelve a cero y la operación **no** queda reintentable por
+reanudación, a diferencia de `Failed` (AC5).
+
+**Pruebas necesarias:**
+
+**Integración.** El reparto equitativo del enlace entre clientes que descargan a la vez exige
+varias descargas reales contra un servidor de prueba; el motor de transferencia HTTP contra servidor
+de prueba es el nivel mínimo donde ese reparto es observable.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1627,11 +2004,47 @@ de reparto es el **cliente**, no la operación ni la conexión, de modo que un c
 descargas simultáneas recibe la parte que le corresponde de cliente, no una parte por operación
 *(FR-5, NFR-2, AR-14, AR-24)*.
 
+**Given** una operación de larga duración del cliente,
+**When** se inicia,
+**Then** es una **unidad de trabajo** con su propio `operationId` y su registro de estado persistido,
+**And** las operaciones que tocan el **mismo recurso** se serializan **por recurso**, no globalmente:
+dos operaciones sobre recursos distintos pueden coexistir
+*(AR-24, AD-14)*.
+
+**Given** los límites de concurrencia del MVP,
+**When** se inspecciona la configuración,
+**Then** los límites **por cliente** (descargas simultáneas y conexiones totales) son
+**configurables** y tienen **valor por defecto**, sin que el valor por defecto dependa de ningún
+resultado de spike
+*(AR-24, NFR-2, NFR-6, AD-14)*.
+
 ### Story 5.3: Persistencia del progreso y recuperación tras reinicio
 
 Como jugador de LAN,
 quiero que la descarga sobreviva a un reinicio del equipo,
 so que un paquete de varios gigabytes no vuelva a empezar de cero.
+
+**Dependencias:**
+
+- **Story 5.2** — operación de descarga con su `operationId` y su registro de intención
+- **Story 1.3** — layout en disco del cliente (`downloads/`) y esquema `state.sqlite`
+
+**Casos de error:**
+
+Un cliente incompatible no inicia la descarga y recibe el diagnóstico de incompatibilidad de
+versión (AC5). El progreso efectivo al arrancar es la **intersección** de lo persistido y lo que el
+archivo parcial contiene, de modo que un registro divergente se descarta en vez de asumir que el
+archivo está completo (AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** La reconciliación del offset persistido contra el archivo parcial, la
+reanudación con `Range` y la persistencia del progreso sobreviven a un reinicio real del proceso del
+cliente sobre SQLite real en archivo.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1671,10 +2084,23 @@ progreso efectivo es la intersección de lo persistido y lo que el archivo conti
 `totalBytes` y `state` (`DownloadState`), con la forma exacta del contrato
 *(FR-5, AR-3, AR-15, AD-22)*.
 
+**Given** el conjunto de descargas de prueba interrumpidas del MVP,
+**When** cada una se reanuda tras la interrupción,
+**Then** el **100 %** de las descargas de prueba interrumpidas se reanudan desde el progreso
+persistido, sin reiniciar el paquete desde cero
+*(SM-2, FR-5, NFR-3)*.
+
 ## Epic 6: El jugador verifica que el paquete es auténtico
 
 Ana valida el paquete descargado contra el ancla de confianza fijada out-of-band, distingue entre
 paquete dañado y paquete no confiable y ninguno de los dos llega a la fase de instalación.
+
+**Dependencias:**
+
+- **Epic 1** — contratos `Shared`: `ApiError`, `ErrorCatalog`, `InstallationManifest` y sobre firmado
+- **Epic 4** — ancla de confianza fijada out-of-band, requisito previo de la validación de autenticidad
+- **Epic 5** — paquete descargado y manifiesto firmado disponible para validar
+
 
 ### Story 6.1: Verificación de integridad y de autenticidad antes de instalar
 
@@ -1682,6 +2108,30 @@ Como jugador de LAN,
 quiero que el cliente verifique el paquete antes de instalarlo y me diga si está dañado o si no es
 confiable,
 so que nunca ejecute contenido alterado ni procedente de una fuente suplantada.
+
+**Dependencias:**
+
+- **Story 4.4** — ancla de confianza ya fijada out-of-band
+- **Story 5.3** — paquete descargado y manifiesto firmado disponible en la caché `manifests/`
+
+**Casos de error:**
+
+Si el `sha256` no coincide, el paquete se **rechaza antes de la instalación**, el archivo parcial
+se descarta y la operación se marca como fallida y **no reparable por reanudación** (AC2). Un
+paquete que no puede validarse contra la raíz de confianza se marca como **no confiable** y no se
+instala (AC3). Una firma inválida contra el ancla ya fijada no deja ninguna escritura en disco ni
+operación iniciada y el error se persiste para diagnóstico (AC4). Un manifiesto con `schemaVersion`
+no soportada se rechaza, no se instala y el error se persiste (AC5).
+
+**Pruebas necesarias:**
+
+**Unitarias.** El cálculo del `sha256`, la validación de la firma Ed25519, el descarte del
+parcial y la distinción entre corrupción y falta de autenticidad son verificables sin red y sin
+LAN: es el nivel mínimo donde «ningún byte se escribe antes de validar» es observable (AD-16).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1728,6 +2178,25 @@ Como jugador de LAN,
 quiero ver por qué falló la validación con una causa clara,
 so que sepa si el problema es la red o la confianza.
 
+**Dependencias:**
+
+- **Story 6.1** — resultado de la validación con su causa diferenciada
+- **Story 1.1** — contrato único `ApiError` y `ErrorCatalog` de `Shared`
+
+**Casos de error:**
+
+Un `code` de error desconocido se muestra con el texto genérico del catálogo, nunca con el código
+como texto principal (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La microcopia diferenciada de «dañado» y «no confiable» y el `toast-error`
+con sus tres partes se verifican sobre el cliente con una validación fallida real.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** una validación fallida por corrupción,
@@ -1759,11 +2228,41 @@ Ana instala el paquete validado en el directorio configurado mediante un manifie
 tipadas, con confirmación explícita de las operaciones privilegiadas, y puede reanudar una
 instalación interrumpida sin repetir la descarga.
 
+**Dependencias:**
+
+- **Epic 1** — layout en disco del cliente y confines de ruta
+- **Epic 6** — paquete validado (integridad y autenticidad) antes de escribir en disco
+
+
 ### Story 7.1: Orden normativo de la instalación y rechazo previo a persistir
 
 Como ingeniero de seguridad,
 quiero que la verificación del manifiesto ocurra antes de escribir un solo byte en disco,
 so que un manifiesto manipulado no pueda ejecutar nada.
+
+**Dependencias:**
+
+- **Story 6.1** — paquete validado (integridad y autenticidad) antes de escribir en disco
+- **Story 1.3** — raíz de instalación configurable y confines de ruta
+
+**Casos de error:**
+
+Un manifiesto manipulado que contiene una acción no permitida se rechaza, no se instala y el
+error queda registrado con su causa (AC2). Si el `sha256` no coincide, el parcial se descarta y la
+operación se marca como fallida, **no reparable por reanudación** (AC1). Si ninguna condición
+reparable se cumple —paquete no disponible, `sha256` divergente o paquete no confiable— el estado
+**no** es `Repairable`: la instalación se trata como inválida y **no reparable**, con su motivo
+visible (AC6).
+
+**Pruebas necesarias:**
+
+**Unitarias.** El orden normativo, la ausencia de escritura antes de verificar la firma, la
+certificación `Installed` y la reparabilidad `Repairable` se verifican sobre el árbol de archivos y
+el manifiesto, sin red.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1772,8 +2271,11 @@ so que un manifiesto manipulado no pueda ejecutar nada.
 **Then** sigue el orden normativo: (1) obtener el manifiesto firmado; (2) verificar firma y
 `schemaVersion`; (3) **solo entonces** crear el directorio de instalación y el archivo parcial;
 (4) descargar el contenido; (5) calcular el `sha256` y compararlo con el del manifiesto firmado;
-(6) si no coincide, descartar el parcial y marcar la operación como fallida
-*(FR-8, AR-8, AD-8)*.
+(6) si no coincide, descartar el parcial y marcar la operación como fallida,
+**And** la instalación queda identificada por su `installDirectoryId`, que es la clave técnica de la
+`ClientInstallation` del cliente y no cambia ante una reparación ni ante una reinstalación del
+binario
+*(FR-8, AR-8, AR-13, AD-8)*.
 
 **Given** un manifiesto manipulado que contiene una acción no permitida,
 **When** el cliente lo evalúa,
@@ -1832,6 +2334,26 @@ Como jugador de LAN,
 quiero que la instalación nunca escriba fuera del directorio que configuré,
 so que un paquete malicioso no pueda tocar el resto de mi equipo.
 
+**Dependencias:**
+
+- **Story 7.1** — directorio de instalación creado tras verificar el manifiesto
+- **Story 1.3** — layout en disco del cliente (`install/`, `downloads/`, `manifests/`)
+
+**Casos de error:**
+
+Un manifiesto con una ruta absoluta **no** se admite y la operación se rechaza con su causa
+registrada (AC2). Un destino fuera de la raíz de instalación se rechaza y se registra (AC3).
+
+**Pruebas necesarias:**
+
+**Unitarias.** La resolución canónica de rutas, la comparación con la raíz de instalación y el
+rechazo de rutas absolutas son verificables con el sistema de ficheros real, sin LAN (AD-16 clasifica
+extractura fuera del directorio autorizado como caso unitario o de integración).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** una operación de escritura de instalación,
@@ -1863,6 +2385,28 @@ Como jugador de LAN,
 quiero que la instalación se haga con el mínimo de intervención y que cada operación que toque el
 sistema me pida confirmación,
 so que no ejecute nada que no haya aprobado.
+
+**Dependencias:**
+
+- **Story 7.1** — orden normativo y certificación de la instalación
+- **Story 7.2** — confines de extracción dentro del directorio autorizado
+
+**Casos de error:**
+
+Una operación privilegiada reanudada tras un reinicio **vuelve a pedir** la confirmación
+explícita: la confirmación no se hereda de una sesión anterior (AC4). Una instalación fallida deja el
+error persistido y la operación **reintentable sin reinstalar el cliente**, con la acción «Reintentar»
+disponible (AC6).
+
+**Pruebas necesarias:**
+
+**Integración.** La extracción dentro del directorio autorizado, la detección de instalación
+existente, la confirmación de operaciones privilegiadas y la reintentabilidad sin reinstalar el cliente
+se verifican sobre el cliente con un paquete real y su manifiesto.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1908,11 +2452,36 @@ la acción «Reintentar» disponible
 Ana lanza el juego instalado desde la Biblioteca o la ficha, ve el proceso en ejecución y, si no
 puede jugar, tiene el motivo visible y la acción correcta a mano.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared` y layout en disco del cliente
+- **Epic 7** — instalación certificada en estado `Installed`
+
+
 ### Story 8.1: Detección del ejecutable y lanzamiento con argumentos y directorio de trabajo
 
 Como jugador de LAN,
 quiero pulsar «Jugar» y que el juego arranque con su configuración,
 so que no tenga que configurarlo a mano.
+
+**Dependencias:**
+
+- **Story 7.1** — instalación certificada en estado `Installed`
+
+**Casos de error:**
+
+Un ejecutable ausente o una instalación inválida impiden el lanzamiento y producen un error
+identificable con el ejecutable y su ruta exacta cuando el problema es de ruta: «No se pudo iniciar:
+<causa>.» (Story 8.2 AC5).
+
+**Pruebas necesarias:**
+
+**Integración.** La detección del ejecutable, el lanzamiento con argumentos y directorio de
+trabajo y la detección del proceso en ejecución requieren un ejecutable real en disco.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -1951,6 +2520,29 @@ externos quedan fuera del MVP
 Como jugador de LAN,
 quiero saber por qué no puedo jugar sin abrir un diagnóstico,
 so que la acción correcta esté a la vista.
+
+**Dependencias:**
+
+- **Story 7.1** — condiciones únicas de certificación `Installed` y reparabilidad `Repairable`
+- **Story 8.1** — lanzador aislado y estado `En ejecución`
+
+**Casos de error:**
+
+Una instalación inválida **y reparable** bloquea «Jugar» con el motivo visible y hace «Reparar» la
+primaria; una instalación inválida **y no reparable** bloquea «Jugar» con el motivo visible y hace
+«Descargar de nuevo» la única primaria (AC1, AC2). El motivo **no** está en un *tooltip*, **no** está
+solo en el log de Diagnóstico y **no** requiere *hover* ni foco (AC3). `Enter` sobre «Jugar»
+bloqueada **no** produce ningún cambio de estado ni dispara descarga, instalación o reparación
+implícita (AC6).
+
+**Pruebas necesarias:**
+
+**Integración.** El motivo visible junto a «Jugar», la cobertura de foco con teclado y el
+`Enter` sin efecto se verifican sobre el cliente con una instalación real en cada uno de los estados.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2000,11 +2592,37 @@ descarga, instalación o reparación implícita
 exacta cuando el problema es de ruta: «No se pudo iniciar: <causa>.»
 *(FR-9, UX-DR-35)*.
 
+**Given** un cliente sin ninguna instalación,
+**When** se abre la Biblioteca,
+**Then** la superficie muestra «No tienes juegos instalados todavía.» y ofrece la acción «Ver
+catálogo»,
+**And** ningún estado vacío queda sin salida accionable
+*(UX-DR-28)*.
+
 ### Story 8.3: Reparar sin volver a descargar
 
 Como jugador de LAN,
 quiero reparar una instalación inválida sin volver a bajar el paquete,
 so que recupere el juego sin esperar otra descarga de varios gigabytes.
+
+**Dependencias:**
+
+- **Story 7.1** — paquete ya validado disponible para rehacer la instalación sin descargar
+- **Story 8.2** — acción «Reparar» habilitada solo en instalaciones reparables
+
+**Casos de error:**
+
+Una reparación en curso mantiene «Jugar» **bloqueada** con el motivo visible hasta que la
+instalación se valida (AC2).
+
+**Pruebas necesarias:**
+
+**Integración.** La reparación desde el paquete ya validado y la reinspección del árbol
+instalado requieren el paquete validado y el directorio de instalación reales.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2032,11 +2650,42 @@ Luis ve en el servidor la tabla de equipos conectados, sus instalaciones, sus de
 sus errores con causa y siguiente paso, y puede diagnosticar una incidencia sin rondas de
 preguntas por el pasillo.
 
+**Dependencias:**
+
+- **Epic 1** — contratos `Shared` y logging estructurado JSON
+- **Epic 4** — clientes ya registrados y compatibles, con su diagnóstico de versión
+- **Epic 7** — reglas de certificación que originan la `validationStateText` proyectada
+
+
 ### Story 9.1: Tabla densa de clientes conectados
 
 Como organizador del evento,
 quiero ver en una tabla todos los equipos conectados con su estado,
 so que sepa de un vistazo qué está pasando en la sala.
+
+**Dependencias:**
+
+- **Story 1.1** — contratos `ClientRegistrationView` y `Shared`
+- **Story 4.3** — diagnóstico de incompatibilidad de versión ya resuelto
+
+**Casos de error:**
+
+Un `machineName` mal formado (vacío tras recortar, más de 64 caracteres, con caracteres de
+control, con espacios iniciales, finales o interiores consecutivos, o con un carácter fuera del
+conjunto admitido) hace que el registro se **rechace** con un `ApiError` del `ErrorCatalog` de `code`
+**propio** y **distinto** del de «firma inválida» y del de «fingerprint de ancla no coincide», con `cause`
+y `nextStep` obligatorios; el cliente **queda sin registrar y no puede operar** (AC7). La colisión de
+nombre **no** es error: el registro tiene éxito con `renamed: true` y el nombre efectivo (AC6, AC14).
+
+**Pruebas necesarias:**
+
+**Integración.** El registro, la validación y la derivación determinista del nombre efectivo,
+la respuesta `200`/`422`/`426` y la forma de `ClientRegistrationView` son observables con el servidor
+en ejecución.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2191,6 +2840,27 @@ Como organizador del evento,
 quiero ver qué tiene instalado cada equipo y qué está descargando ahora,
 so que sepa si un equipo va retrasado sin preguntarle.
 
+**Dependencias:**
+
+- **Story 9.1** — registro de clientes ya persistido en el servidor
+- **Story 7.1** — reglas de certificación que originan la `validationStateText` proyectada
+
+**Casos de error:**
+
+El servidor **no** persiste como `ClientError` el resultado `Paquete retirado del catálogo`: lo
+presenta como resultado de operación distinto del fallo (AC6). La proyección **no** muestra la
+`installPath` del cliente (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La proyección de instalaciones y operaciones, la `validationStateText` copiada
+del `StateDisplayMap` y la no persistencia del resultado `Paquete retirado del catálogo` son
+observables sobre el servidor en ejecución con clientes que reportan estado.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** un cliente con operaciones en curso,
@@ -2227,16 +2897,44 @@ tiene instalado
 
 **Given** una operación terminada con el resultado `Paquete retirado del catálogo`,
 **When** el servidor actualiza la proyección,
-**Then** **no** persiste ese resultado como `ClientError`,
+**Then** **no** persiste ese resultado como `ClientError`: el valor `PackageWithdrawn` de
+`OperationOutcome` no produce `ApiError` y no se registra en el `ErrorCatalog`,
 **And** lo presenta como resultado de operación distinto del fallo, usando únicamente la microcopia
-de la tabla asignada en `Shared`
-*(AR-8, R-MVP-8, AD-25, AD-26)*.
+de la `StateDisplayMap` de `Shared`
+*(AR-8, R-MVP-8, AD-33, AD-25, AD-26)*.
+
+**Given** un cliente compatible conectado al servidor,
+**When** el organizador consulta su estado,
+**Then** el servidor muestra el estado de ese cliente y sus errores **sin que el organizador
+solicite información aparte**: la vista de estado y de errores es la única vía de consulta y no
+exige ninguna petición adicional por equipo
+*(SM-4, FR-10)*.
 
 ### Story 9.3: Errores registrados, con causa y siguiente paso
 
 Como organizador del evento,
 quiero ver el error registrado de cada equipo con su causa,
 so que sepa si necesita reintentar o asistencia.
+
+**Dependencias:**
+
+- **Story 9.1** — registro de clientes al que se asocia cada error
+- **Story 1.1** — contrato único `ApiError` y `ErrorCatalog` de `Shared`
+
+**Casos de error:**
+
+Un cliente incompatible aparece en la tabla con su versión y su diagnóstico e indica que **no
+opera**, sin iniciar operaciones de juego (AC3). La fila de un cliente desconectado va en
+`{colors.state-danger}` y su error asociado se muestra en el detalle de la fila (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La persistencia de `ClientError` y la presentación del detalle con causa y
+siguiente paso son observables con el servidor en ejecución.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2278,6 +2976,25 @@ Como jugador de LAN,
 quiero consultar el registro de diagnóstico de mi cliente,
 so que pueda comunicar al organizador el nombre estable del error que me ocurrió.
 
+**Dependencias:**
+
+- **Story 1.4** — logging estructurado JSON con `operationId` y `clientId`
+- **Story 9.3** — forma del error persistido con `code`, `cause` y `nextStep`
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación: el registro de diagnóstico **presenta**
+los errores ya persistidos, no los produce.
+
+**Pruebas necesarias:**
+
+**Integración.** El registro de diagnóstico del cliente y la correlación de logs entre cliente y
+servidor son observables con el cliente en ejecución.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** la sección Configuración y diagnóstico del cliente,
@@ -2308,11 +3025,37 @@ en el cliente se pueden unir
 Ana detecta que su instalación está desactualizada, obtiene la versión completa del catálogo,
 sustituye la anterior y repara una instalación inválida sin volver a descargar el paquete.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared` y layout en disco del cliente
+- **Epic 3** — catálogo sincronizado con la versión publicada de cada `gameId`
+- **Epic 7** — reglas de certificación y reparabilidad de la instalación
+
+
 ### Story 10.1: Detección de versión desactualizada
 
 Como jugador de LAN,
 quiero que mi biblioteca me avise de que hay una versión nueva,
 so que no juegue una versión obsoleta sin saberlo.
+
+**Dependencias:**
+
+- **Story 3.1** — catálogo sincronizado con la versión publicada de cada `gameId`
+- **Story 7.1** — reglas de certificación que distinguen instalación válida de inválida
+
+**Casos de error:**
+
+«Jugar» permanece disponible **solo si** la instalación sigue siendo válida; una instalación no
+válida se trata como inválida y no reparable, con su motivo visible (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La detección de versión desactualizada y el orden semántico de versiones se
+verifican con el cliente sincronizado y una instalación real de versión anterior.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2346,6 +3089,26 @@ instalación sigue siendo válida
 Como jugador de LAN,
 quiero pasar a la versión nueva con una descarga completa del catálogo,
 so que mi biblioteca quede al día.
+
+**Dependencias:**
+
+- **Story 10.1** — detección de versión desactualizada
+- **Story 5.2** — descarga del paquete con las mismas reglas de transferencia
+
+**Casos de error:**
+
+Si un snapshot del catálogo retira un juego, la instalación existente **no** se borra y la retirada
+no altera la validez de lo ya instalado (AC4).
+
+**Pruebas necesarias:**
+
+**Integración.** La sustitución por la versión completa, la verificación previa a escribir y
+la conservación de la instalación existente ante una retirada se verifican sobre el cliente con el
+catálogo sincronizado.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2381,6 +3144,24 @@ quiero que una instalación a medias se marque como reparable en vez de obligarm
 paquete entero,
 so que recupere el juego sin perder tiempo ni datos.
 
+**Dependencias:**
+
+- **Story 7.1** — reglas de reparabilidad `Repairable` y su condición de no reparabilidad
+
+**Casos de error:**
+
+Un error de instalación persistido se reintenta **sin reinstalar el cliente** y la operación
+relanza desde el progreso persistido (AC3).
+
+**Pruebas necesarias:**
+
+**Integración.** La detección de instalación incompleta, la recuperación tras reinicio y el
+reintento sin reinstalar el cliente requieren una operación real interrumpida.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** una instalación incompleta,
@@ -2408,11 +3189,34 @@ La interfaz del cliente y del servidor es coherente con el contrato visual aprob
 solo con teclado, cumple WCAG 2.2 AA, aplica la regla única de tamaños y progreso y se comporta
 bien en una sala a oscuras con las manos ocupadas.
 
+**Dependencias:**
+
+- **Epic 1** — estructura de la solución y capa de presentación separada del dominio
+
+
 ### Story 11.1: Sistema de tokens y tema
 
 Como diseñador de la interfaz,
 quiero una capa de componentes construida sobre los tokens aprobados,
 so que la interfaz se vea igual en el cliente y en el servidor y no aparezcan colores sueltos.
+
+**Dependencias:**
+
+- **Story 1.1** — estructura de la solución y capa de presentación separada del dominio
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación.
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (inspección de los tokens aplicados a los
+componentes y de la ausencia de tokens fuera de `DESIGN.md`).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2451,6 +3255,24 @@ Como jugador de LAN,
 quiero que las rutas, los hashes y las versiones se lean con precisión,
 so que pueda copiarlos y comunicarlos sin errores.
 
+**Dependencias:**
+
+- **Story 11.1** — sistema de tokens y tipografías de `DESIGN.md`
+
+**Casos de error:**
+
+Ninguno adicional a los de sus criterios de aceptación.
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (composición real de las superficies y coincidencia
+de las cadenas literales).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** un texto de interfaz,
@@ -2476,6 +3298,25 @@ valores numéricos derivados de tamaño y porcentaje
 Como jugador de LAN,
 quiero ver los tamaños y los porcentajes en un formato único,
 so que pueda compararlos entre juegos sin descifrar unidades.
+
+**Dependencias:**
+
+- **Story 11.1** — tokens de tamaño y porcentaje de `DESIGN.md`
+- **Story 5.2** — pares de bytes transferidos y totales que alimentan la barra y el texto
+
+**Casos de error:**
+
+La barra y su texto **nunca** se contradicen: derivan del mismo par de bytes (AC4).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (formatos renderizados sobre datos reales de
+descarga e instalación).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2515,6 +3356,25 @@ Como jugador de LAN,
 quiero que cada estado tenga un texto fijo y comprensible,
 so que nunca tenga que interpretar lo que veo.
 
+**Dependencias:**
+
+- **Story 1.1** — tablas únicas `StateDisplayMap` y `ErrorCatalog` de `Shared`
+
+**Casos de error:**
+
+Un texto de estado que no está en el `StateDisplayMap` o en el `ErrorCatalog` **no existe**: no se
+inventa fuera de las tablas (AC1).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (comparación de la microcopia renderizada con las
+tablas de `Shared`).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** los estados críticos del producto,
@@ -2547,6 +3407,25 @@ validada
 Como jugador de LAN,
 quiero que en cada pantalla haya una sola acción principal evidente,
 so que sepa qué puedo pulsar ahora mismo.
+
+**Dependencias:**
+
+- **Story 11.1** — componentes base sobre los tokens de `DESIGN.md`
+
+**Casos de error:**
+
+Las acciones que dependen de un prerrequisito no cumplido se **deshabilitan** con su motivo
+visible, y ninguna acción secundaria, de peligro o fantasma es la única vía disponible (AC1, AC2).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (navegación por superficies reales con teclado y
+ratón).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2584,6 +3463,25 @@ acciones alineadas a la derecha,
 Como jugador de LAN,
 quiero navegar siempre igual y saber dónde está cada cosa,
 so que no tenga que aprender la aplicación mientras juego.
+
+**Dependencias:**
+
+- **Story 11.1** — capa de componentes y tokens de `DESIGN.md`
+
+**Casos de error:**
+
+Una acción que solo aparece al pasar el ratón tiene equivalente de teclado o está siempre visible
+en el detalle (AC4).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (recorrido real de las superficies y de las
+primitivas de teclado).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2624,6 +3522,26 @@ Configuración, y `Espacio` pausa o reanuda la descarga enfocada
 Como jugador de LAN que usa solo el teclado o un lector de pantalla,
 quiero que todas las acciones sean alcanzables y announced,
 so que no dependa del ratón ni de la vista.
+
+**Dependencias:**
+
+- **Story 11.1** — tokens de color y de foco de `DESIGN.md`
+- **Story 9.1** — tabla densa de clientes sobre la que se audita el recorrido de foco
+
+**Casos de error:**
+
+Un estado con color lleva **siempre** además texto: el color nunca es la única señal, y el
+nombre accesible de la insignia incluye su estado (AC5).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (auditoría de contraste y de recorrido de foco sobre
+las superficies reales, con lector de pantalla).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2680,6 +3598,25 @@ Como jugador de LAN,
 quiero que la interfaz se comporte bien en un portátil de sala con cualquier tamaño de ventana,
 so que no se descuadre mientras juego.
 
+**Dependencias:**
+
+- **Story 11.1** — tokens de geometría y de rejilla de `DESIGN.md`
+
+**Casos de error:**
+
+Con una red sin Internet, ninguna superficie muestra un error de red global, y un icono de red
+ausente no se confunde con «sin servidor» (AC4).
+
+**Pruebas necesarias:**
+
+**Sin comportamiento ejecutable de dominio.** Es una historia de capa de presentación: se
+verifica por la **integración** de la aplicación (redimensionado y escalado reales del sistema
+operativo).
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** una ventana redimensionada,
@@ -2726,6 +3663,16 @@ una decisión de fase posterior. Ningún spike introduce capacidad de producto e
 > **bloqueante para el cierre** del MVP: si su resultado es negativo, el MVP **no se puede cerrar**
 > hasta que se resuelva la confianza de paquetes.
 
+**Dependencias:**
+
+- **Epic 1** — contratos de `Shared` y mecanismos ya fijados que el spike se limita a medir
+
+**S-2 es BLOQUEANTE** para el cierre del MVP: su resultado es requisito previo de
+FR-6 y SM-3 (AD-25, AD-21). **S-1, S-3, S-4 y S-5 son NO BLOQUEANTES**: su resultado es una
+decisión de fase posterior y puede no ejecutarse, ejecutarse tarde o fracasar sin que ningún
+artefacto del MVP cambie (R-MVP-5).
+
+
 ### Story 12.1: S-2 · Raíz de confianza — validación del bootstrap out-of-band (BLOQUEANTE)
 
 Como responsable de seguridad del producto,
@@ -2736,6 +3683,28 @@ so que el cierre del MVP no dependa de un mecanismo no verificado.
 **Alcance mínimo:** fijar el ancla por fingerprint out-of-band (QR o contraste en la pantalla del
 organizador); firmar un manifiesto con Ed25519; verificar; comprobar el rechazo de manifiesto
 alterado; **simular un intermediario que sustituye la clave del ancla**.
+
+**Dependencias:**
+
+- **Spike S-2** — el propio spike: valida la cadena firma -> manifiesto -> paquete de AD-2, AD-8 y AD-27
+
+**Casos de error:**
+
+Un manifiesto alterado, un manifiesto firmado por otra clave y un paquete cuyo `sha256` no
+coincide se **rechazan** (AC1, AC2, AC3). Un intermediario que presenta una clave de ancla distinta
+de la esperada hace que el cliente **rechace la conexión** y **no persista** el ancla sustituta ni
+escriba nada (AC5). Una firma inválida contra el ancla ya fijada no deja ninguna escritura en disco ni
+operación iniciada (AC6). Si el resultado del spike es negativo, el MVP **no se puede cerrar** (AC8).
+
+**Pruebas necesarias:**
+
+**Unitarias.** Los criterios del spike son comprobaciones de rechazo previo a persistir y de
+validación de firma, verificables sin LAN: es el nivel mínimo donde «no se escribe nada» es
+observable. El entregable es además un **informe** con la evidencia de cada criterio.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2798,6 +3767,24 @@ so que el riesgo R-03 quede documentado antes de confiar en él.
 **Alcance mínimo:** servidor que anuncia `_lanpartyhub._tcp`; cliente que descubre y compara con la
 dirección manual.
 
+**Dependencias:**
+
+- **Spike S-1** — el propio spike: mide el comportamiento real de mDNS frente a la dirección manual
+
+**Casos de error:**
+
+Si el spike no se ejecuta o fracasa, el MVP **no cambia**: la vía manual basta (AD-3) (AC4).
+
+**Pruebas necesarias:**
+
+**E2E en LAN real.** El comportamiento de mDNS solo es observable en redes reales con
+políticas distintas, incluida la de la LAN del evento; el entregable es un **informe** con el
+resultado registrado.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** la LAN de prueba,
@@ -2838,6 +3825,24 @@ so que el punto más frágil del MVP tenga evidencia y no suposición.
 **Alcance mínimo:** descarga de 7+ GB interrumpida y reanudada varias veces, con reinicio del
 proceso del cliente.
 
+**Dependencias:**
+
+- **Spike S-5** — el propio spike: valida el offset persistido de AD-11 sobre un paquete de 7+ GB
+
+**Casos de error:**
+
+Si el spike no se ejecuta o fracasa, el MVP **no cambia** (AD-21, R-MVP-5) (AC4).
+
+**Pruebas necesarias:**
+
+**E2E en LAN real.** La reanudación de un paquete de 7+ GB con reinicio del proceso del cliente
+solo es observable sobre la LAN real, con el paquete completo; el entregable es un **informe** con la
+evidencia de cada criterio.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
 **Acceptance Criteria:**
 
 **Given** una descarga interrumpida,
@@ -2860,6 +3865,14 @@ proceso del cliente.
 **Then** es una decisión de fase posterior: **no** cambia ningún artefacto del MVP,
 **And** valida AD-11 cuyo mecanismo ya está fijado (AD-21, R-MVP-5)*.
 
+**Given** el carácter declarado de S-5,
+**When** se evalúa el resultado del spike,
+**Then** es **NO BLOQUEANTE**: su resultado es una decisión de fase posterior y **no** es requisito
+previo de ninguna capacidad del MVP,
+**And** el carácter es **normativo**, no descriptivo: puede no ejecutarse, ejecutarse tarde o
+fracasar **sin** que ningún artefacto del MVP cambie
+*(AR-25, R-MVP-5, AD-21)*.
+
 ### Story 12.4: S-4 · Rendimiento y recursos — medición en lugar de suposición (NO BLOQUEANTE)
 
 Como organizador del evento,
@@ -2868,6 +3881,24 @@ so que el producto no prometa lo que no ha medido.
 
 **Alcance mínimo:** descarga de un paquete de varios GB con 2, 5, 10 y 20 clientes simultáneos;
 medición de CPU, memoria y enlace.
+
+**Dependencias:**
+
+- **Spike S-4** — el propio spike: mide tasa de transferencia y consumo de CPU y memoria
+
+**Casos de error:**
+
+Si el spike no se ejecuta o fracasa, el MVP **no cambia** (AD-21, R-MVP-5) (AC5).
+
+**Pruebas necesarias:**
+
+**E2E en LAN real.** La tasa de transferencia y el consumo de CPU y memoria con 2, 5, 10 y 20
+clientes simultáneos solo son observables en la LAN real; el entregable es un **informe** con los
+números y la configuración.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2896,6 +3927,36 @@ medición de CPU, memoria y enlace.
 **Then** fija los umbrales numéricos de NFR-2 y NFR-6 y los límites por cliente de AD-14,
 **And** **no** introduce ninguna capacidad nueva en el MVP (AD-21, R-MVP-5)*.
 
+**Given** la medición de consumo de CPU y memoria del servidor y del cliente,
+**When** se aplica su resultado,
+**Then** el consumo moderado de recursos del servidor y del cliente (NFR-6) queda **medido y
+documentado, no bloqueante**: su resultado fija los límites concretos de la fase posterior y **no**
+condiciona el cierre del MVP ni invalida ninguna capacidad construida
+*(NFR-6, NFR-2, AR-25)*.
+
+**Given** el carácter declarado de S-4,
+**When** se evalúa el resultado del spike,
+**Then** es **NO BLOQUEANTE**: su resultado es una decisión de fase posterior y **no** es requisito
+previo de ninguna capacidad del MVP,
+**And** el carácter es **normativo**, no descriptivo: puede no ejecutarse, ejecutarse tarde o
+fracasar **sin** que ningún artefacto del MVP cambie
+*(AR-25, R-MVP-5, AD-21)*.
+
+**Given** la medición de consumo de CPU y memoria del servidor y del cliente,
+**When** se aplica su resultado,
+**Then** el consumo moderado de recursos del servidor y del cliente (NFR-6) queda **medido y
+documentado, no bloqueante**: su resultado fija los límites concretos de la fase posterior y **no**
+condiciona el cierre del MVP ni invalida ninguna capacidad construida
+*(NFR-6, NFR-2, AR-25)*.
+
+**Given** el carácter declarado de S-4,
+**When** se evalúa el resultado del spike,
+**Then** es **NO BLOQUEANTE**: su resultado es una decisión de fase posterior y **no** es requisito
+previo de ninguna capacidad del MVP,
+**And** el carácter es **normativo**, no descriptivo: puede no ejecutarse, ejecutarse tarde o
+fracasar **sin** que ningún artefacto del MVP cambie
+*(AR-25, R-MVP-5, AD-21)*.
+
 ### Story 12.5: S-3 · PoC P2P — decisión de fase posterior (NO BLOQUEANTE)
 
 Como arquitecto del producto,
@@ -2904,6 +3965,25 @@ so que la decisión de fase posterior tenga evidencia y no suposición.
 
 **Alcance mínimo:** tracker interno en proceso; 3 *peers*; *seed* desde el servidor; intercambio por
 fragmentos.
+
+**Dependencias:**
+
+- **Spike S-3** — el propio spike: PoC de intercambio por fragmentos entre peers
+
+**Casos de error:**
+
+Ningún *peer* sale a Internet: DHT y LPD verificados como deshabilitados (AC5). Si S-3 no se
+ejecuta o fracasa, el resultado es «el MVP sigue por HTTP» y **ningún** artefacto del MVP cambia
+(AC6).
+
+**Pruebas necesarias:**
+
+**E2E en LAN real.** El intercambio por fragmentos entre peers solo es observable con tres
+*peers* reales intercambiando en la LAN; el entregable es un **informe** con el resultado de la PoC.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2943,6 +4023,48 @@ su **propia AD** y su **propio traceability** en la fase que lo ejecute, **nunca
 MVP
 *(AD-21, AD-28, R-MVP-1, R-MVP-5)*.
 
+**Given** el resultado del spike S-3 sobre cobertura P2P,
+**When** se evalúa su impacto,
+**Then** **no** se optimiza la cobertura P2P a costa de bloquear el flujo servidor-cliente del MVP ni
+de acoplar prematuramente el dominio a una biblioteca P2P: el flujo HTTP servidor-cliente no queda
+bloqueado por la PoC y el dominio no se acopla a la biblioteca del spike
+*(SM-C2, FR-7, AD-28)*.
+
+**Given** el resultado del spike S-3 sobre rendimiento,
+**When** se evalúa su impacto,
+**Then** **no** se optimiza la velocidad de transferencia por encima de la recuperación y la
+integridad de las operaciones, y el rendimiento queda **sin promesa** hasta las pruebas de Fase D
+*(SM-C1, NFR-2, AR-25)*.
+
+**Given** el carácter declarado de S-3,
+**When** se evalúa el resultado del spike,
+**Then** es **NO BLOQUEANTE**: su resultado es una decisión de fase posterior y **no** es requisito
+previo de ninguna capacidad del MVP,
+**And** el carácter es **normativo**, no descriptivo: puede no ejecutarse, ejecutarse tarde o
+fracasar **sin** que ningún artefacto del MVP cambie
+*(AR-25, R-MVP-5, AD-21)*.
+
+**Given** el resultado del spike S-3 sobre cobertura P2P,
+**When** se evalúa su impacto,
+**Then** **no** se optimiza la cobertura P2P a costa de bloquear el flujo servidor-cliente del MVP ni
+de acoplar prematuramente el dominio a una biblioteca P2P: el flujo HTTP servidor-cliente no queda
+bloqueado por la PoC y el dominio no se acopla a la biblioteca del spike
+*(SM-C2, FR-7, AD-28)*.
+
+**Given** el resultado del spike S-3 sobre rendimiento,
+**When** se evalúa su impacto,
+**Then** **no** se optimiza la velocidad de transferencia por encima de la recuperación y la
+integridad de las operaciones, y el rendimiento queda **sin promesa** hasta las pruebas de Fase D
+*(SM-C1, NFR-2, AR-25)*.
+
+**Given** el carácter declarado de S-3,
+**When** se evalúa el resultado del spike,
+**Then** es **NO BLOQUEANTE**: su resultado es una decisión de fase posterior y **no** es requisito
+previo de ninguna capacidad del MVP,
+**And** el carácter es **normativo**, no descriptivo: puede no ejecutarse, ejecutarse tarde o
+fracasar **sin** que ningún artefacto del MVP cambie
+*(AR-25, R-MVP-5, AD-21)*.
+
 ## Epic 13: El guion de aceptación del MVP en LAN real
 
 El MVP se cierra con un guion reproducible que encadena el flujo completo del PRD §9 en una LAN
@@ -2954,11 +4076,50 @@ historia que hace verificables SM-1 y SM-5: sin ella, el backlog cerraría con t
 **NFRs cubiertos:** NFR-1, NFR-9.
 **UX-DRs cubiertos:** UX-DR-44 (los cuatro flujos, ejecutados de extremo a extremo).
 
+**Dependencias:**
+
+- **Epic 1** — estructura de la solución y nivel E2E en LAN real declarado
+- **Epic 2** — paquete publicado con manifiesto firmado y licencia
+- **Epic 3** — catálogo sincronizado
+- **Epic 4** — panel de conexión y reconexión del cliente
+- **Epic 5** — descarga con persistencia del progreso
+- **Epic 6** — validación de integridad y autenticidad
+- **Epic 7** — instalación portable con manifiesto tipado
+- **Epic 8** — detección del ejecutable y ejecución
+- **Epic 9** — tabla de clientes del servidor
+
+
 ### Story 13.1: Demostración reproducible de extremo a extremo en LAN real
 
 Como responsable de la aceptación del MVP,
 quiero ejecutar el guion completo del PRD §9 con dos o más clientes en una LAN real y sin Internet,
 so que SM-1 y SM-5 queden verificados con evidencia reproducible.
+
+**Dependencias:**
+
+- **Story 2.2** — paquete publicado con manifiesto firmado y licencia
+- **Story 4.5** — panel de conexión y reconexión del cliente
+- **Story 5.3** — descarga con persistencia del progreso
+- **Story 6.1** — validación de integridad y autenticidad
+- **Story 7.3** — instalación portable con manifiesto tipado
+- **Story 8.1** — detección del ejecutable y ejecución
+- **Story 9.1** — tabla de clientes del servidor
+
+**Casos de error:**
+
+Dos o más clientes incompatibles o un servidor inaccesible durante la preparación hacen que el
+flujo **no** se declare aprobado por evasión ni por omisión de pasos: el resultado registra el paso
+fallido, su diagnóstico y la condición de reintento (AC3).
+
+**Pruebas necesarias:**
+
+**E2E en LAN real.** Es el escenario de aceptación del MVP: un servidor y dos o más clientes
+en una LAN real aislada de Internet, ejecutando los diez pasos del guion del PRD. No tiene un nivel
+mínimo inferior: el comportamiento que verifica es precisamente el encadenado completo.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
 
 **Acceptance Criteria:**
 
@@ -2970,13 +4131,13 @@ descarga del paquete desde el servidor; (6) validación de integridad y autentic
 portable; (8) detección de la instalación existente; (9) ejecución desde el cliente; y (10) visualización
 del estado en el servidor,
 **And** el mismo paquete íntegro se distribuye a todos los clientes sin acceso a Internet
-*(FR-2..FR-11, NFR-1, SM-1, AR-21)*.
+*(FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, NFR-1, SM-1, AR-21)*.
 
 **Given** el guion de aceptación en ejecución,
 **When** se recorre cada uno de los diez pasos,
 **Then** cada paso incluye instrucciones reproducibles, estado observable y resultado esperado,
 **And** SM-5 queda verificado para los diez pasos sin depender de conocimiento no documentado
-*(FR-2..FR-11, SM-5)*.
+*(FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, SM-5)*.
 
 **Given** dos o más clientes incompatibles o un servidor inaccesible durante la preparación,
 **When** se ejecuta el guion de aceptación,

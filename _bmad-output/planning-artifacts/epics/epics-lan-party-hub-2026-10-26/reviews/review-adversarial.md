@@ -8,7 +8,7 @@
 - **Modo:** headless, ejecución secuencial (sin subagentes disponibles)
 - **Base:** `bde708d97766dfc607528abb9d3a28bc82487f0e` (arquitectura con Checkpoint D aprobado)
 - **Estado:** revisión re-ejecutada sobre el backlog de cierre de Fase E (13 épicas / 47 historias /
-  243 AC). Los hallazgos se mantienen como registro del análisis y quedan **cerrados** en
+  261 AC). Los hallazgos se mantienen como registro del análisis y quedan **cerrados** en
   `epics.md`; el bloque de resolución está al final de este documento. El hallazgo **D-5** se
   **reabre** con la incorporación de **AD-30** y vuelve a quedar **resuelto** con la regla exigible
   correspondiente (ver «Reapertura y resolución de D-5»). La propagación de **AD-31** (derivación
@@ -30,10 +30,10 @@ Se evaluaron **doce pares** de unidades. **Cinco divergen** (D-1..D-5), cada uno
 o una regla exigible. Se detectaron además **dos huecos de cobertura** (H-1, H-2).
 
 > **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):** 13
-> épicas, 47 historias, 243 criterios de aceptación. Conteo confirmado mecánicamente sobre
-> `epics.md`: 13 encabezados `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de
-> `**Given**` / `**When**` / `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve
-> `stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`,
+> épicas, 47 historias, 261 criterios de aceptación. Conteo confirmado mecánicamente sobre
+> `epics.md`: 13 encabezados `## Epic N`, 47 encabezados `### Story N.M` y 261 ocurrencias de
+> `**Given**` / `**When**` / `**Then**` (261/261/261). El verificador `tools/check-epics.ps1` devuelve
+> `stories: 47`, `acceptance_criteria: 261`, `ar_definitions: 25`, `ar_table_rows: 25`,
 > `ok: true`, `total_findings: 0`.
 
 ---
@@ -75,8 +75,8 @@ lote, sin duplicar reglas.
     abandona la transferencia en curso** y deja el parcial y el registro de progreso en disco, para
     poder retomarlo más tarde; la operación queda en `Cancelled` igualmente.
 - **Por qué cada una obedece el backlog:** el backlog **nombra `Cancelled` en ninguna AC**. La
-  arquitectura (estado de descarga, `ARCHITECTURE-SPINE.md` L701, L706) sí lo declara como estado
-  terminal, y AD-10 exige que las transiciones sean explícitas y con estado terminal por operación
+  arquitectura (sección «Estados de descarga e instalación» de `ARCHITECTURE-SPINE.md`, fijada por
+  **AD-10**) sí lo declara como estado terminal, y AD-10 exige que las transiciones sean explícitas y con estado terminal por operación
   (AR-15), pero ninguna AC del backlog dice qué produce `Cancelled`, qué ocurre con el archivo
   parcial, ni si el registro de progreso persistido se borra. El texto de la confirmación —«Se
   borrarán los 3,2 GB descargados»— es **microcopia de UX** (UX-DR-22), no una regla de dominio:
@@ -324,7 +324,7 @@ cobertura dentro del contrato ya aprobado por el PRD, la UX y la arquitectura.
 | Mención de cada AR-1..AR-25 | PASS — mínimo 1 mención (**AR-21 y AR-25 solo en la definición → H-1**) |
 | Mención de cada AD-1..AD-30 | PASS — mínimo 1 mención |
 | Secuencia de IDs de historia 1.1..13.1 | PASS — 47 historias, numeración continua sin huecos |
-| Presencia de `**Given**`/`**When**`/`**Then**` | PASS — 243/243 en las tres |
+| Presencia de `**Given**`/`**When**`/`**Then**` | PASS — 261/261 en las tres |
 | Placeholders `{{...}}` residuales | PASS — 0 |
 | Caracteres CJK / U+FFFD | PASS — 0 / 0 |
 | Estados de `DownloadState` de la arquitectura citados en AC | **FALLA** — `Cancelled` no aparece en ninguna AC (**D-1**) |
@@ -373,13 +373,13 @@ tienen la Divergencia del par original como caso covered:
 `| AR-14 | 1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC10 | Estructural (identidad del cliente) |`, y las
 filas de **AR-4** (`9.1 AC7`) y **AR-20** (`9.1 AC8`) incorporan los AC nuevos que las citan.
 
-**Verificación.** `verify_epics.py` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
-`stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
-arquitectónico **actual** del documento es 13 épicas / 47 historias / **243** AC, confirmado
-mecánicamente (13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 243 ocurrencias de
-`**Given**` / `**When**` / `**Then**`, 243/243/243). El corte de cierre por **AD-30** —antes de la
+**Verificación.** `tools/check-epics.ps1` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
+`stories: 47`, `acceptance_criteria: 261`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
+arquitectónico **actual** del documento es 13 épicas / 47 historias / **261** AC, confirmado
+mecánicamente (13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 261 ocurrencias de
+`**Given**` / `**When**` / `**Then**`, 261/261/261). El corte de cierre por **AD-30** —antes de la
 propagación de AD-31/AD-32— tenía 239 AC; esa cifra es **histórica** y no describe el documento
-actual. `lint_spine.py` sobre `ARCHITECTURE-SPINE.md` devuelve `ok: true`, `total_findings: 0`.
+actual. `.agents/skills/bmad-architecture/scripts/lint_spine.py` sobre `ARCHITECTURE-SPINE.md` devuelve `ok: true`, `total_findings: 0`.
 
 **Veredicto.** **D-5 queda RESUELTO.** La divergencia del par original —el servidor que acepta o
 rechaza al segundo cliente homónimo— deja de ser construible: ambas unidades construyen el mismo
@@ -410,7 +410,7 @@ releer el backlog tras el cierre por AD-30:
   que AD-30 declara fuera del MVP.
 
 **Qué deciden AD-31 y AD-32.** Son dos decisiones de arquitectura que **precisan** AD-30 sin
-ampliar el MVP (AD-30 L432: «no añaden superficie nueva»):
+ampliar el MVP (AD-30: «no añaden superficie nueva»):
 
 - **AD-31 — Derivación determinista del nombre efectivo.** El nombre efectivo derivado se construye con
   un algoritmo **determinista, acotado y sin búsqueda**: `stem_truncado` (recortado a **≤ 31 puntos
@@ -470,12 +470,13 @@ La fila de la tabla de trazabilidad de **AR-14** pasa a `1.3 AC2, 1.4 AC1, 5.2 A
 sigue **RESUELTO** (el `clientId` permanece como clave y la unicidad del nombre sigue siendo una
 regla de nombres, no un control de acceso). Lo que hacen AD-31 y AD-32 es **endurecer** el cierre
 de D-5, sustituyendo dos lecturas divergentes por reglas exigibles. Se mantiene el veredicto
-general: **ADECUADO CON FALLOS REALES, YA CERRADOS**, ahora con **13 épicas / 47 historias / 243
+general: **ADECUADO CON FALLOS REALES, YA CERRADOS**, ahora con **13 épicas / 47 historias / 261
 AC** y **diez** restricciones heredadas (`R-MVP-1..R-MVP-10`) verificadas.
 
-**Verificación.** `verify_epics.py` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
-`stories: 47`, `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
-arquitectónico del documento es 13 épicas / 47 historias / 243 AC, confirmado mecánicamente
-(13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 243 ocurrencias de `**Given**` /
-`**When**` / `**Then**`, 243/243/243) y 10 filas `R-MVP-1..R-MVP-10`. `lint_spine.py` sobre
+**Verificación.** `tools/check-epics.ps1` sobre `epics.md` devuelve `ok: true`, `total_findings: 0`,
+`stories: 47`, `acceptance_criteria: 261`, `ar_definitions: 25`, `ar_table_rows: 25`. El recuento
+arquitectónico del documento es 13 épicas / 47 historias / 261 AC, confirmado mecánicamente
+(13 encabezados `## Epic N`; 47 encabezados `### Story N.M`; 261 ocurrencias de `**Given**` /
+`**When**` / `**Then**`, 261/261/261) y 10 filas `R-MVP-1..R-MVP-10`.
+`.agents/skills/bmad-architecture/scripts/lint_spine.py` sobre
 `ARCHITECTURE-SPINE.md` devuelve `ok: true`, `total_findings: 0`.

@@ -10,7 +10,7 @@
 ## Veredicto
 
 **ADECUADO CON RESERVAS.** El documento está bien construido: 47 historias con la forma
-`Como / quiero / so que`, 243 AC en forma `Given / When / Then`, marcadores de énfasis balanceados
+`Como / quiero / so que`, 261 AC en forma `Given / When / Then`, marcadores de énfasis balanceados
 (par), frontmatter íntegro y cero placeholders. LaVoice de las historias es **coherente** con el
 contrato de UX: segunda persona, sin emojis, sin superlativos.
 
@@ -18,11 +18,12 @@ Sin embargo, hay **cinco defectos editoriales reales** y **dos inconsistencias d
 Ninguno es bloqueante; todos se cierran con una corrección local, sin decisión de producto.
 
 > **Conteo arquitectónico final (cierre documental de Fase E + cierre por AD-30/AD-31/AD-32):**
-> 13 épicas, 47 historias, 243 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
-> `## Epic N`, 47 encabezados `### Story N.M` y 243 ocurrencias de `**Given**` / `**When**` /
-> `**Then**` (243/243/243). El verificador `verify_epics.py` devuelve `stories: 47`,
-> `acceptance_criteria: 243`, `ar_definitions: 25`, `ar_table_rows: 25`, `ok: true`,
-> `total_findings: 0`.
+> 13 épicas, 47 historias, 261 AC. Conteo confirmado mecánicamente sobre `epics.md`: 13 encabezados
+> `## Epic N`, 47 encabezados `### Story N.M` y 261 ocurrencias de `**Given**` / `**When**` /
+> `**Then**` (261/261/261). El guard real `tools/check-epics.ps1` devuelve `Epicas: 13`,
+> `Historias: 47`, `AC (bloques Given): 261`, `Bloques GWT: Given=261 When=261 Then=261`,
+> `Rango de historias: 1.1 .. 13.1` y `OK: todas las comprobaciones de epics pasan.` La tabla de
+> trazabilidad de AR sigue con 25 filas (`AR-1..AR-25`), sin findings.
 >
 > **Recuento equivalente de las restricciones heredadas:** 10 filas `R-MVP-1..R-MVP-10`, de las
 > que **R-MVP-10** es la añadida por la propagación de AD-31 y AD-32.
@@ -41,7 +42,7 @@ por un agente de desarrollo con su valor declarado: la forma lo cumple.
 
 ### 2. Forma de los AC (`Given / When / Then / And`) — **CUMPLE**
 
-243 de 243. Cada AC es una frase condicional completa, con precondición, acción y resultado
+261 de 261. Cada AC es una frase condicional completa, con precondición, acción y resultado
 esperado. Ningún AC es una frase suelta ni una lista de tareas.
 
 ### 3. Microcopia literal — **CUMPLE CON RESERVA (E-1)**
@@ -93,10 +94,10 @@ Ver E-3 y E-4.
 
 ### 11. Duplicación de la lista de épicas — **CUMPLE (nota menor)**
 
-`## Epic List` (resumen de las 12 épicas) y luego los `## Epic N` con el detalle. Es la forma que
+`## Epic List` (resumen de las 13 épicas) y luego los `## Epic N` con el detalle. Es la forma que
 exige la plantilla: la lista como índice y el detalle después. **Sin embargo**, cada `## Epic N`
 **repite literalmente el párrafo de objetivo** de su entrada en `## Epic List`. La repetición es
-exacta (12 párrafos duplicados). No es un defecto —el lector puede leer el índice o el detalle—,
+exacta (13 párrafos duplicados). No es un defecto —el lector puede leer el índice o el detalle—,
 pero es ruido: la lista podría ser un índice de una línea por épica.
 
 ### 12. Coherencia con la nomenclatura del contrato — **CUMPLE**
@@ -116,7 +117,7 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 - **Ubicación:** 9 AC de `epics.md`; la AC que lo prohíbe es Story 11.4 AC2.
 - **Evidencia:**
-  - **Story 11.4 AC2** (L2178) establece la regla de voz: «usa segunda persona y verbo en primera
+  - **Story 11.4 AC2** establece la regla de voz: «usa segunda persona y verbo en primera
     («Pulsa», «Elige», «Indica», «Comprueba»), **nunca «el usuario»**» —*(UX-DR-6, UX-DR-22)*.
   - Y sin embargo 9 AC usan «el usuario» como sujeto del `When`:
     - Story 1.3 AC4: «**When** el usuario cambia el directorio en Configuración»
@@ -144,7 +145,7 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 ### E-2 — «videogameos»: error ortográfico en el requisito FR-2 y en un AC — **BAJA**
 
-- **Ubicación:** FR-2 (L62) y Story 3.2 AC2 (L1083).
+- **Ubicación:** `### Functional Requirements` → FR-2 y Story 3.2 AC2.
 - **Evidencia:** FR-2 dice «categorizar los **videogameos** disponibles» y Story 3.2 AC2 dice «los
   resultados muestran únicamente los **videogameos** de esa categoría». La forma correcta en
   español es **«videojuegos»**, y es la que el propio documento usa en las otras 22 apariciones
@@ -158,7 +159,7 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 ### E-3 — AR-21 y AR-25 se citan **solo** en su definición; ninguna AC las referencia — **MEDIA**
 
-- **Ubicación:** `### Additional Requirements` → AR-21 (L244), AR-25 (L267).
+- **Ubicación:** `### Additional Requirements` → AR-21 y AR-25.
 - **Evidencia:** verificación mecánica de menciones: **AR-21 = 1**, **AR-25 = 1**. En ambos casos la
   única mención es la definición. Ninguna de las 218 AC del estado revisado en este lote cita
   AR-21 ni AR-25 (el cierre posterior los hace exigibles). Lo mismo ocurre, en
@@ -185,7 +186,8 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
   (R-MVP-1 en Story 5.1/5.3/12.5, R-MVP-2 en Story 4.3, R-MVP-3 en Story 4.4/6.1/7.1, R-MVP-4 en
   Story 7.3/10.2, R-MVP-5 en Story 12.1..12.5, R-MVP-6 en Story 5.1, R-MVP-7 en Story 1.1/3.3,
   R-MVP-8 en Story 3.3/6.2/11.4, R-MVP-9 en Story 9.1), pero no es **legible de un vistazo**: para
-  auditar que una restricción se aplica, hay que buscar cada identificador en las 2.570 líneas.
+  auditar que una restricción se aplica, hay que buscar cada identificador en las 47 historias
+  del documento.
 - **Por qué importa:** las R-MVP son la capa de restricciones **heredadas del Checkpoint D** y la
   que impide que el backlog se desvíe hacia P2P, autenticación o modos de instalación no previstos.
   Un lector que audita la conformidad del backlog tiene que reconstruir esa columna a mano.
@@ -195,9 +197,9 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 
 ### E-5 — El objetivo de cada épica está duplicado literalmente entre `## Epic List` y `## Epic N` — **BAJA**
 
-- **Ubicación:** `## Epic List` (12 párrafos de objetivo) y cada `## Epic N` (los mismos 12
+- **Ubicación:** `## Epic List` (13 párrafos de objetivo) y cada `## Epic N` (los mismos 13
   párrafos repetidos).
-- **Evidencia:** los 12 textos son idénticos palabra por palabra.
+- **Evidencia:** los 13 textos son idénticos palabra por palabra.
 - **Por qué importa:** es ruido, no error. La plantilla pide la lista y luego el detalle; el detalle
   puede asumir el objetivo ya declarado, o la lista puede ser un índice de una línea. El duplicado
   aumenta la superficie de mantenimiento sin añadir información: si el objetivo de una épica cambia,
@@ -223,7 +225,7 @@ Los nombres de tipo (`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationS
 | --- | --- |
 | Historias con forma `Como / quiero / so que` | PASS — 47/47 en las tres partes |
 | Historias con `**Acceptance Criteria:**` | PASS — 47/47 |
-| AC `**Given**` / `**When**` / `**Then**` | PASS — 243/243 en las tres |
+| AC `**Given**` / `**When**` / `**Then**` | PASS — 261/261 en las tres |
 | Marcadores `**` balanceados | PASS — par |
 | Placeholders `{{...}}` | PASS — 0 |
 | Placeholders `TODO`/`TBD`/`FIXME`/`XXX` | PASS — 0 |
