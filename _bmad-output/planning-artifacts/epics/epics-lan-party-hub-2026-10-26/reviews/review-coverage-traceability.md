@@ -21,7 +21,7 @@ UX-DR-1..UX-DR-45, con 13 épicas y 47 historias y 243 criterios de aceptación.
 >
 > **Recuento equivalente de las restricciones heredadas:** 10 filas `R-MVP-1..R-MVP-10`, de las
 > que **R-MVP-10** es la añadida por la propagación de AD-31 y AD-32 (punto de entrada único del
-> registro, derivación acotada y terminante del nombre efectivo, colisión no es error).
+> registro, derivación determinista del nombre efectivo, colisión no es error).
 
 ---
 

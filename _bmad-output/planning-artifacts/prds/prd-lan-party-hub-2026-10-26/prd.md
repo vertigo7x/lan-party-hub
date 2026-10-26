@@ -266,14 +266,17 @@ acceso: el producto sigue siendo una **LAN confiada sin autenticación ni autori
 clientes**, y el nombre del equipo **no** es una credencial, no se usa para autenticar ninguna
 petición y no confiere permisos ni roles.
 
-**La derivación del nombre efectivo es acotada.** El nombre único derivado que el servidor asigna
-ante una colisión se construye **añadiendo un sufijo numérico** (`-2`, `-3`, …) al nombre
-propuesto, y **recortando el nombre propuesto** lo necesario para que el resultado **nunca exceda
-la longitud máxima admitida**. Esa longitud se mide en **puntos de código Unicode**, no en bytes ni
-en unidades de código UTF-16, de modo que un nombre con ideogramas CJK o con emoji se acota por
-los **caracteres visibles** que el organizador ve y el recorte **nunca parte un carácter por la
-mitad**. El algoritmo **siempre termina**: encuentra el primer sufijo cuyo nombre resultante esté
-libre, y el nombre efectivo derivado **vuelve a ser admisible** por las mismas reglas que el
+**La derivación del nombre efectivo es determinista y acotada.** El nombre único derivado que el
+servidor asigna ante una colisión se construye **añadiendo un sufijo fijo** —el guion más los **32
+dígitos hexadecimales en minúsculas** del identificador técnico del cliente— al nombre propuesto, y
+**recortando el nombre propuesto** lo necesario para que el resultado **nunca exceda la longitud
+máxima admitida**. Esa longitud se mide en **puntos de código Unicode**, no en bytes ni en unidades
+de código UTF-16, de modo que un nombre con ideogramas CJK o con emoji se acota por los
+**caracteres visibles** que el organizador ve y el recorte **nunca parte un carácter por la
+mitad**. El sufijo tiene **longitud fija**, así que el nombre propuesto se recorta siempre a **31
+puntos de código** como máximo. El algoritmo **no busca nombres libres** ni prueba candidatos
+sucesivos: el identificador del cliente garantiza la unicidad del nombre derivado, de modo que la
+derivación **siempre termina** y produce un nombre **admisible** por las mismas reglas que el
 propuesto. El nombre efectivo derivado no es un nombre que el servidor vuelve a derivar: la
 derivación es estable.
 
@@ -311,8 +314,9 @@ administración de nombres, cuentas de usuario ni campos de credencial, rol o pe
   longitud se mide en **puntos de código Unicode**: un nombre propuesto de longitud máxima con
   ideogramas CJK o con emoji produce un nombre efectivo de la **misma** longitud en caracteres
   visibles, y el recorte **no parte ningún carácter por la mitad**.
-- La derivación del nombre efectivo **siempre termina** y produce un nombre **admisible** por las
-  mismas reglas que el propuesto: el cliente no recibe un nombre que el propio servidor rechazaría.
+- La derivación del nombre efectivo **no busca nombres libres**, siempre termina y produce un nombre
+  **admisible** por las mismas reglas que el propuesto: el cliente no recibe un nombre que el propio
+  servidor rechazaría.
 - Un cliente que **se reconecta** con su identificador y su nombre efectivo conserva su fila y su
   nombre: el servidor **no** le asigna un nombre nuevo ni vuelve a derivar, aunque otro equipo haya
   ocupado el nombre propuesto original.

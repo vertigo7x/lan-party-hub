@@ -12,7 +12,7 @@
   `epics.md`; el bloque de resolución está al final de este documento. El hallazgo **D-5** se
   **reabre** con la incorporación de **AD-30** y vuelve a quedar **resuelto** con la regla exigible
   correspondiente (ver «Reapertura y resolución de D-5»). La propagación de **AD-31** (derivación
-  acotada del nombre efectivo) y **AD-32** (contrato único del registro) añade los criterios AC11..AC14
+  determinista del nombre efectivo) y **AD-32** (contrato único del registro) añade los criterios AC11..AC14
   de la Story 9.1 y la restricción heredada **R-MVP-10** (ver «Propagación de AD-31 y AD-32»).
 
 ## Veredicto
@@ -292,7 +292,7 @@ lote, sin duplicar reglas.
 | R-MVP-7 (`Shared` solo contratos, tablas únicas) | **Sí** | Story 1.1 AC4/AC5, Story 3.3 AC4 |
 | R-MVP-8 (microcopia solo de las tablas) | **Parcial** | **D-2**: `Paquete retirado del catálogo` no tiene tabla asignada |
 | R-MVP-9 (vista de clientes solo por REST) | **Sí** | Story 9.1 AC4 |
-| R-MVP-10 (registro en un único punto de entrada, derivación acotada y terminante del nombre efectivo, colisión no es error) | **Sí** | Story 9.1 AC11/AC12/AC13/AC14 |
+| R-MVP-10 (registro en un único punto de entrada, derivación determinista del nombre efectivo, colisión no es error) | **Sí** | Story 9.1 AC11/AC12/AC13/AC14 |
 
 > **Nota de recuento.** La verificación explícita de las restricciones heredadas se hizo
 > originariamente sobre **9** restricciones (`R-MVP-1..R-MVP-9`). La propagación de **AD-31** y
@@ -351,7 +351,8 @@ valida y la hace única** en el momento del registro. La unicidad del nombre es 
 de una columna**, **no** un mecanismo de deduplicación: el servidor no agrupa, no fusiona ni
 reasigna filas por nombre. Ante una colisión con otro equipo ya registrado, el servidor **no
 rechaza ni oculta** al segundo cliente: le asigna un **nombre único derivado** del propuesto
-(`<nombre>-2`, `-3`, …), lo **persiste** y se lo **notifica**, y el cliente lo **adopta**. Un
+(el `stem` recortado más el guion y los **32 dígitos hexadecimales** del `clientId`), lo
+**persiste** y se lo **notifica**, y el cliente lo **adopta**. Un
 `machineName` que no cumple las reglas de forma se **rechaza en el registro** y el cliente queda
 sin registrar y no opera. La regla **no introduce credenciales, autenticación ni autorización**:
 el único control de acceso al protocolo sigue siendo la compatibilidad de versión.
@@ -395,7 +396,7 @@ por el servidor, pero dejó **dos huecos construibles** que la propia lente adve
 releer el backlog tras el cierre por AD-30:
 
 - **El algoritmo de derivación no estaba acotado.** AD-30 fijaba que ante una colisión el servidor
-  asigna un nombre «único derivado» (`<nombre>-2`, `-3`, …), pero **no** decía **cómo** se derivaba
+  asigna un nombre «único derivado», pero **no** decía **cómo** se derivaba
   el siguiente candidato, **hasta dónde** se recortaba el `stem` ni **cuándo** el bucle de búsqueda
   de un nombre libre **terminaba**. Dos unidades podían derivar nombres distintos —una recortando
   por bytes y otra por puntos de código, una deteniéndose en `-9` y otra en `-10`— y producir
@@ -411,16 +412,21 @@ releer el backlog tras el cierre por AD-30:
 **Qué deciden AD-31 y AD-32.** Son dos decisiones de arquitectura que **precisan** AD-30 sin
 ampliar el MVP (AD-30 L432: «no añaden superficie nueva»):
 
-- **AD-31 — Derivación acotada del nombre efectivo.** El nombre efectivo derivado se construye con
-  un algoritmo **determinista y acotado**: `stem_truncado + "-<n>"` con `n >= 2` decimal en ASCII y
-  sin ceros a la izquierda; el `stem` es el nombre propuesto **ya recortado**, y la derivación **no**
+- **AD-31 — Derivación determinista del nombre efectivo.** El nombre efectivo derivado se construye con
+  un algoritmo **determinista, acotado y sin búsqueda**: `stem_truncado` (recortado a **≤ 31 puntos
+  de código**) + el sufijo fijo `"-"` seguido de los **32 dígitos hexadecimales en minúsculas** de
+  la forma canónica del `clientId` (`Guid.ToString("N")`, sin guiones); el `stem` es el nombre
+  propuesto **ya recortado**, y la derivación **no**
   normaliza, **no** minúscula y **no** quita diacríticos. La cota dura es **≤ 64 puntos de código
   Unicode** (medidos con `System.Text.Rune`, no en bytes ni en unidades UTF-16), el recorte cae
   **siempre en un límite de punto de código** —ningún emoji ni ideograma queda partido— y el
-  `stem` truncado **no puede quedar vacío** (se recurre al `stem` de reserva `equipo`). La búsqueda
-  del nombre libre compara la **forma canónica** (NFKC → eliminación de marcas diacríticas →
-  minúsculas Unicode invariantes, en ese orden), **incrementa `n`** y vuelve a truncar con el nuevo
-  ancho de sufijo, y el bucle **termina** en el primer `n` libre. Por construcción, el nombre
+  `stem` truncado **no puede quedar vacío** (se recurre al `stem` de reserva `equipo`). El sufijo
+  tiene **longitud fija de 33 puntos de código**, luego no hay casos de sufijo multidígito variable
+  ni búsqueda: el servidor **no** busca nombres libres, **no** incrementa ningún contador y **no**
+  puede agotar el espacio de nombres. La **unicidad está garantizada por construcción**: la forma
+  canónica es la identidad sobre `-` y los dígitos hexadecimales en minúsculas, la cola de 33
+  puntos de código ocupa siempre las últimas posiciones, y dos nombres derivados iguales implican
+  el mismo `clientId`. Por construcción, el nombre
   efectivo **nunca excede la cota**, **nunca necesita volver a ser derivado** y **no altera** el
   `clientId` ni fusiona ni reasigna filas.
 - **AD-32 — Contrato REST del registro, la reconexión y el renombrado.** `POST /api/v1/clients` es
@@ -445,16 +451,18 @@ tienen los dos huecos anteriores como caso covered:
 
 | AC | Qué fija | Cita |
 | --- | --- | --- |
-| 9.1 AC11 | Derivación acotada del nombre efectivo: `stem_truncado + "-<n>"` con `n >= 2` en ASCII sin ceros a la izquierda; **≤ 64 puntos de código Unicode** (`System.Text.Rune`, no bytes ni UTF-16); truncación **siempre en límite de punto de código**; `stem` truncado no vacío (`equipo` de reserva); ancho de sufijo ajustado al número de dígitos (`-2`, `-10`, `-100` → misma longitud); el nombre derivado **vuelve a ser admisible** y **nunca necesita volver a ser derivado** | *(FR-10, AR-14, AD-30, AD-31)* |
-| 9.1 AC12 | Búsqueda del nombre libre por **forma canónica** (NFKC → eliminación de marcas diacríticas → minúsculas Unicode invariantes, en ese orden), **incrementando `n`** y volviendo a truncar el `stem`; el bucle **termina**; el `clientId` no cambia, no se fusiona filas ni se reasigna la fila de otro cliente | *(FR-10, AR-14, AD-30, AD-31)* |
+| 9.1 AC11 | Derivación determinista del nombre efectivo: `stem_truncado` (≤ 31 puntos de código) + sufijo fijo `"-"` + los **32 dígitos hexadecimales** del `clientId` (`Guid.ToString("N")`); **≤ 64 puntos de código Unicode** (`System.Text.Rune`, no bytes ni UTF-16); truncación **siempre en límite de punto de código**; `stem` truncado no vacío (`equipo` de reserva); sufijo de **longitud fija de 33 puntos de código**; el nombre derivado **vuelve a ser admisible**, **nunca necesita volver a ser derivado** y su **unicidad está garantizada por construcción** | *(FR-10, AR-14, AD-30, AD-31)* |
+| 9.1 AC12 | El nombre efectivo es una **función pura** de (`stem`, `clientId`): **no** se buscan nombres libres, **no** se incrementa ningún contador y **no** se agotan candidatos; la **forma canónica** (NFKC → eliminación de marcas diacríticas → minúsculas Unicode invariantes, en ese orden) **conserva intacta** la cola de 33 puntos de código del sufijo, de modo que dos nombres derivados iguales implican el mismo `clientId` y **dos clientes distintos nunca reciben el mismo nombre**; el `clientId` no cambia, no se fusiona filas ni se reasigna la fila de otro cliente | *(FR-10, AR-14, AD-30, AD-31)* |
 | 9.1 AC13 | Forma exacta del cuerpo (`RegisterClientRequest` `{ clientId, machineName, clientVersion, protocolVersion }`, sin `schemaVersion` y con la **única** exención de mutación) y de la respuesta (`RegisterClientResponse` `{ clientId, machineName, connectionState, lastSeenAt, renamed }`), con `machineName` **siempre efectivo** y `renamed` `true` **solo** ante colisión con nombre distinto | *(FR-10, AR-14, AD-5, AD-6, AD-22, AD-23, AD-30, AD-32)* |
 | 9.1 AC14 | Alta, reconexión y renombrado en la **misma** operación de registro, **único** punto de entrada (sin endpoint adicional); **`200 OK`** en el éxito (no `201 Created`), **`422`** ante nombre mal formado con la forma única `ApiError`, **`426`** ante versión incompatible **antes** de validar el nombre; **la colisión no es un error** (`renamed: true`); la **reconexión conserva** fila y nombre, **no** deriva y **no** colisiona consigo misma | *(FR-10, AR-14, AD-5, AD-6, AD-15, AD-22, AD-23, AD-25, AD-29, AD-30, AD-32)* |
 
 Se añade además la **restricción heredada R-MVP-10** a la tabla «Restricciones heredadas que
 gobiernan todo el desglose» de `epics.md`: el alta, la reconexión y el renombrado ocurren en **una
 sola** operación de registro, que es el **único** punto de entrada del cliente al servidor; el
-nombre efectivo derivado es **acotado** (`stem_truncado + "-<n>"`, `n >= 2`, ≤ 64 **puntos de
-código Unicode**, truncación que **no parte** ningún carácter) y la derivación **siempre termina**;
+nombre efectivo derivado es **determinista y acotado** (`stem_truncado` de **≤ 31 puntos de código** +
+el sufijo fijo `-` + los **32 dígitos hexadecimales** del `clientId`, ≤ 64 **puntos de
+código Unicode**, truncación que **no parte** ningún carácter) y su **unicidad está garantizada por
+construcción**, sin búsqueda de nombres libres;
 la colisión **no es un error**: el registro tiene éxito con `renamed: true` y el nombre efectivo.
 La fila de la tabla de trazabilidad de **AR-14** pasa a `1.3 AC2, 1.4 AC1, 5.2 AC8, 9.1 AC5..AC14`.
 
