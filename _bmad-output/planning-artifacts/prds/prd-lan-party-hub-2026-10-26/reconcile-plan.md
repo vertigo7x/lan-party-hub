@@ -22,3 +22,15 @@
 Stack, límites de módulos, contratos, ADRs, estructura de solución y estrategia de pruebas se
 conservan como dependencias de Fase D o posteriores. No se incorporaron al PRD para respetar la
 separación entre requisitos de producto y decisiones técnicas.
+
+## Nota de vigencia — Enmienda ENM-001-01
+
+`docs/plan.md` no fija un contrato de autenticación ni de autorización de clientes, por lo que
+esta reconciliación no requirió corrección de fondo: los siete ítems de trazabilidad RF-01..RF-08
+siguen vigentes tal como se describen arriba.
+
+Lo que sí cambió con la enmienda es el destino de **RF-04** dentro del PRD, que no aparece en
+esta tabla porque `docs/plan.md` lo expresa en el ámbito de integridad y autenticidad de
+paquetes (FR-6, FR-8 en el PRD) y no en el de control de acceso de clientes. El contrato de
+acceso vigente es LAN administrada con ejecutable distribuido por la organización, sin
+autenticación ni autorización de clientes, con FR-4 sustituida por compatibilidad de versión.

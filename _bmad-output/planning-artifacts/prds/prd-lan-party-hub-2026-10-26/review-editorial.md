@@ -18,3 +18,21 @@ Contexto (pirámide).
 No se propone recorte de recorridos, glosario ni trazabilidad porque sostienen la comprensión y
 el consumo posterior. La longitud es adecuada para un PRD de plataforma que alimenta UX,
 arquitectura e historias.
+
+## Nota de vigencia — Enmienda ENM-001-01
+
+Esta revisión editorial no describe el contrato de acceso de clientes y no requiere corrección por
+la enmienda. El contrato vigente es LAN administrada con ejecutable distribuido por la
+organización: **sin autenticación ni autorización de clientes**, con FR-4 sustituida por
+compatibilidad de versión.
+
+Las cinco recomendaciones de la tabla se aplicaron sobre el texto que sigue vigente: los passages
+citados ("coordinador", "las descargas simultáneas de varios clientes", "Un paquete alterado,
+manipulado o que no supera la validación de confianza" y "posible acoplamiento o validación
+tardía") siguen presentes en el PRD actual, y la numeración de secciones §0..§14 no varió con la
+enmienda, por lo que las referencias de esta tabla siguen resolviendo.
+
+Lo que sí cambió y afecta a la lectura de este artefacto es la **renumeración de preguntas
+abiertas**: al eliminarse la pregunta de autenticación de clientes (OQ-1 anterior), las
+preguntas y supuestos pasan de OQ-1..OQ-5 a **OQ-1..OQ-4** (R5 → OQ-1, R3 → OQ-2, P2P → OQ-3,
+R-01/NFR-6 → OQ-4).

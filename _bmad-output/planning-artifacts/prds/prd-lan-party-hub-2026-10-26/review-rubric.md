@@ -2,26 +2,31 @@
 
 ## Veredicto general
 
-El PRD es una base de producto trazable y Lista para Checkpoint B, con alcance explícito y
+El PRD es una base de producto trazable y lista para Checkpoint B, con alcance explícito y
 requisitos funcionales verificables. El principal riesgo no es una omisión de estructura, sino que
-los mecanismos de descubrimiento, autenticación y confianza siguen abiertos: el documento los
-trata correctamente como restricciones de Fase D, pero su implementación debe bloquearse si esas
-decisiones se intentan inferir más adelante.
+los mecanismos de descubrimiento y de confianza siguen abiertos: el documento los trata
+correctamente como restricciones de Fase D, pero su implementación debe bloquearse si esas
+decisiones se intentan inferir más adelante. El modelo de acceso es LAN administrada con
+ejecutable distribuido por la organización: no hay autenticación ni autorización de clientes, y
+FR-4 sustituye ese contrato por compatibilidad de versión.
 
 ## Preparación para decisiones — adecuada
 
-El documento distingue decisiones de alcance de cuestiones técnicas abiertas. R3, R4, R5 y P2P
-figuran en FR-3, FR-4, FR-6 y FR-7, con restricciones, responsable y fase de resolución. No se
+El documento distingue decisiones de alcance de cuestiones técnicas abiertas. R3, R5 y P2P
+figuran en FR-3, FR-6 y FR-7, con restricciones, responsable y fase de resolución. No se
 presentan como decisiones closed. La ausencia de umbrales de rendimiento inventados mantiene
 honesta la preparación para decisiones.
 
 ### Hallazgos
 
-- **high** [R4 no precisa qué “autorizado” bloquea] (§4.2 FR-4) — La consecuencia de FR-4 corrige
-  la redacción y establece capacidad protegida, pero no enumera las operaciones. La Fase D debe
-  derivar el contrato de autorización desde FR-2, FR-5, FR-8 y FR-10. *Arreglo:* mantener el
-  requisito y asignar en Fase D la matriz de operaciones permitidas por rol/estado.
-- **medium** [Pregunta P2P todavía admite dos resultados] (§13 OQ-4) — Se pide confirmar si la PoC
+- **medium** [La definición de versiones compatibles queda por concreción] (§4.2 FR-4) — FR-4
+  fija el comportamiento observable para cliente compatible e incompatible y exige un
+  diagnóstico explícito, pero no enumera qué versiones se consideran compatibles ni el
+  formato del mensaje de incompatibilidad. La Fase D debe derivar la matriz de versiones
+  compatibles y el mecanismo de negociación desde FR-4, FR-5, FR-10 y NFR-9. *Arreglo:* mantener
+  el requisito cerrado en comportamiento y asignar en Fase D la matriz de versiones compatibles
+  y el diagnóstico, sin reintroducir autenticación ni autorización de clientes.
+- **medium** [Pregunta P2P todavía admite dos resultados] (§12 OQ-3) — Se pide confirmar si la PoC
   bloquea el MVP y, en paralelo, se asume que puede validarse después. *Arreglo:* Checkpoint B
   debe confirmar la condición o asignar explícitamente su decisión a Fase D.
 
@@ -61,7 +66,7 @@ explícitos. La FR-11 de actualizaciones conserva el alcance correcto de version
 
 ## Honestidad del alcance — fuerte
 
-La sección de no objetivos y las exclusiones del MVP son específicas. R3, R4, R5 y P2P se
+La sección de no objetivos y las exclusiones del MVP son específicas. R3, R5 y P2P se
 registran como preguntas abiertas y los supuestos tienen índice roundtrip. La exclución de UX,
 arquitectura, ADRs, historias, scaffold y código está explícita.
 
@@ -89,7 +94,25 @@ El PRD，适合 una plataforma local multiusuario con tres partes有小但 roles
 ## Notas mecánicas
 
 - IDs FR-1..FR-11, NFR-1..NFR-10, SM-1..SM-5 y SM-C1..SM-C2: continuos y únicos.
-- Supuestos inline ASSUMPTION: OQ-1..OQ-5: todos indexados; las entradas del índice corresponden a
+- Supuestos inline ASSUMPTION: OQ-1..OQ-4: todos indexados; las entradas del índice corresponden a
   marcas inline.
 - Referencias cruzadas de trazabilidad: resolubles.
 - Frontmatter: presente y con estado de borrador pendiente de Checkpoint B.
+
+## Enmienda ENM-001-01 — contrato de acceso de clientes
+
+El contrato vigente sustituye la autenticación/autorización de clientes por **compatibilidad de
+versión** sobre LAN administrada con ejecutable distribuido por la organización: todos los
+clientes que lo ejecutan son válidos y no existen credenciales, alta, revocación ni expiración.
+Esta nota registra el alcance de la enmienda sobre esta revisión, sin reescribir los hallazgos
+originales que el memlog conserva como histórico.
+
+- El hallazgo **high** original sobre “qué bloquea *autorizado*” queda **sustituido**: su objeto
+  ya no existe. En su lugar, el hallazgo vigente es el **medium** sobre la definición de
+  versiones compatibles y el formato del diagnóstico (§4.2 FR-4).
+- El hallazgo **medium** sobre P2P se renumera a **OQ-3** (§12), coherente con la renumeración de
+  preguntas abiertas tras eliminar la pregunta de autenticación de clientes.
+- Los supuestos y preguntas abiertos pasan de OQ-1..OQ-5 a **OQ-1..OQ-4**: R5 → OQ-1,
+  R3 → OQ-2, P2P → OQ-3, R-01/NFR-6 → OQ-4.
+- Se conservan sin cambio los hallazgos sobre NFR-2 (escala), FR-8 (reparación de instalaciones),
+  el glosario y la forma del documento.
