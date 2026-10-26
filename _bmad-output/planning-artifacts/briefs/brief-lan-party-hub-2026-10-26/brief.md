@@ -157,14 +157,16 @@ vía de respaldo permanente. Impacta el contrato de red, el comportamiento en re
 políticas restrictivas y el modo en que el usuario recupera el control cuando el
 descubrimiento falla.
 
-### R4 — Autenticación de cliente
+### R4 — Compatibilidad de versión de clientes
 
-**Estado:** pregunta abierta · **Decisión requerida en:** Checkpoint A · **Detalle funcional en:** Fase B · **Mecanismo en:** Fase D
+**Estado:** decisión de alcance cerrada · **Requisito funcional en:** Fase B · **Detalle de mecanismo en:** Fase D
 
-No está definido cómo se autentica un cliente ante el servidor, ni qué ocurre cuando un
-equipo no autorizado se une a la LAN. Sin esta decisión, "supervisar la red" y "distribuir de
-forma segura" quedan sin un sujeto identificado. Influye en el alta de equipos, en el
-rendimiento del descubrimiento y en la experiencia de instalación del cliente.
+El producto se despliega como un ejecutable distribuido por la organización en una LAN
+administrada. Se asume que todos los clientes que lo ejecutan son válidos, por lo que no se
+requiere autenticación ni autorización de clientes. La compatibilidad de versión sí es un
+requisito: un cliente compatible puede operar con el servidor y un cliente incompatible recibe
+un diagnóstico explícito y no inicia operaciones incompatibles. La definición de la matriz de
+versiones compatibles y del mecanismo de negociación corresponde a las fases posteriores.
 
 ### R5 — Raíz de confianza y firma de paquetes
 
@@ -228,12 +230,14 @@ confirmaciones.
 
 - **Fuente:** `docs/plan.md` (prompt maestro de desarrollo con BMAD), commit `ab9a3b7`.
 - **Fase:** A — Descubrimiento y Product Brief. **Estado:** `approved` — Checkpoint A aprobado
-  explícitamente por el usuario el 2026-10-26. La aprobación autoriza iniciar la Fase B (PRD)
-  y no resuelve por sí sola las decisiones R3, R4, R5 y P2P: cada una queda registrada en el
-  PRD con su responsable y fase de resolución.
-- **Siguiente checkpoint:** Checkpoint B — validación del PRD. R3, R4, R5 y P2P deben
-  resolverse o quedar explícitamente asignadas a una fase posterior y a un responsable en el
-  PRD, sin inventar decisiones en Fase B.
+  explícitamente por el usuario el 2026-10-26. La aprobación autoriza iniciar la Fase B (PRD).
+  R4 queda cerrada por el modelo explícito del producto: LAN administrada, ejecutable
+  distribuido por la organización y clientes considerados válidos; el PRD sustituye la
+  autenticación/autorización por compatibilidad de versión. R3, R5 y P2P permanecen registradas
+  en el PRD con su responsable y fase de resolución.
+- **Siguiente checkpoint:** Checkpoint B — validación del PRD. R3, R5 y P2P deben resolverse o
+  quedar explícitamente asignadas a una fase posterior y a un responsable en el PRD, sin inventar
+  decisiones en Fase B.
 - **Alcance de esta fase:** brief aprobado y Fase B (PRD). Quedan fuera de esta ejecución UX,
   arquitectura, ADRs, backlog de historias, scaffold y código. Este brief es la referencia de
   descubrimiento; el PRD será la referencia de requisitos de producto.

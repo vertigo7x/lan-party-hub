@@ -107,11 +107,12 @@ categorizar los videogameos disponibles.
 - Si el servidor no está disponible, el cliente conserva el último catálogo válido y comunica el
   estado de sincronización pendiente.
 
-### 4.2 Descubrimiento, conexión y autenticación
+### 4.2 Descubrimiento, conexión y compatibilidad de clientes
 
-**Descripción:** El cliente se une al servidor de la LAN y sólo puede usar las capacidades
-protegidas cuando su identidad ha sido reconocida por el servidor. La conexión debe degradar de
-forma segura y permitir recuperar el control si falla el descubrimiento.
+**Descripción:** El cliente se une al servidor de la LAN administrada por la organización. Se
+asume que todos los clientes que ejecutan el producto dentro de ese entorno son válidos; no se
+exige autenticación ni autorización de clientes. La conexión debe degradar de forma segura y
+permitir recuperar el control si falla el descubrimiento.
 
 #### FR-3: Descubrimiento y conexión
 
@@ -133,52 +134,24 @@ resolución:** Fase D, con validación técnica. La dirección manual es obligat
 del MVP; el descubrimiento automático también lo es, pero su implementación queda sujeta a la
 decisión técnica documentada.
 
-#### FR-4: Autenticación y autorización de clientes
+#### FR-4: Compatibilidad de versión de clientes
 
-El servidor debe identificar a los clientes autorizados antes de conceder acceso a las
-capacidades protegidas y definir una respuesta segura ante equipos no autorizados. El servidor
-distingue dos estados observables para un equipo conectado: **autorizado** y **no autorizado**.
+El servidor debe verificar la versión del cliente antes de establecer una sesión operativa. Los
+clientes compatibles pueden consultar el catálogo, descargar, instalar y reportar estado; los
+clientes incompatibles no pueden iniciar esas operaciones y reciben un diagnóstico explícito de
+la incompatibilidad. Esta verificación no autentica ni autoriza clientes: todos los clientes que
+ejecutan el producto en la LAN administrada se consideran válidos por el modelo operativo.
 
 **Consecuencias verificables:**
-- Un cliente no reconocido no puede consultar el catálogo, descargar, instalar ni reportar estado
-  como cliente autorizado.
-- Un cliente autorizado puede realizar las operaciones del MVP.
-- El servidor puede distinguir en su estado de cliente un equipo autorizado de uno no autorizado.
-
-##### 4.2.1 Matriz funcional por estado de autorización
-
-La matriz define el comportamiento observable exigible para cada combinación de estado y
-operación protegida. "No autorizado" designa a cualquier equipo al que el servidor no ha
-reconocido como cliente autorizado, incluidos los que no presentan credencial, los que presentan
-una credencial no reconocida y los que han perdido el reconocimiento durante la sesión.
-
-| Estado | Operación protegida | Resultado observable | Diagnóstico seguro |
-| --- | --- | --- | --- |
-| Autorizado | Consultar catálogo (FR-2) | El cliente recibe el catálogo publicado y puede buscar y filtrar según FR-2 | Sin incidencias; los errores de sincronización se asocian al cliente y a la causa (NFR-7) |
-| No autorizado | Consultar catálogo (FR-2) | El cliente no obtiene metadatos del catálogo ni listados de videogameos | Mensaje de acceso denegado que no revela si el registro existe, su contenido ni el motivo del rechazo |
-| Autorizado | Descargar paquete (FR-5) | El cliente inicia la descarga, con progreso, pausa, reanudación y recuperación | Errores de descarga asociados al cliente y al paquete, con causa registrada |
-| No autorizado | Descargar paquete (FR-5) | El servidor no transfiere ningún byte del paquete; no se crea ni se figura progreso de descarga | Mensaje de acceso denegado que no distingue credencial ausente, no reconocida o revocada |
-| Autorizado | Instalar paquete (FR-8) | El cliente valida el paquete y ejecuta la instalación portable conforme al manifiesto | Errores de instalación persistidos, asociados al cliente y reintentables (NFR-7, NFR-9) |
-| No autorizado | Instalar paquete (FR-8) | El servidor no entrega el manifiesto ni el paquete, por lo que la instalación no llega a iniciarse y no se ejecuta ninguna operación sobre el sistema | Mensaje de acceso denegado que no revela la existencia del paquete, su ruta ni sus metadatos |
-| Autorizado | Reportar estado (FR-10) | El servidor registra la conexión, las versiones instaladas, las descargas activas, el progreso y los errores | El estado queda asociado al equipo y es visible en el panel del servidor (FR-10) |
-| No autorizado | Reportar estado (FR-10) | El servidor no acepta ni muestra estado de juego, versiones, descargas ni progreso atribuidos a un equipo no autorizado | El rechazo queda registrado como diagnóstico técnico del servidor, sin datos de juego ni de progreso en el panel |
-
-**Condiciones transversales de la matriz:**
-- El rechazo por falta de autorización no revela información de catálogo, paquetes ni rutas de
-  instalación: la respuesta observada es equivalente para todos los casos de no autorización.
-- La pérdida de autorización durante una operación en curso interrumpe la operación, no la deja
-  completarse con el reconocimiento anterior.
-- El servidor conserva la distinción entre estado autorizado y no autorizado en su estado de
-  cliente, sin exponer credenciales ni material de autenticación en el panel ni en los logs.
-- La matriz describe comportamiento observable y es comprobable sin conocer el mecanismo
-  subyacente.
-
-**Restricción abierta R4:** esta matriz fija el contrato funcional observable, no su
-implementación. El tipo de credencial, el alta y la revocación de clientes, la expiración de
-sesión, el transporte, el formato del mensaje de rechazo y el mecanismo de reconocimiento no se
-inventan en este PRD.
-**Responsable:** producto para el contrato funcional y arquitectura para el mecanismo. **Fase de
-resolución:** detalle funcional en Fase B/C y mecanismo en Fase D.
+- Un cliente compatible puede sincronizar el catálogo, descargar un paquete, instalarlo y
+  reportar su estado.
+- Un cliente incompatible no completa una sincronización ni inicia una descarga o instalación y
+  muestra un mensaje que identifica la incompatibilidad de versión y permite consultar la versión
+  del servidor requerida o disponible.
+- El servidor registra la versión del cliente y la incompatibilidad detectada sin exponer
+  credenciales, que no forman parte del modelo.
+- El comportamiento ante un cliente compatible o incompatible es determinista y comprobable sin
+  conocer el mecanismo interno de negociación de versiones.
 
 ### 4.3 Distribución y descargas
 
@@ -189,14 +162,15 @@ concepto.
 
 #### FR-5: Descarga desde el servidor
 
-Un cliente autorizado puede descargar un paquete del servidor, con seguimiento de progreso,
+Un cliente compatible puede descargar un paquete del servidor, con seguimiento de progreso,
 pausa, reanudación y recuperación tras desconexiones o reinicios.
 
 **Consecuencias verificables:**
 - El cliente informa progreso de descarga y puede pausar y reanudar la misma descarga.
 - Tras reiniciar el cliente durante una descarga, la operación se recupera desde el progreso
   persistido y no obliga a reiniciar el paquete desde cero.
-- El servidor no transfiere un paquete a un cliente no autenticado.
+- Un cliente incompatible no inicia la descarga del paquete y recibe el diagnóstico de
+  incompatibilidad de FR-4.
 - Las descargas simultáneas de varios clientes avanzan de forma independiente y no comparten
   estado de progreso.
 
@@ -280,10 +254,10 @@ El servidor muestra equipos conectados, identificador y nombre, estado de conexi
 versiones instalados, descargas activas, progreso de instalaciones y errores registrados.
 
 **Consecuencias verificables:**
-- El servidor refleja la conexión y desconexión de un cliente autorizado.
+- El servidor refleja la conexión y desconexión de un cliente compatible.
 - El servidor muestra el progreso de una descarga o instalación activa.
 - El servidor registra un error de cliente y lo presenta asociado al equipo.
-- Un cliente no autorizado no aparece como cliente autorizado ni transmite estado de juego.
+- Un cliente incompatible se refleja con su versión y diagnóstico, sin iniciar operaciones de juego.
 
 ### 4.6 Actualizaciones de versiones completas
 
@@ -348,8 +322,8 @@ válida del catálogo.
 - Servidor con catálogo, administración básica, paquetes y estado de clientes.
 - Cliente con descubrimiento, dirección manual alternativa, sincronización, búsqueda y filtrado.
 - Descarga servidor-cliente con integridad, pausa, reanudación y persistencia.
-- Autenticación y respuesta segura ante clientes no autorizados, con mecanismo por resolver en
-  Fase D.
+- Verificación de compatibilidad de versión de clientes con comportamiento explícito para clientes
+  compatibles e incompatibles.
 - Validación de integridad y autenticidad con raíz/firma por resolver en Fase D.
 - Instalación portable mediante manifiesto versionado y operaciones tipadas.
 - Lanzamiento de juegos y panel de estado.
@@ -368,7 +342,7 @@ válida del catálogo.
 
 ### Secundarios
 
-- **SM-4:** El servidor muestra el estado de cada cliente autorizado y sus errores sin que el
+- **SM-4:** El servidor muestra el estado de cada cliente compatible y sus errores sin que el
   organizador solicite información por separado. Valida FR-10.
 - **SM-5:** Cada paso de demostración tiene instrucciones reproducibles. Valida FR-1 a FR-11.
 
@@ -382,7 +356,7 @@ válida del catálogo.
 ## 9. Escenario de aceptación del MVP
 
 1. Arrancar el servidor.
-2. Conectar y autorizar dos o más clientes.
+2. Conectar dos o más clientes compatibles.
 3. Sincronizar el catálogo.
 4. Mostrar un videojuego disponible.
 5. Descargar su paquete desde el servidor.
@@ -400,7 +374,6 @@ riesgo técnico de Fase D, sin presentarse como capacidad del MVP en este escena
 | ID | Riesgo o dependencia | Impacto | Responsable / fase |
 | --- | --- | --- | --- |
 | R3 | Mecanismo de descubrimiento sin decisión cerrada (mDNS candidato) | Riesgo de comportamiento en redes restrictivas o segmentadas | Fase D |
-| R4 | Autenticación sin mecanismo cerrado (contrato observable definido en FR-4 §4.2.1) | Acceso no autorizado o experiencias inconsistentes | Producto: Fase B/C; mecanismo: Fase D |
 | R5 | Raíz de confianza y firma sin decisión | La autenticidad no es verificable | Fase D |
 | P2P | Alcance y carácter bloqueante de la PoC sin decisión | Posible acoplamiento o validación tardía | Fase D |
 | R-01 | Objetivo de 8-20 jugadores y 1 Gbps sin validar | No se puede prometer rendimiento | Fase D |
@@ -433,7 +406,7 @@ este documento ni se adelantan aquí.
 | --- | --- |
 | Alcance y criterios de éxito | §7, §8, §9 |
 | R3 | FR-3, NFR-9, R3 en §10 |
-| R4 | FR-4, FR-4 §4.2.1 (matriz funcional), NFR-5, R4 en §10 |
+| Compatibilidad de versión de clientes | FR-4, NFR-9 |
 | R5 | FR-6, NFR-5, R5 en §10 |
 | P2P | FR-7, SM-C2, P2P en §10 |
 | Riesgos adicionales | §10 |
@@ -445,7 +418,7 @@ este documento ni se adelantan aquí.
 | FR-1 | NFR-8, NFR-10 | SM-1, SM-5 |
 | FR-2 | NFR-1 | SM-1, SM-5 |
 | FR-3 | NFR-1, NFR-4, NFR-9 | SM-1, SM-5 |
-| FR-4 | NFR-1, NFR-5 | SM-1, SM-5 |
+| FR-4 | NFR-1, NFR-9 | SM-1, SM-5 |
 | FR-5 | NFR-1, NFR-3, NFR-9 | SM-1, SM-2, SM-5 |
 | FR-6 | NFR-5, NFR-8 | SM-1, SM-3, SM-5 |
 | FR-7 | NFR-10 | SM-1, SM-5 |
@@ -456,31 +429,24 @@ este documento ni se adelantan aquí.
 
 ## 12. Preguntas abiertas
 
-- **OQ-1 (R4):** ¿Qué identidad, alta, revocación y expiración usan los clientes y con qué
-  mecanismo se reconoce a un cliente autorizado? El comportamiento observable ante un equipo no
-  autorizado ya está cerrado en FR-4 (§4.2.1) y no depende de esta respuesta.
-  **Responsable:** producto/arquitectura. **Fase:** B/C para contrato funcional; D para mecanismo.
-- **OQ-2 (R5):** ¿Cuál es la raíz de confianza, cómo se distribuye y actualiza, y qué formato de
+- **OQ-1 (R5):** ¿Cuál es la raíz de confianza, cómo se distribuye y actualiza, y qué formato de
   firma se validará? **Responsable:** arquitectura/seguridad. **Fase:** D.
-- **OQ-3 (R3):** ¿mDNS puro, híbrido con dirección manual u otro mecanismo, y cómo se comportará en
+- **OQ-2 (R3):** ¿mDNS puro, híbrido con dirección manual u otro mecanismo, y cómo se comportará en
   redes segmentadas? **Responsable:** arquitectura. **Fase:** D.
-- **OQ-4 (P2P):** ¿Qué debe demostrar exactamente la PoC y es bloqueante para el MVP? **Responsable:**
+- **OQ-3 (P2P):** ¿Qué debe demostrar exactamente la PoC y es bloqueante para el MVP? **Responsable:**
   arquitectura. **Fase:** D.
-- **OQ-5 (R-01/NFR-6):** ¿Qué objetivos medibles de rendimiento y recursos se fijan tras las
+- **OQ-4 (R-01/NFR-6):** ¿Qué objetivos medibles de rendimiento y recursos se fijan tras las
   pruebas? **Responsable:** arquitectura. **Fase:** D.
 
 ## 13. Índice de supuestos
 
-- **[ASSUMPTION: OQ-1]** Los clientes se autentican de forma explícita antes de usar las
-  capacidades protegidas; el comportamiento observable por estado y operación está cerrado en
-  §4.2.1 y el mecanismo exacto está pendiente de Fase D.
-- **[ASSUMPTION: OQ-2]** La autenticidad de paquetes requiere una decisión formal de raíz de
+- **[ASSUMPTION: OQ-1]** La autenticidad de paquetes requiere una decisión formal de raíz de
   confianza y firma; un checksum no es suficiente.
-- **[ASSUMPTION: OQ-3]** El descubrimiento automático permanece en el MVP, mientras la dirección
+- **[ASSUMPTION: OQ-2]** El descubrimiento automático permanece en el MVP, mientras la dirección
   manual es una vía obligatoria de respaldo.
-- **[ASSUMPTION: OQ-4]** La PoC P2P puede validarse después del flujo servidor-cliente sin
+- **[ASSUMPTION: OQ-3]** La PoC P2P puede validarse después del flujo servidor-cliente sin
   bloquear el MVP; esta condición requiere confirmación en Fase D.
-- **[ASSUMPTION: OQ-5]** Los objetivos iniciales de escala y recursos son hipótesis a validar, no
+- **[ASSUMPTION: OQ-4]** Los objetivos iniciales de escala y recursos son hipótesis a validar, no
   compromisos de rendimiento.
 
 ## 14. Sobre este documento
@@ -490,10 +456,10 @@ este documento ni se adelantan aquí.
   Checkpoint A.
 - **Fase:** B — Product Requirements Document. **Estado:** `final` — PRD completado, revisado y
   listo para el Checkpoint B; su aprobación no está implícita en este documento.
-- **Decisiones no cerradas:** R3, R4, R5 y P2P quedan explícitamente abiertas con responsable y
+- **Decisiones no cerradas:** R3, R5 y P2P quedan explícitamente abiertas con responsable y
   fase de resolución (§4, §10, §12). Este PRD no las decide y no inventa mecanismos técnicos.
-  El contrato funcional observable de FR-4 (§4.2.1) queda cerrado en Fase B y no presupone el
-  mecanismo de autenticación que corresponde a Fase D.
+  FR-4 cierra el comportamiento observable de compatibilidad de versión sin introducir
+  autenticación o autorización de clientes.
 - **Siguiente checkpoint:** Checkpoint B — validación del PRD.
 - **Alcance de esta fase:** brief aprobado y PRD. Quedan fuera de esta ejecución UX,
   arquitectura, ADRs, backlog de épicas e historias, scaffold y código.
