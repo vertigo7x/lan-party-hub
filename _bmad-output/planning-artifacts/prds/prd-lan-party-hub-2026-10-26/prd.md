@@ -136,7 +136,8 @@ decisión técnica documentada.
 #### FR-4: Autenticación y autorización de clientes
 
 El servidor debe identificar a los clientes autorizados antes de conceder acceso a las
-capacidades protegidas y definir una respuesta segura ante equipos no autorizados.
+capacidades protegidas y definir una respuesta segura ante equipos no autorizados. El servidor
+distingue dos estados observables para un equipo conectado: **autorizado** y **no autorizado**.
 
 **Consecuencias verificables:**
 - Un cliente no reconocido no puede consultar el catálogo, descargar, instalar ni reportar estado
@@ -144,8 +145,38 @@ capacidades protegidas y definir una respuesta segura ante equipos no autorizado
 - Un cliente autorizado puede realizar las operaciones del MVP.
 - El servidor puede distinguir en su estado de cliente un equipo autorizado de uno no autorizado.
 
-**Restricción abierta R4:** el tipo de credencial, el alta y la revocación de clientes, la
-expiración de sesión y la política ante un equipo no autorizado no se inventan en este PRD.
+##### 4.2.1 Matriz funcional por estado de autorización
+
+La matriz define el comportamiento observable exigible para cada combinación de estado y
+operación protegida. "No autorizado" designa a cualquier equipo al que el servidor no ha
+reconocido como cliente autorizado, incluidos los que no presentan credencial, los que presentan
+una credencial no reconocida y los que han perdido el reconocimiento durante la sesión.
+
+| Estado | Operación protegida | Resultado observable | Diagnóstico seguro |
+| --- | --- | --- | --- |
+| Autorizado | Consultar catálogo (FR-2) | El cliente recibe el catálogo publicado y puede buscar y filtrar según FR-2 | Sin incidencias; los errores de sincronización se asocian al cliente y a la causa (NFR-7) |
+| No autorizado | Consultar catálogo (FR-2) | El cliente no obtiene metadatos del catálogo ni listados de videogameos | Mensaje de acceso denegado que no revela si el registro existe, su contenido ni el motivo del rechazo |
+| Autorizado | Descargar paquete (FR-5) | El cliente inicia la descarga, con progreso, pausa, reanudación y recuperación | Errores de descarga asociados al cliente y al paquete, con causa registrada |
+| No autorizado | Descargar paquete (FR-5) | El servidor no transfiere ningún byte del paquete; no se crea ni se figura progreso de descarga | Mensaje de acceso denegado que no distingue credencial ausente, no reconocida o revocada |
+| Autorizado | Instalar paquete (FR-8) | El cliente valida el paquete y ejecuta la instalación portable conforme al manifiesto | Errores de instalación persistidos, asociados al cliente y reintentables (NFR-7, NFR-9) |
+| No autorizado | Instalar paquete (FR-8) | El servidor no entrega el manifiesto ni el paquete, por lo que la instalación no llega a iniciarse y no se ejecuta ninguna operación sobre el sistema | Mensaje de acceso denegado que no revela la existencia del paquete, su ruta ni sus metadatos |
+| Autorizado | Reportar estado (FR-10) | El servidor registra la conexión, las versiones instaladas, las descargas activas, el progreso y los errores | El estado queda asociado al equipo y es visible en el panel del servidor (FR-10) |
+| No autorizado | Reportar estado (FR-10) | El servidor no acepta ni muestra estado de juego, versiones, descargas ni progreso atribuidos a un equipo no autorizado | El rechazo queda registrado como diagnóstico técnico del servidor, sin datos de juego ni de progreso en el panel |
+
+**Condiciones transversales de la matriz:**
+- El rechazo por falta de autorización no revela información de catálogo, paquetes ni rutas de
+  instalación: la respuesta observada es equivalente para todos los casos de no autorización.
+- La pérdida de autorización durante una operación en curso interrumpe la operación, no la deja
+  completarse con el reconocimiento anterior.
+- El servidor conserva la distinción entre estado autorizado y no autorizado en su estado de
+  cliente, sin exponer credenciales ni material de autenticación en el panel ni en los logs.
+- La matriz describe comportamiento observable y es comprobable sin conocer el mecanismo
+  subyacente.
+
+**Restricción abierta R4:** esta matriz fija el contrato funcional observable, no su
+implementación. El tipo de credencial, el alta y la revocación de clientes, la expiración de
+sesión, el transporte, el formato del mensaje de rechazo y el mecanismo de reconocimiento no se
+inventan en este PRD.
 **Responsable:** producto para el contrato funcional y arquitectura para el mecanismo. **Fase de
 resolución:** detalle funcional en Fase B/C y mecanismo en Fase D.
 
@@ -369,7 +400,7 @@ riesgo técnico de Fase D, sin presentarse como capacidad del MVP en este escena
 | ID | Riesgo o dependencia | Impacto | Responsable / fase |
 | --- | --- | --- | --- |
 | R3 | Mecanismo de descubrimiento sin decisión cerrada (mDNS candidato) | Riesgo de comportamiento en redes restrictivas o segmentadas | Fase D |
-| R4 | Autenticación sin mecanismo ni contrato cerrado | Acceso no autorizado o experiencias inconsistentes | Producto: Fase B/C; mecanismo: Fase D |
+| R4 | Autenticación sin mecanismo cerrado (contrato observable definido en FR-4 §4.2.1) | Acceso no autorizado o experiencias inconsistentes | Producto: Fase B/C; mecanismo: Fase D |
 | R5 | Raíz de confianza y firma sin decisión | La autenticidad no es verificable | Fase D |
 | P2P | Alcance y carácter bloqueante de la PoC sin decisión | Posible acoplamiento o validación tardía | Fase D |
 | R-01 | Objetivo de 8-20 jugadores y 1 Gbps sin validar | No se puede prometer rendimiento | Fase D |
@@ -402,7 +433,7 @@ este documento ni se adelantan aquí.
 | --- | --- |
 | Alcance y criterios de éxito | §7, §8, §9 |
 | R3 | FR-3, NFR-9, R3 en §10 |
-| R4 | FR-4, NFR-5, R4 en §10 |
+| R4 | FR-4, FR-4 §4.2.1 (matriz funcional), NFR-5, R4 en §10 |
 | R5 | FR-6, NFR-5, R5 en §10 |
 | P2P | FR-7, SM-C2, P2P en §10 |
 | Riesgos adicionales | §10 |
@@ -425,9 +456,10 @@ este documento ni se adelantan aquí.
 
 ## 12. Preguntas abiertas
 
-- **OQ-1 (R4):** ¿Qué identidad, alta, revocación y expiración usan los clientes y qué ocurre
-  exactamente con un equipo no autorizado? **Responsable:** producto/arquitectura. **Fase:** B/C para
-  contrato funcional; D para mecanismo.
+- **OQ-1 (R4):** ¿Qué identidad, alta, revocación y expiración usan los clientes y con qué
+  mecanismo se reconoce a un cliente autorizado? El comportamiento observable ante un equipo no
+  autorizado ya está cerrado en FR-4 (§4.2.1) y no depende de esta respuesta.
+  **Responsable:** producto/arquitectura. **Fase:** B/C para contrato funcional; D para mecanismo.
 - **OQ-2 (R5):** ¿Cuál es la raíz de confianza, cómo se distribuye y actualiza, y qué formato de
   firma se validará? **Responsable:** arquitectura/seguridad. **Fase:** D.
 - **OQ-3 (R3):** ¿mDNS puro, híbrido con dirección manual u otro mecanismo, y cómo se comportará en
@@ -440,7 +472,8 @@ este documento ni se adelantan aquí.
 ## 13. Índice de supuestos
 
 - **[ASSUMPTION: OQ-1]** Los clientes se autentican de forma explícita antes de usar las
-  capacidades protegidas; el mecanismo exacto está pendiente de Fase D.
+  capacidades protegidas; el comportamiento observable por estado y operación está cerrado en
+  §4.2.1 y el mecanismo exacto está pendiente de Fase D.
 - **[ASSUMPTION: OQ-2]** La autenticidad de paquetes requiere una decisión formal de raíz de
   confianza y firma; un checksum no es suficiente.
 - **[ASSUMPTION: OQ-3]** El descubrimiento automático permanece en el MVP, mientras la dirección
@@ -459,6 +492,8 @@ este documento ni se adelantan aquí.
   listo para el Checkpoint B; su aprobación no está implícita en este documento.
 - **Decisiones no cerradas:** R3, R4, R5 y P2P quedan explícitamente abiertas con responsable y
   fase de resolución (§4, §10, §12). Este PRD no las decide y no inventa mecanismos técnicos.
+  El contrato funcional observable de FR-4 (§4.2.1) queda cerrado en Fase B y no presupone el
+  mecanismo de autenticación que corresponde a Fase D.
 - **Siguiente checkpoint:** Checkpoint B — validación del PRD.
 - **Alcance de esta fase:** brief aprobado y PRD. Quedan fuera de esta ejecución UX,
   arquitectura, ADRs, backlog de épicas e historias, scaffold y código.
