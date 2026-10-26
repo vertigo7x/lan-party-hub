@@ -1,5 +1,13 @@
 ---
 status: final
+checkpoint:
+  id: E
+  scope: Aprobación del backlog inicial de la Fase E (13 épicas, 47 historias, 243 criterios de aceptación)
+  status: approved
+  approvedBy: user
+  approvedOn: '2026-10-26'
+  approvalNote: Aprobación humana y explícita del usuario; no queda implícita en el estado final del documento.
+  nextCheckpoint: Sprint Planning (Fase F)
 stepsCompleted:
   - step-01-validate-prerequisites
   - step-02-design-epics
@@ -25,13 +33,23 @@ decisiones de arquitectura (`ARCHITECTURE-SPINE.md`, AD-1..AD-30) en historias i
 verificables.
 
 **Fase:** E — Épicas e historias. **Base:** commit `bde708d97766dfc607528abb9d3a28bc82487f0e`
-(arquitectura con Checkpoint D aprobado). **Checkpoint E:** pendiente de aprobación humana.
+(arquitectura con Checkpoint D aprobado). **Checkpoint E:** **aprobado por el usuario el
+2026-10-26**. **Siguiente checkpoint:** Sprint Planning (Fase F).
 
 **Cierre documental de Fase E:** 13 épicas, 47 historias y 243 criterios de aceptación. Las revisiones
 `reviews/review-coverage-traceability.md`, `reviews/review-adversarial.md` y
 `reviews/review-editorial.md` quedan actualizadas con los conteos reales y las resoluciones
 E-TRACE, AR-25 y R-MVP-8. La verificación mecánica final de `verify_epics.py` devuelve `ok: true`,
 `total_findings: 0`.
+
+**Cierre del Checkpoint E (aprobación humana del backlog inicial):** el usuario aprobó
+explícitamente el backlog inicial de la Fase E —13 épicas, 47 historias y 243 criterios de
+aceptación— el **2026-10-26**. La aprobación es **humana y explícita**: no queda implícita en el
+estado `final` del documento ni en el mero cierre de la fase. El alcance aprobado es exactamente el
+contenido vigente de este documento; esta entrada **no modifica** ninguna historia, criterio de
+aceptación, epic count ni story count. El siguiente checkpoint es **Sprint Planning (Fase F)**,
+donde el backlog aprobado se desglosa en tareas de implementación. Ningún otro checkpoint queda
+aprobado por esta entrada.
 
 **Cierre por AD-30 (nombres de equipo únicos y validados por el servidor):** Story 9.1 incorpora
 los criterios AC5..AC10 —persistencia por `clientId`, resolución de colisión con nombre único
