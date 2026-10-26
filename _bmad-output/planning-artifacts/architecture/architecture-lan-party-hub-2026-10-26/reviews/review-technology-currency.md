@@ -119,3 +119,36 @@ Todas las versiones fijadas son correctas y están verificadas. **No hay ninguna
 - Los cierres del checklist **H-1..H-6** están en `reviews/review-rubric-walker.md`.
 - Los cierres adversariales **A-1..A-12** están en `reviews/review-adversarial-divergence.md`.
 - La aclaración de la semilla Stack y los refinamientos de `AD-4` quedaron registrados en `.memlog.md`.
+
+---
+
+## Bloque de resolución — D-1 / D-2 / D-3 (cierre de la ronda de correcciones de Fase D)
+
+- **Fecha del cierre:** 2026-10-26
+- **Método:** cada hallazgo se reverificó contra el **texto de `ARCHITECTURE-SPINE.md`**, no contra este informe. Una línea citada significa que la regla existe en la espina; la cita es la evidencia del cierre.
+- **Verificación mecánica:** `lint_spine.py` sobre la espina actual → `ok: true`, `total_findings: 0`, sin hallazgos por categoría ni severidad.
+
+### Estado por hallazgo
+
+| ID | Severidad | Estado | Cierre en la espina | AD que lo cierra | Evidencia (línea de la espina) |
+| --- | --- | --- | --- | --- | --- |
+| **D-1** | CRÍTICA | **RESUELTO** | El ancla de confianza **se fija out-of-band** (fingerprint por QR del organizador o por contraste visual en su pantalla) y **no** se obtiene del canal que debe autenticar (bootstrap circular). El servidor publica su fingerprint **solo para contrastarlo**, no para aceptarlo; sin fingerprint out-of-band el cliente no fija el ancla y no opera (tercer estado de conexión, ancla sin verificar). El **rechazo precede a persistir** en tres niveles distinguibles por `code` de `ErrorCatalog` (sustitución de ancla / firma inválida / `sha256` divergente), y un ancla ya fijada es **inmutable**, con la rotación en `Deferred`. | **AD-27** (refinamiento de **AD-2**, **AD-8**, **AD-12**) | AD-27 L342–367; AD-2 L86–98 (L91 bootstrap circular, L92–95 vías out-of-band, L96 sin fingerprint no se opera, L97 rechazo anterior a persistir, L98 ancla inmutable); AD-12 L182; convención `Data & formats` L396; diagrama de secuencia L520–524; tabla `Deferred` L814; tabla `Trazabilidad` L851; tabla «R5 y P2P» L874–888 |
+| **D-2** | ALTA | **RESUELTO** | MVP-HTTP y PoC-P2P quedan **separados**: el MVP tiene **exactamente un** camino de descarga (`HttpRangeTransferEngine`); `BitTorrentTransferEngine`, el módulo `Tracking` y su endpoint `announce`, el registro de swarm, el seeding entre clientes, el mapa de fragmentos `chunkMap` (columna incluida) y el `chunkSizeBytes` obligatorio **no existen en el MVP**, y esa ausencia es el estado correcto. Ninguna regla del MVP remite a P2P: ni la tabla REST, ni la configuración, ni la topología de despliegue, ni el modelo de dominio. El carácter **bloqueante / no bloqueante** de cada spike es **normativo**: **S-2 es BLOQUEANTE**, **S-3 es NO BLOQUEANTE** (si S-3 no se ejecuta o fracasa, el MVP **no cambia**). | **AD-28** (refinamiento de **AD-21**, **AD-4**, **AD-13**, **AD-24**) | AD-28 L368–379; AD-21 L263–276 (L268 carácter normativo, L269–272 derivación por dependencia, L275 no se propaga por edición); AD-4 L109; AD-13; AD-24 L313–321; diagrama de contexto L444; diagrama de módulos L477; topología L760; tabla `Spikes` L795–796; convención `Data & formats` L396; tabla `Deferred` L814; tabla `Trazabilidad` L852; tabla «R5 y P2P» L874–888 |
+| **D-3** | ALTA | **RESUELTO** | El evento **`ClientsSnapshotChanged` no existe** y se elimina del contrato: la vista de organización de clientes (FR-10) se obtiene **exclusivamente** por REST, `GET /api/v1/clients`, que devuelve `ClientRegistrationView[]` con la forma exacta de `Shared`. El consumidor es la **UI del propio servidor** (no hay receptor de hub declarado) y el modelo no admite autenticación de suscriptores, luego no existe una forma de proteger el push que no sea inventar autenticación. La actualización de la vista no se pierde: se refresca por REST cuando la UI lo pide y cuando el servidor detecta un cambio de conexión (evento **interno** del servidor, no de hub). | **AD-29** (refinamiento de **AD-18**, **AD-22**, **AD-5**) | AD-29 L380–390; AD-18 L243 (`ClientRegistrationView` como contrato único de `Shared`); AD-22 L301 (forma exacta de los payloads SignalR, sin `ClientsSnapshotChanged`); tabla REST L550; tabla de eventos SignalR L563; diagrama de secuencia L520–535; convención `Contratos API` L397; tabla `Capability → Architecture` L775; tabla `Trazabilidad` L853 |
+
+### Pendientes de este informe
+
+**Ninguno.** D-1, D-2 y D-3 quedan **resueltos**: cada uno tiene su AD propia (AD-27, AD-28, AD-29), su regla exigible, sus correcciones en cascada (tablas, diagramas, convenciones, `Deferred` y `Trazabilidad`) y su verificación mecánica con `lint_spine.py` en `ok: true` / `total_findings: 0`.
+
+### Notas de la verificación
+
+- **D-1** era el hallazgo con más superficie: no bastaba con decir «el ancla es la clave del servidor», sino fijar **cómo** llega, **quién** la compara, **qué** ocurre cuando no coincide y **qué se escribe antes** del rechazo. Las cuatro cosas están: el fingerprint es el dato transportado, la comparación la hace la persona, el rechazo es anterior a persistir en tres niveles con `code` distinto, y el ancla fijada es inmutable.
+- **D-2** se cerró por **eliminación**, no por declaración: la forma más robusta de separar la PoC del MVP es que los artefactos P2P **no existan** en el MVP (módulo, endpoint, puerto, columna `chunkMap`, dependencia de `MonoTorrent`, vocabulario de peer). La ausencia del diagrama de módulos es ahora la prueba, y la nota al pie lo dice en texto para que no se lea como un hueco pendiente.
+- **D-3** se cerró fijando **un único camino** del dato: `ClientRegistrationView` es un contrato de `Shared` **único**, consumido por la tabla REST y por la proyección del servidor. Un constructor ya no puede declarar un segundo tipo para el mismo concepto ni empujar el registro de clientes a cada equipo de la LAN.
+- La **capa de verificación** no encontró ningún hallazgo de esta lente que quedara abierto tras el cierre; los cierres de D-1 y D-2 se reforzaron mutuamente (AD-27 fija la cadena de confianza y AD-28 le quita la condición de cierre al P2P: son las dos caras de «la seguridad del MVP no depende de la PoC»).
+
+### Referencias cruzadas
+
+- Los cierres del checklist **H-1..H-6** están en `reviews/review-rubric-walker.md`.
+- Los cierres adversariales **A-1..A-12** están en `reviews/review-adversarial-divergence.md`.
+- Las decisiones **AD-27, AD-28, AD-29** y el refinamiento de **AD-21** quedaron registrados en `.memlog.md`.

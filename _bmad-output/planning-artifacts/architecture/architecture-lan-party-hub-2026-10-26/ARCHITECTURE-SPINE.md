@@ -68,7 +68,7 @@ LANPartyHub/
 
 Dependencias: hacia adentro, siempre. `Infrastructure → Application → Domain`. `Shared` no depende de nadie del proyecto. Un módulo de dominio no importa jamás un adaptador ni una biblioteca de terceros.
 
-Módulos del servidor: `Catalog`, `PackageDistribution`, `ClientManagement`, `Synchronization`, `Administration`, `Tracking` (P2P, condicional a la PoC).
+Módulos del servidor (los **únicos** del MVP): `Catalog`, `PackageDistribution`, `ClientManagement`, `Synchronization`, `Administration`. **No existe** un módulo `Tracking`: el tracker P2P no forma parte del MVP y solo aparece si S-3 lo valida (AD-13, AD-28).
 Módulos del cliente: `Connection`, `CatalogSync`, `Download`, `Installation`, `GameLauncher`, `Diagnostics`.
 
 Los módulos se comunican por **contratos en `Shared` y casos de uso publicados**, nunca por referencia directa a la implementación interna de otro módulo. Un módulo no consulta la tabla de otro módulo.
@@ -83,11 +83,19 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-2 — Raíz de confianza y firma de paquetes (cierra R5/OQ-1)
 
-- **Binds:** FR-6, FR-8, NFR-5, SM-3, AD-7, AD-8
-- **Prevents:** que un checksum se use como si probara autenticidad; que un paquete alterado o reempaquetado llegue a fase de instalación; que servidor y cliente firmen objetos distintos.
-- **Rule:** La firma es **Ed25519** sobre el **manifiesto de instalación canónico** (`InstallationManifest` en su forma canónica, serialización definida en la convención de datos). El manifiesto firmado es la raíz de verificación. El sobre firmado contiene el manifiesto en JSON canónico, el campo `signature` y un `keyId`. La clave pública del servidor es el **ancla de confianza**; se distribuye dentro de la LAN por el canal del propio servidor y el cliente la fija por **fingerprint** en el primer emparejamiento, que la UI muestra y el usuario confirma. El `sha256` del paquete verifica **integridad** y la firma verifica **autenticidad**: son comprobaciones distintas y ninguna sustituye a la otra. Un paquete que no valida contra el ancla se marca **no confiable** y no se instala.
+- **Binds:** FR-6, FR-8, NFR-5, SM-3, AD-7, AD-8, AD-12, AD-27
+- **Prevents:** que un checksum se use como si probara autenticidad; que un paquete alterado o reempaquetado llegue a fase de instalación; que servidor y cliente firmen objetos distintos; que el ancla de confianza se obtenga del propio canal que debe autenticarse (bootstrap circular); que un atacante en posición de intermediario sustituya el ancla en el primer emparejamiento.
+- **Rule:** La firma es **Ed25519** sobre el **manifiesto de instalación canónico** (`InstallationManifest` en su forma canónica, serialización definida en la convención de datos). El manifiesto firmado es la raíz de verificación. El sobre firmado contiene el manifiesto en JSON canónico, el campo `signature` y un `keyId`. El `sha256` del paquete verifica **integridad** y la firma verifica **autenticidad**: son comprobaciones distintas y ninguna sustituye a la otra. Un paquete que no valida contra el ancla se marca **no confiable** y no se instala.
   - **Existe una sola firma autoritativa** y la verifica el mismo ancla en servidor y cliente. El manifiesto canónico firmado incluye `packageId`, `packageVersion`, `sizeBytes` y `sha256` del paquete: la firma **autentica** los metadatos y el `sha256` **verifica** los bytes, de modo que la correspondencia entre manifiesto y paquete queda firmada, no supuesta.
   - `PackageDescriptor` **no** transporta firma: transporta `manifestRef` (referencia al manifiesto firmado) y `sha256`. `keyId` vive **solo** en el sobre firmado.
+  - **El ancla de confianza NO se obtiene del canal que autentica.** La clave pública del ancla (la del servidor que firma los manifiestos) **no** se considera confiable por el hecho de llegar por el mismo canal HTTP/SignalR que transporta los manifiestos: ese canal no está autenticado (AD-12) y no puede atestiguar su propio emisor. Un ancla obtenida de ese canal es exactamente lo que un intermediario puede sustituir.
+  - **El ancla se fija fuera de banda (out-of-band), antes de confiar en nada.** El fingerprint del ancla (huella criptográfica de la clave pública, en formato estable y legible) se distribuye **por un canal independiente del servidor**, y **solo** esos dos mecanismos están admitidos en el MVP:
+    1. **Código QR** que el organizador muestra en la pantalla del servidor (o en un cartel impreso) y que el cliente escanea oIntroduce a mano; el contenido del QR es el fingerprint y la dirección del servidor.
+    2. **Lectura directa de la pantalla del organizador**: el fingerprint se muestra en la pantalla del servidor como texto corto y el usuario lo contrasta con el que ve en su propio cliente antes de confirmarlo.
+    En ambos casos la comparación la hace **la persona**, en un canal que no pasa por la red de la LAN. El fingerprint **no** se propaga por mDNS, ni por el handshake de SignalR, ni por `GET /api/v1/server/info` como valor a aceptar sin contrastar: el servidor **sí** publica su fingerprint (para que el usuario pueda contrastarlo), pero publicarlo no lo convierte en confiable.
+  - **Sin fingerprint out-of-band, el cliente no fija el ancla y no opera.** El estado de conexión tiene un tercer valor además de conectado y desconectado: **ancla sin verificar**. En ese estado el cliente **no** descarga, **no** instala y **no** escribe nada en la raíz de instalación; solo puede navegar el catálogo en modo de lectura si la política lo permite. El servidor no tiene un endpoint que emita un "confía en mí" de una sola llamada.
+  - **El rechazo es anterior a persistir.** Un fingerprint que **no coincide** con el ancla esperada, o una firma que **no valida** contra el ancla fijada, se **rechazan antes de persistir nada**: no se escribe manifiesto en la caché `manifests/`, no se crea archivo parcial, no se registra la operación como iniciada y no se persiste el ancla sustituta. La regla de orden de AD-8 se aplica al ancla con la misma severidad: la comprobación precede a toda escritura en disco.
+  - **Un ancla fijada es inmutable.** Una vez fijada y persistida, la clave pública del ancla **no** se sustituye ni se añade otra sin una decisión explícita del organizador y la re-verificación out-of-band del fingerprint nuevo. La rotación de clave es un Deferred (ver tabla `Deferred`), no un comportamiento automático del cliente.
 
 
 ### AD-3 — Descubrimiento: mDNS más dirección manual como vías equivalentes (cierra R3/OQ-2)
@@ -164,13 +172,14 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 - **Binds:** FR-5, FR-8, FR-11, NFR-3, NFR-9, SM-2, R-02, AD-10, AD-24
 - **Prevents:** pérdida del progreso de descarga ante reinicio; que el estado de una operación viva solo en memoria.
-- **Rule:** SQLite + EF Core. **Un** archivo por rol: el servidor, uno; el cliente, uno. El progreso de descarga se persiste como **registro de fragmentos/offset** en tabla propia y se **reconcilia contra el archivo parcial en disco al arrancar**: el progreso efectivo es la intersección de lo persistido y lo que el archivo contiene. Las migraciones de EF Core son versionadas y se aplican al inicio. El esquema de cada archivo es propiedad de su rol: el del servidor no se replica en el cliente.
+- **Rule:** SQLite + EF Core. **Un** archivo por rol: el servidor, uno; el cliente, uno. El progreso de descarga se persiste como **registro de offset acumulado** en tabla propia y se **reconcilia contra el archivo parcial en disco al arrancar**: el progreso efectivo es la intersección de lo persistido y lo que el archivo contiene. El **mapa de fragmentos** es el formato alternativo del camino BitTorrent y **no existe en el MVP** (AD-24, AD-28). Las migraciones de EF Core son versionadas y se aplican al inicio. El esquema de cada archivo es propiedad de su rol: el del servidor no se replica en el cliente.
 
 ### AD-12 — Superficie de red mínima, sin TLS en la LAN del MVP
 
-- **Binds:** FR-3, NFR-1, NFR-10, AD-2, AD-13
-- **Prevents:** sobreingeniería de PKI en un entorno de LAN administrada; exposición del servidor fuera de la red del evento.
-- **Rule:** El servidor escucha **solo en interfaces privadas** y abre **solo** los puertos que necesita: HTTP (API + SignalR + tracker si aplica) y mDNS (UDP 5353). **No se exige TLS en el MVP**: la integridad y la autenticidad las aporta la **firma** (AD-2), no el canal. No hay autenticación de servidor ni de cliente.
+- **Binds:** FR-3, NFR-1, NFR-10, AD-2, AD-13, AD-27
+- **Prevents:** sobreingeniería de PKI en un entorno de LAN administrada; exposición del servidor fuera de la red del evento; que la ausencia de TLS se lea como «no hace falta verificar el ancla».
+- **Rule:** El servidor escucha **solo en interfaces privadas** y abre **solo** los puertos que necesita: HTTP (API + SignalR) y mDNS (UDP 5353). El tracker P2P **no** es uno de esos puertos en el MVP (AD-13, AD-28). **No se exige TLS en el MVP**: la integridad y la autenticidad las aporta la **firma** (AD-2), no el canal. No hay autenticación de servidor ni de cliente.
+  - **La ausencia de TLS no elimina la verificación del ancla.** El canal no está autenticado, y por eso **precisamente** el ancla se fija **out-of-band** (AD-27): sin TLS, un fingerprint que llega por el canal se lo puede sustituir cualquiera que esté en medio. El fingerprint que el servidor publica (`GET /api/v1/server/info`) sirve **para contrastar**, no para confiar.
 
 ### AD-13 — Tracker P2P interno, con DHT y LPD deshabilitados (condicional a S-3)
 
@@ -184,7 +193,8 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 - **Binds:** FR-5, FR-7, NFR-2, NFR-3, NFR-6, AD-13
 - **Prevents:** que un peer de la LAN se quede sin ancho frente a tráfico externo; que un solo cliente agote el enlace; crecimiento no acotado del número de conexiones.
-- **Rule:** El **servidor es el seeder inicial obligatorio** de cada paquete; los clientes que completan una descarga **pasan a ser seeders**. La prioridad de LAN se implementa limitando el **ancho de banda por peer** y priorizando peers de la **misma subred**, no con marcas de afinidad de red. Los **límites de concurrencia por cliente** (descargas simultáneas y conexiones totales) son configurables y tienen valor por defecto. En el MVP, donde todo el tráfico es de LAN, la prioridad se traduce en reparto equitativo del enlace entre peers.
+- **Rule:** Los **límites de concurrencia por cliente** (descargas simultáneas y conexiones totales) son configurables y tienen valor por defecto. En el **MVP**, donde todo el tráfico va del servidor a cada cliente, esos límites se aplican **por cliente** y el reparto del enlace es **equitativo entre los clientes** que descargan a la vez.
+  - **El seeding entre clientes pertenece a la PoC P2P, no al MVP.** El modelo del seeding —el servidor como seeder inicial y el cliente que completa una descarga **pasa a ser seeder**, con prioridad de LAN por **ancho de banda por peer** y priorización de peers de la **misma subred**, sin marcas de afinidad de red— **describe el camino BitTorrent**, que solo aparece al cerrarse S-3 (AD-13, AD-28). En el MVP HTTP **no hay roles de seed ni de seeder**: el servidor es el origen del paquete y el cliente su consumidor, y el límite por cliente de esta AD es el mecanismo de reparto que sí existe.
 
 ### AD-15 — Observabilidad: logs estructurados correlacionados y catálogo de errores estable
 
@@ -200,7 +210,9 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 - **Binds:** FR-1..FR-11, NFR-1..NFR-10, SM-1, SM-2, SM-3, SM-4, SM-5
 - **Prevents:** que el E2E en LAN real se sustituya por pruebas de single host y no detecte fallos de red, descubrimiento o concurrencia.
-- **Rule:** xUnit, con tres niveles: **unitarias** (dominio, máquinas de estado, validación de manifiesto y **confines de ruta**, incluida la extracción fuera del directorio autorizado), **integración** (persistencia contra **SQLite real en archivo**, endpoints con `WebApplicationFactory`, motor de transferencia HTTP contra servidor de prueba) y **E2E en LAN real** con **dos o más clientes**, que es el escenario de aceptación del MVP (PRD §9). La checklist de casos de `docs/plan.md` §10 gobierna las pruebas obligatorias y se clasifica así: **unitarias/integración** — extracción fuera del directorio autorizado, manifiesto manipulado, instalación incompleta, juego ya instalado, versión desactualizada y lanzamiento fallido; **E2E en LAN real** — descarga interrumpida y reanudación, archivo corrupto, cliente desconectado, servidor inaccesible, varios clientes simultáneos, cliente compartiendo fragmentos y reinicio del cliente durante una operación. La clasificación no elimina ningún caso de la checklist: fija el nivel mínimo donde puede detectarse cada fallo.
+- **Rule:** xUnit, con tres niveles: **unitarias** (dominio, máquinas de estado, validación de manifiesto, **verificación del ancla de confianza** y **confines de ruta**, incluida la extracción fuera del directorio autorizado), **integración** (persistencia contra **SQLite real en archivo**, endpoints con `WebApplicationFactory`, motor de transferencia HTTP contra servidor de prueba) y **E2E en LAN real** con **dos o más clientes**, que es el escenario de aceptación del MVP (PRD §9). La checklist de casos de `docs/plan.md` §10 gobierna las pruebas obligatorias y se clasifica así: **unitarias/integración** — extracción fuera del directorio autorizado, manifiesto manipulado, **ancla de confianza no coincidente rechazada antes de persistir**, instalación incompleta, juego ya instalado, versión desactualizada y lanzamiento fallido; **E2E en LAN real** — descarga interrumpida y reanudación, archivo corrupto, cliente desconectado, servidor inaccesible, varios clientes simultáneos y reinicio del cliente durante una operación. La clasificación no elimina ningún caso de la checklist: fija el nivel mínimo donde puede detectarse cada fallo.
+  - **La sustitución del ancla por un intermediario tiene prueba obligatoria.** Además del caso «ancla de confianza no coincidente rechazada antes de persistir», la checklist de `docs/plan.md` §10 incorpora un caso derivado de AD-27: **el cliente rechaza una clave de ancla sustituida por un intermediario y no persiste nada** —ni ancla, ni manifiesto en la caché `manifests/`, ni archivo parcial, ni operación registrada. Es el caso (e) del spike S-2 y es **unitario o de integración**, nunca de E2E de LAN real: no hace falta una LAN para demostrar que la comprobación precede a la escritura.
+  - **El caso «cliente compartiendo fragmentos con otros» de `docs/plan.md` §10 NO es un caso del MVP**: presupone el intercambio de fragmentos entre peers, que **no existe en el MVP** (AD-28). Es un caso de la **PoC P2P (S-3)** y su cobertura queda **condicionada al resultado de S-3**, no al cierre del MVP. Ningún otro caso de la checklist presupone P2P.
 
 ### AD-17 — Despliegue: artefactos self-contained por rol, sin instalador ni servicio
 
@@ -227,8 +239,9 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `DownloadProgressUpdated` | `clientId`, `operationId`, `bytesTransferred`, `totalBytes`, `state` (`DownloadState`) | Push de estado (AD-5) |
   | `InstallationProgressUpdated` | `clientId`, `operationId`, `state` (`InstallationState`), `phase` | Push de estado (AD-5) |
   | `ClientErrorReported` | `clientId`, `operationId`, `error: ApiError` | `error` es la **única** forma de error del sistema; `error.code` pertenece a `ErrorCatalog` (AD-15) |
-  | `CatalogChanged` | `catalogVersion` | Disparo de resincronización |
-  | `ClientsSnapshotChanged` | `clients[]` (`ClientRegistrationView`: `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt`) | Instantánea exacta de la vista de clientes; solo servidor → vista admin (AD-22) |
+  | `CatalogChanged` | `catalogVersion` | Disparo de resincronización; **único** evento servidor → cliente del catálogo |
+  | `ClientRegistrationView` | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Forma **exacta** de la vista de clientes; la consume `GET /api/v1/clients` (AD-29). **No** existe el evento `ClientsSnapshotChanged` |
+  | `TrustAnchor` | Clave pública Ed25519 del ancla + su `fingerprint` | Ancla fijada out-of-band y persistida por el cliente (AD-27) |
   | `PackageDescriptor` | `packageId`, `gameId`, `version`, `sizeBytes`, `chunkSizeBytes`, `sha256`, `manifestRef` | **Sin** firma (AD-2, AD-7) |
   | `InstallationManifest` + sobre firmado | Manifiesto canónico + `signature` + `keyId` | **Único** objeto firmado (AD-2) |
   | `VersionInfo` | Versión de cliente, de servidor y de protocolo | Origen de las cabeceras de versión (AD-6) |
@@ -249,9 +262,18 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-21 — Los spikes son condición de cierre de decisión, no de implementación
 
-- **Binds:** FR-7, R3, R5, P2P, R-01, R-02, R-03, AD-3, AD-4, AD-13, AD-14
-- **Prevents:** que la PoC P2P se declare capacidad del MVP sin evidencia; que el dominio se acople a una biblioteca no validada; que se prometan cifras de rendimiento sin benchmark.
-- **Rule:** Las decisiones que dependen de evidencia técnica se cierran con **spikes con criterios de éxito explícitos**, no con suposiciones. Cada spike tiene: objetivo, alcance mínimo, **criterios de éxito observables**, resultado esperado y **qué decisión cierra**. **El intercambio P2P no se expone como capacidad del MVP** hasta que su spike valide seed, descubrimiento de peers, transferencia por fragmentos, integridad y recuperación. El MVP se cierra sobre el camino servidor-cliente (HTTP), que no depende del resultado del spike P2P.
+- **Binds:** FR-5, FR-6, FR-7, FR-8, NFR-3, NFR-5, NFR-10, SM-2, SM-3, SM-C2, R3, R5, P2P, R-01, R-02, R-03, AD-3, AD-4, AD-8, AD-13, AD-14, AD-16, AD-20, AD-24, AD-27, AD-28
+- **Prevents:** que la PoC P2P se declare capacidad del MVP sin evidencia; que el dominio se acople a una biblioteca no validada; que se prometan cifras de rendimiento sin benchmark; que un spike no bloqueante se lea como dependencia de cierre del MVP; que un spike bloqueante se lea como opcional.
+- **Rule:** Las decisiones que dependen de evidencia técnica se cierran con **spikes con criterios de éxito explícitos**, no con suposiciones. Cada spike tiene: objetivo, alcance mínimo, **criterios de éxito observables**, resultado esperado y **qué decisión cierra**.
+  - **Un spike tiene un carácter declarado: bloqueante o no bloqueante.** El carácter va en la columna «Bloquea MVP» de la tabla `Spikes` y es **normativo**, no descriptivo: un spike **bloqueante** es condición de cierre del MVP (su resultado negativo impide cerrar el MVP), y un spike **no bloqueante** es un experimento cuyo resultado **no** cambia el MVP. Un spike no bloqueante puede **no ejecutarse**, ejecutarse tarde o **fracasar** sin que ningún artefacto del MVP cambie.
+  - **La regla del carácter bloqueante se deriva de la dependencia, no del tema.** Un spike es **bloqueante** si y solo si su resultado es un **pre requisite de una capacidad del MVP**: si el MVP no puede construirse o cerrarse sin él. Un spike es **no bloqueante** si su resultado solo **amplía** el alcance hacia una fase posterior. Aplicado a los spikes de esta espina:
+    - **S-2 (raíz de confianza) es BLOQUEANTE.** Su resultado es un **pre requisite de FR-6 y SM-3**: sin una cadena de confianza verificable no hay autenticidad de paquetes ni instalación confiable, y la implementación del MVP depende de un ancla y un formato de firma concretos. La espina **fija el diseño** de esa cadena (AD-2, AD-8, AD-27); S-2 lo **valida**, y su resultado es el criterio de aceptación del mecanismo, no un requisito de diseño adicional.
+    - **S-3 (PoC P2P) es NO BLOQUEANTE.** Su resultado es una **decisión de fase posterior**: el MVP ya tiene su camino de descarga (HTTP servidor-cliente, AD-4, AD-28) y este spike no añade ni quita ninguna capacidad del MVP, solo decide si existirá una segunda implementación de `ITransferEngine` más adelante. Ningún requisito, caso de prueba, ruta de API, puerto o artefacto de despliegue del MVP depende de él (AD-28).
+    - **S-1, S-4 y S-5 son NO BLOQUEANTES**, por la misma razón: S-1 valida el mecanismo de descubrimiento sin el cual la vía manual basta (AD-3); S-4 produce las cifras que AD-14 deja configurables; S-5 valida AD-11, cuyo mecanismo ya está fijado.
+  - **El intercambio P2P no se expone como capacidad del MVP** hasta que su spike valide seed, descubrimiento de peers, transferencia por fragmentos, integridad y recuperación. El MVP se cierra sobre el camino servidor-cliente (HTTP), que no depende del resultado del spike P2P.
+  - **Un spike bloqueante no bloquea el diseño, solo el cierre.** La espina **anticipa** la forma de lo que el spike valida (el mecanismo de firma y la orden de rechazo en AD-2, AD-8 y AD-27; la forma del puerto en AD-4), de modo que el constructor del MVP no tiene que esperar al spike para empezar. Lo que el spike bloqueante condiciona es el **cierre** del MVP, no su **construcción**.
+  - **Un spike no bloqueante no se propaga por edición.** Su resultado se incorpora con su **propia AD** y su **propio traceability** en la fase que lo ejecute, como fase posterior (AD-28). Editar este documento para introducir P2P como si hubiera sido parte del MVP está prohibido.
+  - **La regla es general y exigible:** para cada spike está declarado si su resultado es **pre requisite** de alguna capacidad del MVP o **decisión de fase posterior**. Un spike sin ese carácter declarado es un hueco y se rechaza el spike (AD-16, AD-28).
 
 ### AD-22 — Cada entidad persistida tiene un dueño inequívoco, y la proyección del servidor es una entidad distinta
 
@@ -270,13 +292,13 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `ClientError` (servidor) | **servidor** | `errorId`, `clientId`, `operationId`, `code`, `message`, `cause`, `nextStep`, `occurredAt` | Registro para la vista de organización; conserva la forma de `ApiError` |
   | `ClientInstallation` | **cliente** | `gameId`, `installedVersion`, `validationState` (`InstallationState`), `installPath`, `installDirectoryId` | **Estado local real**. Dueño: el cliente (AD-10) |
   | `DownloadOperation` (cliente) | **cliente** | `operationId`, `packageId`, `state` (`DownloadState`), `transferEngine` | Estado local real (AD-10) |
-  | `DownloadProgress` | **cliente** | `operationId`, `bytesPersisted`, `totalBytes` (+ `chunkMap` solo en BitTorrent) | AD-24 |
+  | `DownloadProgress` | **cliente** | `operationId`, `bytesPersisted`, `totalBytes` | Offset acumulado del camino HTTP (único formato del MVP). **Sin `chunkMap`**: ese mapa no existe en el MVP (AD-24, AD-28) |
   | `ClientIdentity` | **cliente** | `clientId` emitido y persistido | AD-23 |
 
   - **Regla de no-colisión con el estado del cliente:** el servidor **no** persiste el `InstallationState` ni el `DownloadState` de otro cliente. Cuando el servidor necesita mostrarlos, los guarda como **`validationStateText`**, una **cadena de presentación** copiada del `StateDisplayMap` de `Shared` (AD-10), **nunca** como el enum. Si el servidor reinterpreta el texto, no está leyendo un estado de dominio.
   - **`installPath` es una ruta del cliente y no sale del cliente.** El servidor no la persiste; la vista de organización muestra la **versión instalada** y la **existencia** de la instalación, no su ruta.
   - **La forma del evento `ClientStateChanged` es exacta y está en `Shared`** (AD-18): `clientId`, `connectionState`, `installedGames[]` (con `gameId`, `installedVersion`, `validationState`) y `activeOperations[]` (con `operationId`, `operationType`, `state`). No es un «contenido mínimo»: un servidor no puede esperar un campo que el contrato no declara.
-  - **Todos los payloads SignalR tienen forma exacta en `Shared`.** `DownloadProgressUpdated` lleva `clientId`, `operationId`, `bytesTransferred`, `totalBytes` y `state` (`DownloadState`); `InstallationProgressUpdated` lleva `clientId`, `operationId`, `state` (`InstallationState`) y `phase`; `ClientErrorReported` lleva `clientId`, `operationId` y `error` (`ApiError`); `CatalogChanged` lleva `catalogVersion`; `ClientsSnapshotChanged` lleva `clients[]`, cada elemento con `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState` y `lastSeenAt`. Ningún payload admite campos opcionales fuera de esta lista.
+  - **Todos los payloads SignalR tienen forma exacta en `Shared`.** `DownloadProgressUpdated` lleva `clientId`, `operationId`, `bytesTransferred`, `totalBytes` y `state` (`DownloadState`); `InstallationProgressUpdated` lleva `clientId`, `operationId`, `state` (`InstallationState`) y `phase`; `ClientErrorReported` lleva `clientId`, `operationId` y `error` (`ApiError`); `CatalogChanged` lleva `catalogVersion`. **No existe el payload `ClientsSnapshotChanged`**: la vista de clientes no viaja por SignalR, se obtiene por REST (AD-29). Ningún payload admite campos opcionales fuera de esta lista.
 
 ### AD-23 — Identidad del cliente: `clientId` emitido una vez y persistido
 
@@ -317,13 +339,62 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   - **El servidor tampoco borra** la `ClientInstallationView` de un cliente cuyo juego se retiró del catálogo: la proyección refleja lo que el cliente réellement tiene instalado, no lo que el catálogo publica.
   - El `catalogVersion` del servidor es **monótono creciente**; el cliente solo aplica un snapshot con versión **mayor** que la que tiene, y descarta uno igual o anterior.
 
+### AD-27 — Bootstrap de la confianza: el ancla se fija out-of-band y el rechazo precede a persistir
+
+- **Binds:** FR-6, FR-8, NFR-5, SM-3, AD-2, AD-6, AD-8, AD-12
+- **Prevents:** que el ancla de confianza se obtenga del mismo canal que debe autenticar (bootstrap circular); que un intermediario en la LAN sustituya el ancla en el primer emparejamiento y firme manifiestos con su propia clave; que el cliente persista un ancla o un manifiesto no verificado; que dos unidades implementen un handshake de confianza distinto.
+- **Rule:** El **ancla de confianza** (clave pública Ed25519 del servidor) **se fija fuera de banda**, por un canal independiente del servidor, **antes** de que el cliente acepte cualquier manifiesto. La regla completa de qué es el ancla y de qué se firma vive en AD-2; esta AD fija **el mecanismo de bootstrap y el orden de rechazo**.
+  - **El fingerprint es el dato transportado, no el ancla.** El fingerprint (huella criptográfica de la clave pública del ancla, en formato estable y legible, con longitud fija) es lo que la persona transporta del servidor al cliente por un canal fuera de banda. El cliente **deriva** la clave pública del ancla a partir de la clave que el servidor presenta y **compara su fingerprint** con el esperado; si no coinciden, **no** fija el ancla.
+  - **Vías out-of-band admitidas en el MVP (y solo estas dos):**
+    1. **QR del organizador.** El servidor muestra un código QR que contiene el fingerprint del ancla y la dirección del servidor. El cliente lo escanea (o el usuario teclea el fingerprint que el QR codifica) y el usuario **contrasta** el valor con lo que ve en la pantalla del organizador antes de confirmarlo.
+    2. **Contraste visual en la pantalla del organizador.** El servidor muestra el fingerprint como texto corto y grouped por bloques de 4 caracteres; el cliente lo muestra junto al que recibió del servidor y el usuario confirma la coincidencia. Ambas pantallas son del mismo servidor, pero **el canal de confianza es la vista humana**, no la red.
+    - Ninguna otra vía es admisible: **ni** mDNS, **ni** el handshake de SignalR, **ni** `GET /api/v1/server/info`, **ni** un DNS de la LAN, **ni** un archivo compartido. Un valor que llega por la LAN **no** puede convertirse en ancla por sí mismo.
+  - **El servidor publica su fingerprint; eso no lo hace confiable.** `GET /api/v1/server/info` expone el fingerprint del ancla **para contrastarlo**, no para aceptarlo. El cliente puede **mostrar** el valor recibido y el esperado juntos, pero **solo** persiste el ancla cuando el usuario confirma que **coinciden**. La confirmación del usuario es la **verificación**; la pantalla es el **canal**.
+  - **Orden normativo de la fijación del ancla (cada paso precede al siguiente; el rechazo en cualquier paso detiene la secuencia):**
+    1. El cliente obtiene el fingerprint esperado **out-of-band** (QR o contraste en la pantalla del organizador).
+    2. El cliente obtiene del servidor la clave pública del ancla y **calcula** su fingerprint.
+    3. El cliente **compara** fingerprint calculado y fingerprint esperado. **Si no coinciden: rechaza.**
+    4. El cliente **persiste** el ancla fijada junto con el fingerprint esperado, de modo que las conexiones posteriores se validan contra un valor ya persistido y no contra un valor recién recibido.
+    5. Solo a partir de aquí el cliente puede validar manifiestos firmados (AD-2, AD-8).
+  - **El rechazo es anterior a persistir, y en tres niveles.** Antes de **cualquier** escritura en disco (caché `manifests/`, archivo parcial, `state.sqlite`):
+    - **Sustitución de ancla (MITM):** si el fingerprint calculado no coincide con el esperado, el cliente **no persiste el ancla**, **no** fija nada, **no** descarga, **no** instala, y registra un error de diagnóstico con el `code` del catálogo (`ErrorCatalog`) que distingue «fingerprint de ancla no coincide» de «firma inválida». La operación se **rechaza**; no es un aviso ni un reintento automático.
+    - **Manifiesto con firma inválida:** si la firma no valida contra el ancla **ya fijada**, el manifiesto **no se persiste en la caché `manifests/`**, el archivo parcial **no se crea** y la operación **no se registra** como iniciada (AD-8).
+    - **Paquete con `sha256` divergente:** la divergencia de integridad **no** invalida el ancla ni el manifiesto firmado; se descarta el archivo parcial y la operación se marca como fallida y **no reparable por reanudación** (AD-8).
+    - La distinción es obligatoria: «el ancla no es la esperada» es un **ataque o suplantación**; «la firma no valida contra el ancla correcta» es un **manifiesto inválido**. Un constructor que colapsa ambos en un solo código de error pierde la información que distingue un ataque de un archivo corrupto (AD-15, AD-25).
+  - **Un ancla fijada es inmutable durante el evento.** Una vez persistida, el cliente **no** sustituye el ancla ni acepta otra clave ante una discrepancia posterior: la rechaza y exige un nuevo emparejamiento out-of-band explícito. La **rotación** de la clave del ancla es una operación del organizador con re-verificación out-of-band del fingerprint nuevo, y su automatismo está en `Deferred` (tabla `Deferred`).
+  - **Estado de conexión con ancla sin verificar.** La conexión del cliente tiene tres estados: `AnchorVerified`, `AnchorUnverified` y `Disconnected`. En `AnchorUnverified` el cliente **no** descarga ni instala nada y la UI lo dice de forma explícita (la definición de los textos vive en `Shared`; AD-10, AD-25). Este estado **no** es un error de red: es un estado de seguridad, y el cliente no lo degrada a «conectado» por haber descargado antes el catálogo.
+  - **La distribución del ancla por la organización es un requisito de operación, no un detalle de UX.** El ejecutable del servidor del evento **incluye su fingerprint en la pantalla de arranque** y puede **imprimirlo o exportarlo como QR**, para que la organización lo entregue a los jugadores por el canal que ya usa para distribuir el ejecutable (mesa de registro, cartel, chat del evento). El canal de entrega del *ejecutable* y el canal de entrega del *fingerprint* son **independientes** en el modelo: si la organización reparte el ejecutable y el fingerprint por el mismo mensaje sin verificar, el fingerprint **no** es out-of-band y el cliente debe rechazar la conexión.
+
+### AD-28 — MVP-HTTP y PoC-P2P son dos caminos separados; ningún requisito P2P es obligatorio del MVP
+
+- **Binds:** FR-5, FR-7, NFR-3, NFR-10, SM-C2, R3, R5, P2P, AD-3, AD-4, AD-11, AD-13, AD-14, AD-20, AD-21, AD-24
+- **Prevents:** que un requisito, un caso de prueba, una ruta de API, un puerto de configuración o un artefacto de despliegue del MVP dependa de la PoC P2P; que el cierre del MVP quede condicionado al resultado de S-3; que dos unidades construyan el MVP con y sin P2P y produzcan binarios incompatibles; que el vocabulario de peer se filtre al modelo de dominio del MVP.
+- **Rule:** El MVP tiene **exactamente un** camino de descarga: **HTTP servidor-cliente** (`HttpRangeTransferEngine`, AD-4). La PoC P2P es un **experimento de arquitectura** (S-3) que **no forma parte del MVP** y cuyo resultado **no** es condición de cierre del MVP (AD-21).
+  - **Inventario de lo que es P2P y lo que NO lo es.** Lo siguiente **no existe en el MVP**, y su ausencia en el MVP no es un hueco pendiente sino el estado correcto: la implementación `BitTorrentTransferEngine`; el módulo de servidor `Tracking` y su endpoint `announce`; el registro de swarm; el seeding entre clientes (AD-14); el mapa de fragmentos `chunkMap` —**incluida su columna en el esquema del cliente**— y el `chunkSizeBytes` obligatorio (AD-24); el intercambio de fragmentos entre peers (AD-20); el tracker y su puerto (AD-12, AD-13); y la arista entre clientes en el diagrama de contexto.
+  - **Ninguna regla del MVP remite a P2P como requisito.** Concretamente: (a) la **tabla REST del MVP** no expone ningún endpoint de P2P ni de tracker; (b) la **configuración del MVP** no expone ningún flag, selector ni puerto de P2P; (c) la **topología de despliegue del MVP** no incluye ningún proceso, servicio o puerto de P2P; (d) el **proyecto del MVP** no referencia MonoTorrent; (e) el **modelo de dominio del MVP** no menciona peers, swarms ni fragmentos.
+  - **El vocabulario del MVP es «servidor y cliente», no «peer».** En el camino HTTP, el servidor es el **origen** del paquete y el cliente es el **consumidor**; no hay roles de seed ni de seeder, y el reparto de ancho de banda del MVP es por **cliente**. AD-14 describe el reparto entre clientes y su regla de concurrencia **no** presupone la existencia de un segundo motor: sus límites por cliente (descargas simultáneas, conexiones totales) se aplican **igual** en el MVP HTTP.
+  - **Un caso de prueba P2P no es un caso de prueba del MVP.** El caso «cliente compartiendo fragmentos con otros» de `docs/plan.md` §10 pertenece a la **PoC P2P (S-3)**, no al conjunto de pruebas obligatorias del MVP: en el MVP no existen fragmentos, así que el caso **no** tiene a qué aplicarse. La clasificación de AD-16 lo marca como **caso de la PoC**, y su cobertura queda **condicionada al resultado de S-3**, no al cierre del MVP. La regla es general: **ningún caso de la checklist del MVP presupone la existencia de P2P**; los casos que sí lo presuponen se reetiquetan como caso de la PoC y salen del conjunto obligatorio del MVP.
+  - **Condiciones de la PoC P2P (S-3), todas explícitas y ninguna obligatoria para el MVP:** (a) valida el mecanismo de seed, descubrimiento de peers, transferencia por fragmentos, integridad y recuperación; (b) decide la **forma** de la segunda implementación de `ITransferEngine` sin cambiar la forma del puerto ni los contratos de dominio; (c) decide el formato del mapa de fragmentos, que hasta entonces ningún esquema persiste (AD-24); (d) verifica que ningún peer sale a Internet (DHT y LPD deshabilitados); (e) puede **fracasar** sin bloquear el MVP. Si S-3 fracasa, el resultado es «el MVP sigue por HTTP» y **ningún** artefacto del MVP cambia.
+  - **El resultado de S-3 no reescribe el MVP.** Una decisión posterior que introduzca P2P es una **decisión de fase posterior** con su propio AD y su propio traceability; no se propaga por edición de este documento como si hubiera sido parte del MVP.
+
+### AD-29 — El evento `ClientsSnapshotChanged` no existe: la vista de clientes se obtiene por REST
+
+- **Binds:** FR-10, NFR-7, NFR-9, AD-5, AD-6, AD-12, AD-15, AD-18, AD-22, AD-23, AD-27
+- **Prevents:** que un evento sin receptor declarado se construya de dos maneras incompatibles; que el registro completo de clientes (nombres de equipo, versiones, estado de conexión) se empuje a clientes que no lo necesitan; que el servidor tenga un canal de push que no tiene consumidor; que dos unidades usen el evento o el REST con formas de datos distintas.
+- **Rule:** **El evento `ClientsSnapshotChanged` no existe y se elimina del contrato.** La vista de organización de clientes (FR-10) se obtiene **exclusivamente** por REST: `GET /api/v1/clients`, que devuelve la instantánea de `ClientRegistrationView[]` con forma exacta (`clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt`).
+  - **Por qué no puede ser un evento.** Un evento de SignalR necesita un **receptor declarado** y una **visibilidad** inequívoca. `ClientsSnapshotChanged` se declaraba como «servidor → servidor (vista admin)», que no es un emisor ni un receptor: no existe un segundo proceso servidor, y la «vista admin» es una **UI del propio servidor**, no un suscriptor de un hub. Su forma en el diagrama de secuencia lo entregaba además **al cliente**, lo que habría publicado el registro completo de la organización a cada equipo de la LAN. Y no puede protegerse por suscripción, porque el modelo **no tiene autenticación ni autorización de clientes** (AD-6, AD-12): un evento discriminado por identidad de suscriptor no es construible aquí sin inventar autenticación, que está prohibida.
+  - **El consumidor es la UI del servidor.** La tabla de clientes del organizador (UX: `data-table-row`, «Tabla de clientes del servidor») es una vista del propio servidor: la consume la aplicación del servidor, que ya **posee** el `ClientRegistration` persistido (AD-22). No hay ningún cliente legítimo de esa instantánea, y por tanto **no hay un push que valga la pena** ni una forma de protegerlo que no sea autenticación.
+  - **Una sola forma del dato.** `ClientRegistrationView` es un contrato de `Shared` **único** (AD-18), con la forma exacta ya fijada; lo consumen la tabla REST `GET /api/v1/clients` y la proyección `ClientInstallationView` del servidor (AD-22). No se declara un segundo tipo para el mismo concepto.
+  - **La actualización de la vista no se pierde.** La tabla de clientes se **refresca** por REST cuando la UI lo pide y en el momento en que el servidor detecta un cambio de conexión o de versión (la transición de `connectionState` de un `ClientRegistration` es un evento **interno del servidor**, no un evento de hub). El requisito de FR-10 es «el servidor refleja la conexión y desconexión de un cliente compatible», y el servidor lo cumple por su propia persistencia y su propio refresco de vista: no necesita un bus de eventos para observarse a sí mismo.
+  - **Lo que sí viaja por SignalR hacia el cliente** queda como está y no se amplía: `CatalogChanged` (disparo de resincronización) y los eventos que el **cliente** emite (`ClientStateChanged`, `DownloadProgressUpdated`, `InstallationProgressUpdated`, `ClientErrorReported`). Ningún evento **servidor → cliente** transporta datos de otros clientes.
+
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
 | Naming | PascalCase para tipos y miembros; `camelCase` para parámetros y variables locales; un solo nombre por concepto en todo el repositorio (`GameId`, `PackageId`, `DownloadOperationId`); sufijos `...Id` para identificadores, `...State` para máquinas de estado, `...Descriptor` para metadatos inmutables, `I...` para puertos. Código, contratos y nombres de tipo en **inglés**; documentación y mensajes de UI en **español**. |
-| Data & formats | JSON canónico (sin espacios superfluos, claves ordenadas) para todo lo que se firma (AD-2). Fechas en UTC ISO-8601. `sizeBytes` siempre en bytes exactos; la conversión a GB decimales es de presentación (AD-7). Identificadores opacos tipo UUID v7; las versiones de juego son cadenas opacas del editor, no números. Toda respuesta de error usa la **misma** forma y el **mismo** tipo: `ApiError` de `Shared` = `{ code, message, cause, nextStep }`, con `code` estable del `ErrorCatalog` y `cause`/`nextStep` **obligatorios** (AD-15, AD-18, AD-25). El progreso persistido es `bytesPersisted` en HTTP; `chunkMap` **solo** en BitTorrent (AD-24). |
-| Contratos API | Prefijo `/api/v1`; `schemaVersion` en el cuerpo de toda mutación; DTOs en `Shared`; los nombres de evento de SignalR son `PascalCase` en pasado (`CatalogChanged`, `DownloadProgressUpdated`, `ClientStateChanged`). |
+| Data & formats | JSON canónico (sin espacios superfluos, claves ordenadas) para todo lo que se firma (AD-2). Fechas en UTC ISO-8601. `sizeBytes` siempre en bytes exactos; la conversión a GB decimales es de presentación (AD-7). Identificadores opacos tipo UUID v7; las versiones de juego son cadenas opacas del editor, no números. Toda respuesta de error usa la **misma** forma y el **mismo** tipo: `ApiError` de `Shared` = `{ code, message, cause, nextStep }`, con `code` estable del `ErrorCatalog` y `cause`/`nextStep` **obligatorios** (AD-15, AD-18, AD-25). **El progreso persistido del MVP es `bytesPersisted`** (offset acumulado del camino HTTP, único formato y única columna de progreso del esquema del cliente): `chunkMap` **no existe en el MVP** —ni como columna, ni como tipo, ni como valor opcional— y solo aparece si S-3 valida la PoC P2P, con el formato que fije ese spike (AD-24, AD-28). La regla es **un motor, un formato**: el formato se deduce de `transferEngine`, no de un parámetro configurable. |
+| Contratos API | Prefijo `/api/v1`; `schemaVersion` en el cuerpo de toda mutación; DTOs en `Shared`; los nombres de evento de SignalR son `PascalCase` en pasado (`CatalogChanged`, `DownloadProgressUpdated`, `ClientStateChanged`). La vista de clientes se obtiene por REST, no por evento (AD-29). |
 | State & cross-cutting | Las transiciones de estado solo ocurren por el dominio; ni la UI ni los adaptadores escriben estado directamente. La mutación de datos persistidos ocurre **solo** en `Infrastructure` a través de un puerto de repositorio; la UI nunca toca EF Core. Cada entidad persistida tiene **un** dueño; la proyección del servidor (`ClientInstallationView`) es una entidad **distinta** de la del cliente (`ClientInstallation`) y no comparte nombre (AD-22). El texto de UI de cada estado sale **solo** de `StateDisplayMap`; «sincronizando», «disponible» y «desactualizado» son estados de vista derivados y «error» es la proyección de los estados terminales de fallo, no un estado de máquina (AD-10, AD-25). Configuración por archivo + variables de entorno + flags de línea de comandos, con precedencia `flags > env > archivo`. Logging JSON con correlación `operationId`/`clientId` obligatoria en toda operación (AD-15, AD-23). |
 | Errores | Excepciones de dominio tipadas en `Domain`; adaptador que las traduce a la forma de error de API. Ningún mensaje al usuario contiene una excepción sin traducir ni un código interno como texto principal. |
 | Concurrencia | Cada operación de larga duración (descarga, instalación) es una unidad de trabajo con su propio `operationId` y su registro de estado persistido. Las operaciones que tocan el mismo recurso se serializan por recurso, no globalmente. |
@@ -354,7 +425,7 @@ Verificado en la web el **2026-10-26**.
 flowchart TB
     subgraph Evento["Red local del evento (sin Internet)"]
         Org["Organizador<br/>Administra el catálogo"]
-        Server["LAN Party Hub Server<br/>ASP.NET Core · monolito modular<br/>REST + SignalR + mDNS + tracker"]
+        Server["LAN Party Hub Server<br/>ASP.NET Core · monolito modular<br/>REST + SignalR + mDNS"]
         C1["Cliente equipo 1<br/>Avalonia · MVVM"]
         C2["Cliente equipo 2<br/>Avalonia · MVVM"]
         Pkg["Repositorio de paquetes<br/>archivos en disco del servidor"]
@@ -368,8 +439,9 @@ flowchart TB
     Server -->|sirve con Range requests| Pkg
     Server -.->|anuncia _lanpartyhub._tcp| C1
     Server -.->|anuncia _lanpartyhub._tcp| C2
-    C1 <-->|P2P entre peers, condicional a la PoC| C2
 ```
+
+**El contexto del MVP no contiene ninguna arista P2P.** Los dos clientes no se hablan entre sí: el servidor es el **origen** del paquete y cada cliente su **consumidor**. No hay intercambio de fragmentos, ni roles de seed o seeder, ni tracker en la topología del MVP (AD-28, AD-14).
 
 ### Módulos del servidor y dirección de dependencias
 
@@ -384,7 +456,6 @@ flowchart LR
         ClientMgmt["ClientManagement"]
         Sync["Synchronization"]
         Admin["Administration"]
-        Tracker["Tracking<br/>AUSENTE hasta que S-3 cierre"]
         Infra["Infraestructura<br/>EF Core/SQLite · filesystem · mDNS"]
     end
 
@@ -398,13 +469,12 @@ flowchart LR
     ClientMgmt --> Infra
     Sync --> Infra
     Admin --> Infra
-    Tracker -.->|no existe en el MVP| Infra
     Shared --> API
     Shared --> Catalog
     Shared --> Dist
 ```
 
-`Tracking` aparece en el diagrama **solo** para dejar constancia de que **no forma parte del MVP**: no hay módulo, ni endpoint, ni puerto de configuración (AD-13). La flecha punteada indica que su existencia depende del resultado de S-3, no de una tarea de implementación del MVP.
+El diagrama de módulos **no contiene** `Tracking`: el módulo de tracker no forma parte del MVP, y su ausencia es el estado correcto, no un hueco pendiente (AD-13, AD-28). Si S-3 lo valida, aparece como un AD propio de la fase posterior, no como un nodo provisional de este diagrama.
 
 Regla de este diagrama: las flechas apuntan **hacia** `Shared` y **hacia** `Infraestructura`. Ninguna flecha cruza de un módulo de negocio a otro módulo de negocio.
 
@@ -447,24 +517,29 @@ sequenceDiagram
     participant S as Servidor
     participant H as Hub SignalR
 
+    Note over C,S: Fijación out-of-band del ancla (AD-27) — el fingerprint llega por QR o por la pantalla del organizador, NO por este canal
+    C->>S: GET /api/v1/server/info (X-Client-Version, X-Protocol-Version)
+    S-->>C: 200 { name, versions, anchorPublicKey, anchorFingerprint }
+    C->>C: Calcular fingerprint del ancla y compararlo con el esperado (out-of-band)
+    Note over C: Si no coincide: RECHAZO, no se persiste nada (AD-27)
     C->>S: GET /api/v1/catalog (X-Client-Version, X-Protocol-Version)
     S-->>C: 200 catálogo | 426 Upgrade Required
     C->>S: POST /api/v1/downloads { packageId, schemaVersion }
     S-->>C: 201 { operationId }
     C->>S: GET /api/v1/packages/{id}/manifest (firmado)
     S-->>C: 200 { manifest, signature, keyId }
-    C->>C: Verificar firma + schemaVersion
+    C->>C: Verificar firma contra el ancla fijada + schemaVersion
     C->>S: GET /api/v1/packages/{id}/content (Range)
     C->>H: Connect + handshake de versión
     C->>H: DownloadProgressUpdated / InstallationProgressUpdated / ClientStateChanged / ClientErrorReported
-    H-->>C: CatalogChanged / ClientsSnapshotChanged
+    H-->>C: CatalogChanged
 ```
 
 **Operaciones REST (superficie mínima del MVP):**
 
 | Método y ruta | Propósito | Módulo |
 | --- | --- | --- |
-| `GET /api/v1/server/info` | Nombre, versión del servidor, versión de protocolo, fingerprint del ancla | Administration |
+| `GET /api/v1/server/info` | Nombre, versión del servidor, versión de protocolo, clave pública del ancla y su `fingerprint` (**para contrastar**, no para confiar: AD-27) | Administration |
 | `GET /api/v1/catalog` | Snapshot completo con metadatos y `catalogVersion` | Catalog / Synchronization |
 | `GET /api/v1/games/{gameId}` | Ficha completa de un videojuego | Catalog |
 | `GET /api/v1/packages/{packageId}` | Descriptor del paquete (tamaño, hash, manifiesto) | PackageDistribution |
@@ -472,7 +547,7 @@ sequenceDiagram
 | `GET /api/v1/packages/{packageId}/content` | Bytes del paquete con soporte de `Range`; `416` cuando el rango no es satisfacible | PackageDistribution |
 | `POST /api/v1/downloads` | Registra intención de descarga; devuelve `operationId` | ClientManagement |
 | `POST /api/v1/installations` | Registra intención de instalación | ClientManagement |
-| `GET /api/v1/clients` | Vista de organización del estado de los clientes | ClientManagement |
+| `GET /api/v1/clients` | Vista de organización del estado de los clientes (`ClientRegistrationView[]`): **única** vía de esa vista, en lugar de un evento (AD-29) | ClientManagement |
 | `POST /api/v1/admin/games` | Alta y modificación de videojuegos | Catalog / Administration |
 
 **Eventos de SignalR:**
@@ -484,7 +559,8 @@ sequenceDiagram
 | `DownloadProgressUpdated` | cliente → servidor | `clientId`, `operationId`, `bytesTransferred`, `totalBytes`, `state` (`DownloadState`) |
 | `InstallationProgressUpdated` | cliente → servidor | `clientId`, `operationId`, `state` (`InstallationState`), `phase` |
 | `ClientErrorReported` | cliente → servidor | `clientId`, `operationId`, `error` (`ApiError`: `code`, `message`, `cause`, `nextStep`) |
-| `ClientsSnapshotChanged` | servidor → servidor (vista admin) | `clients[]` (`clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt`) |
+
+**La vista de clientes NO viaja por SignalR.** No existe el evento `ClientsSnapshotChanged`: no tenía receptor declarado ni visibilidad inequívoca, y el modelo no admite autenticación de suscriptores (AD-29). Se obtiene por `GET /api/v1/clients`, que devuelve `ClientRegistrationView[]` con la forma exacta de `Shared` (AD-18). Ningún evento **servidor → cliente** transporta datos de otros clientes.
 
 ### Modelo de dominio (entidades y relaciones)
 
@@ -519,7 +595,7 @@ erDiagram
         string gameId FK
         string version
         int64 sizeBytes
-        int64 chunkSizeBytes
+        int64 chunkSizeBytes optional
         string sha256
         string manifestRef
     }
@@ -533,6 +609,8 @@ erDiagram
 ```
 
 **Archivo del servidor — `catalog.sqlite`:** dueño del catálogo y de la vista de organización. `CLIENT_INSTALLATION_VIEW` es una **proyección de solo lectura**; su `validationStateText` es una **cadena de presentación**, nunca el enum de `Shared` (AD-22).
+
+- `PACKAGE_DESCRIPTOR.chunkSizeBytes` es **opcional e informativo** en el MVP: el camino HTTP no lo usa para calcular rangos (AD-20, AD-24). Es el **único** campo del modelo del MVP que nombra un concepto de troceado, y existe **solo** porque el camino BitTorrent lo necesita si S-3 lo valida; el cliente **no** lo lee en el MVP.
 
 ```mermaid
 erDiagram
@@ -602,12 +680,11 @@ erDiagram
         string operationId PK
         int64 bytesPersisted
         int64 totalBytes
-        string chunkMap
     }
 ```
 
 - `CLIENT_INSTALLATION.validationState` es el enum `InstallationState` de `Shared`; `CLIENT_INSTALLATION_VIEW.validationStateText` es **texto** (AD-22).
-- `DOWNLOAD_PROGRESS.bytesPersisted` es el offset acumulado del camino HTTP; `chunkMap` **se queda vacío** en ese camino y **solo** se usa con el motor BitTorrent (AD-24).
+- `DOWNLOAD_PROGRESS` tiene **exactamente** dos columnas de progreso: `bytesPersisted` (offset acumulado del camino HTTP) y `totalBytes`. **No hay columna `chunkMap`**: el mapa de fragmentos no pertenece al esquema del MVP y lo fija el resultado de S-3, si S-3 se valida (AD-24, AD-28).
 - `PACKAGE_DESCRIPTOR` **no** lleva `signature` ni `keyId`: la firma vive **solo** en el sobre firmado del `InstallationManifest` (AD-2, AD-7).
 - `CLIENT_ERROR.code` es el `code` estable de `ErrorCatalog` y `message`/`cause`/`nextStep` conservan la forma de `ApiError` (AD-15, AD-22, AD-25).
 - `DOWNLOAD_INTENT` (servidor) registra la **intención**; no es el estado de la operación, que es del cliente (AD-10).
@@ -680,7 +757,7 @@ flowchart LR
 
 Sin cloud, sin servicio de Windows, sin base de datos externa: **un** proceso de servidor por evento y **un** proceso de cliente por equipo.
 
-**El tracker P2P no aparece en la topología del MVP**: el módulo `Tracking` está ausente hasta que S-3 cierre (AD-13). Cuando exista, será un servicio **en proceso** del mismo binario del servidor, servido por HTTP **sobre el mismo puerto**, sin proceso ni puerto adicionales.
+**La topología del MVP no contiene ningún componente P2P**: ni tracker, ni proceso de tracker, ni puerto de tracker, ni arista entre clientes. El módulo `Tracking` está ausente hasta que S-3 cierre (AD-13, AD-28). Cuando exista, será un servicio **en proceso** del mismo binario del servidor, servido por HTTP **sobre el mismo puerto**, sin proceso ni puerto adicionales.
 
 ## Capability → Architecture Map
 
@@ -690,17 +767,17 @@ Sin cloud, sin servicio de Windows, sin base de datos externa: **un** proceso de
 | Sincronización, búsqueda y filtrado (FR-2) | `Server/Synchronization` + `Client/CatalogSync` | AD-5, AD-10, AD-26 |
 | Descubrimiento y conexión (FR-3) | `Client/Connection` (mDNS + manual) | AD-3, AD-12, AD-6 |
 | Compatibilidad de versión de clientes (FR-4) | `Server/Host` (middleware) + `Client/Connection` | AD-6, AD-12 |
-| Descarga desde el servidor (FR-5) | `Client/Download` + `Server/PackageDistribution` | AD-4, AD-10, AD-11, AD-20, AD-24, AD-26 |
-| Integridad y autenticidad de paquetes (FR-6) | `Domain/PackageIntegrity` + `Infrastructure/Trust` | AD-2, AD-8, AD-9 |
-| Abstracción multi-mecanismo y PoC P2P (FR-7) | `Client/Download` (`ITransferEngine`) + `Server/Tracking` (ausente hasta S-3) | AD-4, AD-13, AD-14, AD-21, AD-24 |
-| Instalación portable (FR-8) | `Client/Installation` + `Domain/InstallationManifest` | AD-7, AD-8, AD-9, AD-10, AD-22 |
+| Descarga desde el servidor (FR-5) | `Client/Download` + `Server/PackageDistribution`; **solo** camino HTTP en el MVP: progreso persistido = `bytesPersisted`, **sin `chunkMap`** | AD-4, AD-10, AD-11, AD-20, AD-24, AD-26, AD-28 |
+| Integridad y autenticidad de paquetes (FR-6) | `Domain/PackageIntegrity` + `Infrastructure/Trust`; ancla fijada out-of-band | AD-2, AD-8, AD-9, AD-27 |
+| Abstracción multi-mecanismo y PoC P2P (FR-7) | `Client/Download` (`ITransferEngine`); **PoC P2P fuera del MVP** (S-3) | AD-4, AD-13, AD-14, AD-21, AD-24, AD-28 |
+| Instalación portable (FR-8) | `Client/Installation` + `Domain/InstallationManifest` | AD-7, AD-8, AD-9, AD-10, AD-22, AD-27 |
 | Ejecución de videojuegos (FR-9) | `Client/GameLauncher` | AD-19, AD-10 |
-| Panel de estado de clientes (FR-10) | `Server/ClientManagement` + hub SignalR | AD-5, AD-10, AD-15, AD-22, AD-23, AD-25 |
+| Panel de estado de clientes (FR-10) | `Server/ClientManagement` + **vista por REST** (`GET /api/v1/clients`); **no** por evento | AD-5, AD-10, AD-15, AD-22, AD-23, AD-25, AD-29 |
 | Detección y distribución de versiones completas (FR-11) | `Client/CatalogSync` + `Client/Installation` | AD-7, AD-10, AD-11, AD-22, AD-26 |
 | Red local autónoma (NFR-1) | Todo el sistema | AD-12, AD-13 |
-| Paquetes de varios GB (NFR-3) | `Client/Download` + `Infrastructure/Persistence` | AD-11, AD-20, AD-24 |
-| Seguridad de contenido (NFR-5) | `Domain/PackageIntegrity` + `Client/Installation` | AD-2, AD-8, AD-9 |
-| Diagnóstico (NFR-7) | `Infrastructure/Logging` + `Client/Diagnostics` | AD-15, AD-25 |
+| Paquetes de varios GB (NFR-3) | `Client/Download` + `Infrastructure/Persistence`; **sin mapa de fragmentos en el MVP** | AD-11, AD-20, AD-24, AD-28 |
+| Seguridad de contenido (NFR-5) | `Domain/PackageIntegrity` + `Client/Installation`; rechazo **antes de persistir** | AD-2, AD-8, AD-9, AD-27 |
+| Diagnóstico (NFR-7) | `Infrastructure/Logging` + `Client/Diagnostics` | AD-15, AD-25, AD-27 |
 | Licencias (NFR-8) | `Server/Catalog` | AD-7, AD-22 |
 | Resiliencia operativa (NFR-9) | `Client/Download` + `Client/Installation` | AD-10, AD-11, AD-24, AD-26 |
 | Sin cloud obligatorio (NFR-10) | Todo el sistema | AD-12, AD-13 |
@@ -715,8 +792,8 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | Spike | Objetivo | Alcance mínimo | Criterios de éxito observables | Decisión que cierra | Bloquea MVP |
 | --- | --- | --- | --- | --- | --- |
 | **S-1 · Descubrimiento** | Validar que mDNS funciona en la LAN del evento y convive con la dirección manual | Servidor que anuncia `_lanpartyhub._tcp`; cliente que descubre y compara con la dirección manual | (a) El cliente descubre el servidor **sin** introducir la dirección en la LAN de prueba; (b) la dirección manual conecta en la misma red; (c) el comportamiento queda registrado en al menos dos redes con políticas distintas (con y sin multicast) | R3 / OQ-2 | **No** — la vía manual basta para el MVP (AD-3) |
-| **S-2 · Raíz de confianza** | Validar la cadena firma → manifiesto → paquete sin bootstrap out-of-band | Firmar un manifiesto con Ed25519; verificar; comprobar rechazo de manifiesto alterado | (a) Un manifiesto alterado **se rechaza** y no se ejecuta; (b) un manifiesto firmado por otra clave **se rechaza**; (c) un paquete cuyo `sha256` no coincide **se rechaza**; (d) el fingerprint se muestra y se confirma en la UI | R5 / OQ-1 | **Sí** — sin confianza verificable no hay FR-6 ni SM-3 |
-| **S-3 · P2P** | Decidir si BitTorrent con tracker local es viable como mecanismo real | Tracker interno en proceso; 3 peers; seed desde el servidor; intercambio por fragmentos | (a) El servidor hace seed y un cliente completa; (b) un segundo cliente recibe **fragmentos de un peer**, no solo del servidor; (c) se verifican integridad y hash final; (d) se reanuda tras interrupción; (e) **ningún peer sale a Internet** (DHT/LPD verificados como deshabilitados) | P2P / OQ-3 | **No** — el MVP va por HTTP (AD-21) |
+| **S-2 · Raíz de confianza** | Validar la cadena firma → manifiesto → paquete **con bootstrap out-of-band** y con rechazo **antes de persistir** | Fijar el ancla por fingerprint out-of-band (QR o contraste en la pantalla del organizador); firmar un manifiesto con Ed25519; verificar; comprobar rechazo de manifiesto alterado; **simular un intermediario que sustituye la clave del ancla** | (a) Un manifiesto alterado **se rechaza** y no se ejecuta; (b) un manifiesto firmado por otra clave **se rechaza**; (c) un paquete cuyo `sha256` no coincide **se rechaza**; (d) el fingerprint se muestra y se confirma en la UI **antes** de fijar el ancla; (e) **prueba MITM de sustitución**: un cliente al que se le presenta una clave de ancla distinta de la esperada **rechaza la conexión**, **no persiste el ancla sustituta** y **no escribe nada** (ni manifiesto en `manifests/`, ni archivo parcial, ni operación registrada); (f) **prueba de rechazo previo a persistir**: con la firma inválida contra el ancla ya fijada, no queda ninguna escritura en disco ni operación iniciada | R5 / OQ-1 | **Sí** — sin confianza verificable no hay FR-6 ni SM-3 |
+| **S-3 · P2P (PoC, **fuera del MVP**)** | Decidir si BitTorrent con tracker local es viable como mecanismo real | Tracker interno en proceso; 3 peers; seed desde el servidor; intercambio por fragmentos | (a) El servidor hace seed y un cliente completa; (b) un segundo cliente recibe **fragmentos de un peer**, no solo del servidor; (c) se verifican integridad y hash final; (d) se reanuda tras interrupción; (e) **ningún peer sale a Internet** (DHT/LPD verificados como deshabilitados) | P2P / OQ-3 | **No** — el MVP va por HTTP y **no** depende de este spike (AD-21, AD-28). **Condicional**: si S-3 no se ejecuta, no se ejecuta, o fracasa, el MVP **no cambia**; ningún artefacto del MVP depende de su resultado |
 | **S-4 · Rendimiento y recursos** | Fijar cifras medibles en lugar de suposiciones | Descarga de un paquete de varios GB con 2, 5, 10 y 20 clientes simultáneos; medición de CPU, memoria y enlace | (a) Se mide la tasa de transferencia agregada por número de clientes; (b) se mide el consumo de CPU y memoria del servidor y del cliente en cada escenario; (c) se registra el tiempo de reanudación tras interrupción; (d) se emite un informe con los números y la configuración | R-01 / OQ-4 / NFR-2 / NFR-6 | **No** — pero condiciona los umbrales de AD-14 |
 | **S-5 · Reanudación de paquetes grandes** | Cerrar el punto más frágil del MVP (R-02) | Descarga de 7+ GB interrumpida y reanudada varias veces, con reinicio del proceso del cliente | (a) La reanudación parte del **offset persistido**, no de cero; (b) el archivo parcial y el registro de progreso se reconcilian sin divergencia tras el reinicio; (c) el hash final coincide tras N interrupciones | R-02 / SM-2 | **No** — pero valida AD-11 |
 
@@ -734,6 +811,7 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | **Gestión centralizada de sesiones** (modo gestionado, RF-08 del plan maestro) | Fuera del MVP; el MVP es solo modo autónomo | Fase posterior al MVP |
 | Actualizaciones **diferenciales** | Fuera del MVP; el MVP resuelve versiones completas | Fase posterior al MVP |
 | TLS en la LAN | La autenticidad la aporta la firma, no el canal (AD-2, AD-12); un despliegue real con clientes no confiables lo exigiría | Si el modelo operativo deja de ser "LAN administrada" |
+| **Rotación de la clave del ancla de confianza** | El MVP no necesita rotar: el ancla se fija una vez por evento y el cliente la trata como inmutable (AD-2, AD-27). El mecanismo de rotación (procedimiento, periodicidad, formato de la clave nueva y re-verificación out-of-band del fingerprint) **no está fijado**: fijarlo ahora sería inventar un procedimiento que ningún requisito del MVP ejecuta. La rotación **no es automática**: es una operación explícita del organizador con re-verificación out-of-band del fingerprint nuevo | Si el mismo ancla debe servir para varios eventos consecutivos, o si el fingerprint del ancla se filtra y hay que reemplazarla. **Condición:** el procedimiento llega con su propia AD y su propio traceability; hasta entonces, el comportamiento del cliente es el de AD-27 (ancla fijada inmutable; una discrepancia se rechaza y exige un emparejamiento out-of-band nuevo) |
 | Soporte multiplataforma más allá de Windows 10/11 | Fuera del MVP (NFR-4) | Fase posterior al MVP |
 | Conexión directa del juego a servidores de juego | Fuera del MVP; el puerto queda preparado (AD-19) | Fase posterior al MVP |
 | Multi-tenancy, roles y permisos de administración | El modelo operativo es un servidor por evento con un administrador | Si aparecen varios administradores con responsabilidades distintas |
@@ -770,13 +848,16 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | AD-24 | FR-5, FR-7, NFR-3, NFR-9, SM-2, R-02 | PRD FR-5, NFR-3; Brief R-02 |
 | AD-25 | FR-5, FR-8, FR-10, NFR-7 | PRD FR-10, NFR-7; UX *Voz y tono* |
 | AD-26 | FR-2, FR-5, FR-8, FR-11, NFR-9 | PRD FR-2, FR-5, FR-11 |
+| AD-27 | FR-6, FR-8, NFR-5, SM-3, R5, OQ-1 | PRD FR-6, FR-8, NFR-5; Brief R5; PRD §12 OQ-1 |
+| AD-28 | FR-5, FR-7, NFR-3, NFR-10, SM-C2, R3, R5, P2P, OQ-3 | PRD FR-7, NFR-10, SM-C2; Brief P2P; PRD §12 OQ-3 |
+| AD-29 | FR-10, NFR-7, NFR-9, R-05 | PRD FR-10, NFR-7; UX *Tabla de clientes del servidor* |
 
 ### Restricciones abiertas del PRD resueltas por esta espina
 
 | Restricción | Decisión que la resuelve | Estado |
 | --- | --- | --- |
 | R3 / OQ-2 — mecanismo de descubrimiento | AD-3 (mDNS + dirección manual como vías equivalentes) | **Resuelta en diseño**, pendiente de validación técnica con S-1 |
-| R5 / OQ-1 — raíz de confianza y firma | AD-2, AD-8 (Ed25519 sobre manifiesto canónico) | **Resuelta en diseño**, pendiente de validación técnica con S-2 |
+| R5 / OQ-1 — raíz de confianza y firma | AD-2, AD-8, AD-27 (Ed25519 sobre manifiesto canónico; ancla fijada out-of-band; rechazo antes de persistir) | **Resuelta en diseño**, pendiente de validación técnica con S-2 (spike **bloqueante**) |
 | R2 / R-02 — reanudación de descargas de paquetes grandes | AD-11, AD-24 (offset HTTP persistido y reconciliado) | **Resuelta en diseño**, pendiente de validación técnica con S-5 |
 | Forma de errores y catálogo único | AD-15, AD-18, AD-25 (`ApiError`: `code`, `message`, `cause`, `nextStep`) | **Resuelta** |
 | Forma exacta de eventos SignalR | AD-18, AD-22 | **Resuelta** |
@@ -784,8 +865,26 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | Identidad estable del cliente | AD-23 | **Resuelta** |
 | Granularidad del progreso persistido | AD-24 | **Resuelta** |
 | Consistencia del catálogo con operaciones en curso | AD-26 | **Resuelta** |
-| P2P / OQ-3 — alcance de la PoC y carácter bloqueante | AD-4, AD-13, AD-21 (abstracción + tracker interno; PoC **no** bloqueante) | **Resuelta en diseño**, pendiente de validación técnica con S-3 |
+| Forma del ancla de confianza y su distribución | AD-27 (fingerprint out-of-band por QR o contraste en la pantalla del organizador; ancla inmutable durante el evento) | **Resuelta en diseño**; la rotación del ancla queda en `Deferred` |
+| Forma de la vista de clientes (REST frente a evento) | AD-29 (`GET /api/v1/clients`; **no** existe el evento `ClientsSnapshotChanged`) | **Resuelta** |
+| Separación MVP-HTTP frente a PoC-P2P | AD-28 (el MVP tiene **un** camino de descarga; ningún requisito P2P es obligatorio del MVP) | **Resuelta** |
+| P2P / OQ-3 — alcance de la PoC y carácter bloqueante | AD-4, AD-13, AD-21, AD-28 (abstracción + tracker interno; PoC **no** bloqueante) | **Resuelta en diseño**, pendiente de validación técnica con S-3 (spike **no bloqueante**: si S-3 no se ejecuta o fracasa, el MVP no cambia) |
 | OQ-4 / R-01 — objetivos medibles de rendimiento | S-4 con criterios de éxito; AD-14 deja los límites configurables | **Abierta por diseño** — la cifra la produce el benchmark, no la inventa la arquitectura |
+
+### R5 y P2P: dos preguntas abiertas, dos remarquen distintos
+
+R5 (raíz de confianza) y P2P (alcance de la PoC) se responden en la misma espina pero **no se mezclan**: una gobierna la seguridad del MVP y es **bloqueante**; la otra gobierna la frontera de alcance y es **no bloqueante**. Esta tabla fija la separación para que ninguna de las dos arrastre a la otra.
+
+| Eje | R5 / OQ-1 — raíz de confianza y firma | P2P / OQ-3 — alcance de la PoC |
+| --- | --- | --- |
+| **Qué pregunta** | ¿Cuál es la raíz de confianza, cómo se distribuye y se verifica, y qué formato de firma la autentica? | ¿Qué debe demostrar exactamente la PoC y es bloqueante para el MVP? |
+| **Decisiones que la resuelven** | **AD-2** (qué se firma: Ed25519 sobre el manifiesto canónico), **AD-8** (orden de rechazo antes de persistir), **AD-27** (bootstrap out-of-band del ancla y rechazo previo a persistir) | **AD-4** (una sola implementación del puerto en el MVP), **AD-13** (módulo `Tracking` ausente hasta S-3), **AD-21** (carácter bloqueante declarado por spike), **AD-28** (separación MVP-HTTP / PoC-P2P) |
+| **Spike que la valida** | **S-2** — Raíz de confianza | **S-3** — P2P (PoC) |
+| **Carácter del spike** | **BLOQUEANTE**: su resultado es un pre requisite de FR-6 y SM-3. Condiciona el **cierre** del MVP, no su construcción (AD-21) | **NO BLOQUEANTE**: su resultado es una decisión de fase posterior. El MVP puede cerrarse sin él, y sin ningún artefacto del MVP depende de él (AD-21, AD-28) |
+| **Si el spike no se ejecuta o fracasa** | El MVP **no se puede cerrar**: no hay autenticidad verificable. El diseño de la cadena (AD-2, AD-8, AD-27) está fijado, de modo que S-2 valida un mecanismo existente, no una decisión pendiente | El MVP **se cierra igual, por HTTP**. «El MVP sigue por HTTP» es un resultado **válido** de S-3, no un fracaso del MVP |
+| **Efecto sobre el MVP si el spike tiene éxito** | Ninguno en el alcance: valida el mecanismo ya fijado | **Ninguno**: introducir P2P es una decisión de fase posterior, con su propia AD y su propio traceability. No se propaga por edición de esta espina (AD-28) |
+| **Requisito del MVP que depende de ella** | **FR-6** (integridad y autenticidad), **FR-8** (instalación portable), **NFR-5** (seguridad de contenido), **SM-3** | **Ninguno**: FR-7 (abstracción multi-mecanismo) se satisface en el MVP con `HttpRangeTransferEngine`; SM-C2 exige precisamente que la cobertura P2P **no** bloquee el flujo servidor-cliente |
+| **Riesgo de confusión que la tabla previene** | Leer «sin TLS en la LAN» como «no hace falta verificar el ancla» (AD-12, AD-27) | Leer «S-3 es un spike» como «el MVP depende de S-3», o extender el vocabulario de peer al modelo de dominio del MVP (AD-28) |
 
 ### Fuera de alcance (pertenece a Fase E y F)
 
