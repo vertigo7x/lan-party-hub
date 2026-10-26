@@ -1,5 +1,5 @@
 <!-- bmad:context -->
-<!-- Verified 2026-10-26 against 2c90bdf. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep anything you want preserved outside the markers. -->
+<!-- Verified 2026-10-26 against a91eed7. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep anything you want preserved outside the markers. -->
 
 ## lan-party-hub
 
@@ -21,7 +21,7 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 ## Running and verifying
 
 - `python` is not on PATH: use `py -3` (3.10.11) or `uv run` for scripts, e.g. `uv run _bmad/scripts/memlog.py`.
-- Target `net10.0`: a .NET 10 runtime is not enough, the SDK is required. Pin the SDK in `global.json` at the repo root, otherwise `dotnet` silently picks the newest installed SDK — which may be a preview (NETSDK1057).
+- Target `net10.0`: SDK 10.0.403 is installed. Pin it in `global.json` at the repo root — without that file `dotnet` resolves to whichever SDK is newest, and that set has changed twice on this machine.
 - Avalonia 12.1.4 ships `net10.0` assets natively plus `net8.0`; it has no `net9.0` assets, so net9.0 falls back to net8.0.
 - Git reports LF→CRLF on every Markdown edit (`core.autocrlf=true`): informational, not an error.
 - Check Markdown encoding before committing: `powershell -NoProfile -File tools/check-encoding.ps1` — fails on stray CJK or U+FFFD.
