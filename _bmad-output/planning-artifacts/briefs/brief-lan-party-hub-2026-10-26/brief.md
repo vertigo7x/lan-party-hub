@@ -1,11 +1,11 @@
 ---
 title: Product Brief — LAN Party Hub
-status: ready-for-review
+status: approved
 created: 2026-10-26
 updated: 2026-10-26
 phase: "Fase A — Descubrimiento y Product Brief"
-checkpoint: "Checkpoint A (pendiente de aprobación)"
-checkpoint_status: pending
+checkpoint: "Checkpoint A"
+checkpoint_status: approved
 source: docs/plan.md
 ---
 
@@ -227,11 +227,13 @@ confirmaciones.
 ## Sobre este documento
 
 - **Fuente:** `docs/plan.md` (prompt maestro de desarrollo con BMAD), commit `ab9a3b7`.
-- **Fase:** A — Descubrimiento y Product Brief. **Estado:** `ready-for-review` — brief completado y
-  listo para revisión; **no aprobado**. El Checkpoint A sigue pendiente de aprobación humana.
-- **Siguiente checkpoint:** Checkpoint A. Las decisiones R3, R4, R5 y P2P listadas arriba deben
-  resolverse —o pasar explícitamente a una fase posterior con responsable— antes de iniciar la
-  Fase B (PRD).
-- **Fuera de alcance de esta fase:** PRD, UX, arquitectura, ADRs, backlog de historias y
-  cualquier código. Este brief es la referencia de descubrimiento; el PRD será la referencia de
-  requisitos de producto.
+- **Fase:** A — Descubrimiento y Product Brief. **Estado:** `approved` — Checkpoint A aprobado
+  explícitamente por el usuario el 2026-10-26. La aprobación autoriza iniciar la Fase B (PRD)
+  y no resuelve por sí sola las decisiones R3, R4, R5 y P2P: cada una queda registrada en el
+  PRD con su responsable y fase de resolución.
+- **Siguiente checkpoint:** Checkpoint B — validación del PRD. R3, R4, R5 y P2P deben
+  resolverse o quedar explícitamente asignadas a una fase posterior y a un responsable en el
+  PRD, sin inventar decisiones en Fase B.
+- **Alcance de esta fase:** brief aprobado y Fase B (PRD). Quedan fuera de esta ejecución UX,
+  arquitectura, ADRs, backlog de historias, scaffold y código. Este brief es la referencia de
+  descubrimiento; el PRD será la referencia de requisitos de producto.
