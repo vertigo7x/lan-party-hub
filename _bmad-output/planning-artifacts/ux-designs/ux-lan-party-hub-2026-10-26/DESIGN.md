@@ -75,6 +75,16 @@ typography:
     fontSize: 12px
     fontWeight: '400'
     lineHeight: '1.45'
+  size:
+    fontFamily: 'Cascadia Mono'
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: '1.45'
+  percent:
+    fontFamily: 'Cascadia Mono'
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: '1.45'
 rounded:
   sm: 4px
   md: 8px
@@ -174,7 +184,7 @@ components:
 
 LAN Party Hub es una herramienta de escritorio, no una tienda. El jugador llega a una LAN con su
 portátil, quiere un juego íntegro y ejecutable en el menor tiempo posible, y todo lo que se le pide
-hacer debe ser evidente sin instrucciones. Esa urgencia —no laulae comercial— fija el tono visual:
+hacer debe ser evidente sin instrucciones. Esa urgencia —no la coletilla comercial— fija el tono visual:
 sobrio, técnico, con la información de estado siempre a la vista y sin nada que compita por la
 atención.
 
@@ -240,8 +250,10 @@ significado doble, cualquier tinte que no sea un estado del sistema.
 ## Tipografía
 
 Una sola familia: **Inter**, en el rango habitual de interfaz de escritorio, con **Cascadia Mono**
-reservada para datos que deben alinearse en columna — rutas de instalación, hashes, versiones,
-tamaños en bytes. La monoespaciada no es un adorno técnico: es una promesa de que el dato es
+reservada para datos que deben alinearse en columna — rutas de instalación, hashes, versiones y
+valores numéricos derivados como tamaños y porcentajes. Los tamaños en bytes permanecen en su
+forma exacta en los datos literales; la presentación decimal definida en `EXPERIENCE.md` convierte
+el valor derivado a GB. La monoespaciada no es un adorno técnico: es una promesa de que el dato es
 literal.
 
 - **`display` (32/700)** — el titular de una sola vez por superficie: el nombre del juego en la
@@ -254,6 +266,10 @@ literal.
 - **`label` (12/500)** — etiquetas de campo, encabezados de columna, texto de botón.
 - **`meta` (11/500)** — unidades y metadatos: "GB", "de 4", "hace 2 min".
 - **`mono` (12/400)** — rutas, hashes, versiones exactas, identificadores de paquete.
+- **`size` (12/400)** — valor numérico decimal derivado del tamaño, como «7,6»; la unidad «GB»
+  permanece en `meta`.
+- **`percent` (12/400)** — valor entero derivado del progreso, como «42»; el signo «%» permanece en
+  `meta`.
 
 Reglas: el interlineado es cerrado y sin adornos; nunca se usa texto justificado; el tamaño de
 etiqueta nunca baja de 11 px; los números que se comparan entre sí (tamaños, versiones) se alinean
@@ -336,7 +352,10 @@ Especificación visual. El comportamiento de cada componente vive en `EXPERIENCE
 - **Barra de progreso** — pista `{colors.surface-sunken}` de 6 px, radio `full`, relleno
   `{colors.state-progress}`. En operación completada y verificada el relleno pasa a
   `{colors.state-success}`. En error, el relleno se conserva en su longitud real y el estado lo
-  comunica la insignia: una barra al 100 % en rojo mentiría sobre lo ocurrido.
+  comunica la insignia: una barra al 100 % en rojo mentiría sobre lo ocurrido. La forma del texto
+  que acompaña a la barra (porcentaje entero y par de tamaños en GB decimales) no se decide aquí:
+  es la regla única de tamaños y progreso de `EXPERIENCE.md`, a la que esta especificación
+  remite. Este documento solo fija la forma visual de la barra.
 - **Campo de entrada** — fondo `{colors.surface-sunken}`, texto `{colors.ink-primary}`, borde 1 px
   `{colors.border-strong}`, radio 8 px, alto 36 px. En foco, el borde pasa a 2 px
   `{colors.accent-action}` y el alto se mantiene en 36 px: el foco no deforma la rejilla.
@@ -357,7 +376,7 @@ Especificación visual. El comportamiento de cada componente vive en `EXPERIENCE
 | Usa el verde LAN solo para estado sano y verificado | Uses el verde como color de marca decorativo, de etiqueta o de fondo de sección |
 | Usa el azul acción solo para la acción disponible en ese momento | Uses el azul acción en etiquetas de estado o en cabeceras |
 | Muestra el progreso real, aunque la operación haya fallado al final | Pintas la barra al 100 % en rojo o la ocultas en error |
-| Almacena y alinea en monoespaciada rutas, hashes, versiones y tamaños | Uses la monoespaciada para frases o titulares |
+| Almacena y alinea en monoespaciada rutas, hashes, versiones y valores numéricos derivados | Uses la monoespaciada para frases o titulares |
 | Diferencia superficies por tono, con línea de pelo para separar | Uses sombras proyectadas para construir jerarquía |
 | Muestra el estado del servidor y de la operación en un panel persistente | Escondas el estado de conexión en un menú o en un modal |
 | Un nivel de modal, sin apilar diálogos | Apilas un diálogo sobre otro diálogo |

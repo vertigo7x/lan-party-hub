@@ -90,7 +90,7 @@ del servidor; el de Marta, administración del catálogo y publicación de paque
 ## Voz y tono
 
 Microcopia. La voz de marca vive en `DESIGN.md.Brand & Style`: **consola de operaciones silenciosa**,
-sobria, técnica, sin laulación comercial. Regla derivada: el texto describe el estado y el siguiente
+sobria, técnica, sin coletilla comercial. Regla derivada: el texto describe el estado y el siguiente
 paso, nunca contabiliza el esfuerzo ni celebra.
 
 | Haz | No hagas |
@@ -108,30 +108,85 @@ Reglas transversales:
 - **Segunda persona y verbo en primera.** «Pulsa», «Elige», «Indica», «Comprueba». Nunca «el usuario».
 - **El error dice causa y siguiente paso.** Estructura obligatoria en tres partes: qué falló, por
   qué, qué hacer ahora. Sin códigos internos como texto principal.
-- **Los datos literales van en monoespaciada y en su forma exacta.** Rutas, hashes, versiones y
-  tamaños no se redondean ni se traducen.
+- **Los datos literales van en monoespaciada y en su forma exacta.** Rutas, hashes y versiones no
+  se redondean ni se traducen. Los **tamaños** tienen su propia regla de presentación, más abajo:
+  un tamaño es un dato derivado, no un literal, y se expresa siempre en la misma unidad con la
+  misma precisión.
 - **Nada de interrogación por culpa.** La interfaz no pregunta «¿estás seguro?» salvo que la
   acción destruya trabajo no recuperable; en ese caso nombra qué se pierde.
 - **Sin emojis, sin superlativos, sin gamificación.** Nada de «¡Listo!», «¡Felicidades!», «¡Nuevo!».
 - **El tiempo es un dato, no una promesa.** Se dice «hace 2 min», nunca «en 30 segundos» para una
   descarga: la velocidad no está validada (NFR-2).
 
+### Regla única de tamaños y progreso
+
+Esta regla es la **única** fuente de verdad de cómo la interfaz representa tamaños y progreso.
+Todo lo demás —microcopia, componentes, ejemplos, accesibilidad— la referencia en lugar de
+inventar variantes. No cambia ningún dato subyacente: el catálogo, el paquete y la instalación
+siguen almacenando el tamaño exacto en bytes; lo que se fija aquí es **cómo se muestra**.
+
+**Unidad.** Todos los tamaños se expresan en **GB decimales (10⁹ bytes)**, con el separador
+decimal español (coma). No se mezclan unidades dentro de la misma interfaz: no hay MiB ni GiB, ni
+«kB» junto a «GB».
+
+**Precisión.** Un tamaño se muestra con **exactamente un decimal**: «7,6 GB», «3,2 GB», «0,4 GB».
+El valor es el tamaño exacto en bytes convertido a GB y redondeado a un decimal por la misma
+regla en todas partes. No hay dos decimales, no hay «7 GB» sin decimal y no hay «7,60 GB».
+
+**Par.** Cuando se muestran dos magnitudes (descargado y total), se expresan en la **misma
+unidad**, con la **misma precisión** y en el **mismo orden**: «3,2 GB de 7,6 GB». El total es
+siempre el segundo. La barra y el texto usan ese par.
+
+**Progreso.** El progreso es siempre un **porcentaje entero**, derivado de los bytes transferidos
+sobre los bytes totales: «42 %». Nunca hay decimales en el porcentaje («42,3 %»), nunca se
+muestra una fracción alternativa («42/100»), y el porcentaje nunca se redondea a decenas.
+
+**Fuente de verdad y correspondencia.** El porcentaje y el par de tamaños son coherentes entre sí
+por construcción: ambos se derivan del mismo par (bytes transferidos, bytes totales). Si el texto
+muestra «3,2 GB de 7,6 GB», el porcentaje mostrado corresponde a la misma fracción. La barra, el
+texto de porcentaje y el texto de tamaño nunca se contradicen.
+
+**Formas admitidas y prohibidas.**
+
+| Contexto | Forma | Ejemplo |
+|---|---|---|
+| Tamaño de un juego (catálogo, ficha, biblioteca) | `<n>,<d> GB` | «7,6 GB» |
+| Progreso de descarga o instalación | `<n> %` | «42 %» |
+| Descarga en curso con par | `<n> % · <a> GB de <t> GB` | «42 % · 3,2 GB de 7,6 GB» |
+| Descarga completada | `<n> % · <t> GB` | «100 % · 7,6 GB» |
+| Tamaño perdido al cancelar | `<n>,<d> GB` | «Se borrarán los 3,2 GB descargados» |
+| Tamaño de un paquete rechazado | `<n>,<d> GB` | «Paquete dañado · 7,6 GB» |
+
+Prohibido: «7,60 GB», «7 GB», «7,6 GiB», «42,3 %», «42/100», «~7,6 GB», «7,6 MB», «7.6 GB» (punto
+decimal) y cualquier tamaño sin unidad explícita.
+
+**Monoespaciada.** El **valor numérico** del tamaño y del porcentaje va en `size` y `percent`, que
+comparten la familia monoespaciada de `mono` porque son cifras que el jugador compara entre sí y se
+alinean en columna; la **unidad** («GB» o «%») es el texto de `meta` que acompaña al valor. La barra
+de progreso se acompaña siempre del texto, y el texto es la fuente de verdad del porcentaje.
+
 ### Microcopia por estado crítico
 
 | Situación | Texto |
 |---|---|
-| Descargando | «Descargando · 42 %» + barra real |
-| Pausado | «Pausada · 42 %» + acción «Reanudar» |
-| Reanudando tras reinicio | «Reanudando desde 42 %» |
-| Descarga completada | «Descargado · 7,6 GB» |
+| Descargando | «Descargando · 42 % · 3,2 GB de 7,6 GB» + barra real |
+| Pausado | «Pausada · 42 % · 3,2 GB de 7,6 GB» + acción «Reanudar» |
+| Reanudando tras reinicio | «Reanudando desde 42 % · 3,2 GB de 7,6 GB» |
+| Descarga completada | «Descargado · 100 % · 7,6 GB» |
 | Validación superada | «Paquete validado» |
-| Paquete corrupto | «Paquete dañado: el hash no coincide» |
-| Paquete no confiable | «Paquete no confiable: no se pudo validar contra la raíz de confianza» |
+| Paquete corrupto | «Paquete dañado: el hash no coincide · 7,6 GB» |
+| Paquete no confiable | «Paquete no confiable: no se pudo validar contra la raíz de confianza · 7,6 GB» |
 | Instalado | «Instalado · v1.2» |
 | Instalación en curso | «Instalando · 68 %» |
+| Instalación existente validada | «Ya instalado · v1.2» + acción «Jugar» habilitada |
+| Instalación existente inválida | «No se puede jugar: <causa>.» + acción «Jugar» bloqueada y acción primaria «Reparar» o «Descargar de nuevo» |
 | Error de operación | «No se pudo instalar: <causa>. <Siguiente paso>.» |
 | Ejecutándose | «En ejecución» |
 | Cliente incompatible | «Este cliente (1.2) no es compatible con el servidor (1.4). Actualiza el cliente.» |
+
+Los porcentajes y los tamaños de esta tabla siguen la regla única de *Regla única de tamaños y
+progreso*: GB decimales con un decimal, porcentaje entero, par «<n> % · <a> GB de <t> GB» cuando
+coexisten descarga y total.
 
 ## Patrones de componente
 
@@ -145,10 +200,10 @@ tabla introduce tokens que no existan en `DESIGN.md`.
 | `button-danger` | Destrucción inequívoca | Reservado a cancelar una descarga, eliminar una instalación o descartar un error. Exige confirmación solo si se pierde trabajo no recuperable |
 | `button-ghost` | Acción terciaria | Descartar un aviso, cerrar un panel. Nunca la única vía a un resultado |
 | `field-input` | Dirección del servidor, búsqueda, directorio de instalación | Altura fija de 36 px; el foco pasa el borde a 2 px {colors.accent-action} sin deformar la rejilla. Acepta `Enter` como confirmación. La búsqueda filtra al escribir, con 200 ms de retardo, sin botón «buscar» |
-| `card-game` | Catálogo, biblioteca | Clic en la tarjeta abre la ficha. El nombre se trunca a una línea con elipsis. Muestra versión, tamaño y jugadores en una línea de {typography.meta}. En hover la superficie pasa a {colors.surface-overlay}; el borde no se refuerza |
+| `card-game` | Catálogo, biblioteca | Clic en la tarjeta abre la ficha. El nombre se trunca a una línea con elipsis. Muestra versión, tamaño y jugadores en una línea de {typography.meta}; el valor del tamaño usa {typography.size} y la unidad «GB» usa {typography.meta}, con la forma «<n>,<d> GB» de la regla única de tamaños. En hover la superficie pasa a {colors.surface-overlay}; el borde no se refuerza |
 | `panel-connection` | Panel derecho del cliente | Persistente. Muestra punto de presencia, nombre del servidor, dirección en uso y versión del servidor. Abajo, la operación en curso con su barra. Nunca se colapsa |
 | `status-badge` | Estado de un juego, descarga, cliente u operación | Cápsula de una línea. Un solo color con su significado canónico. El color nunca es la única señal: acompaña a texto. Estados: sincronizando, disponible, descargando, pausado, validado, instalado, instalado con versión desactualizada, en ejecución, error |
-| `progress-bar` | Descarga, instalación, validación | Refleja el progreso real. En error la barra conserva su longitud real y el estado lo comunica la insignia: una barra al 100 % en rojo mentiría. En operación completada verificada el relleno pasa a {colors.state-success} |
+| `progress-bar` | Descarga, instalación, validación | Refleja el progreso real, derivado de los bytes transferidos sobre los bytes totales, igual que el porcentaje que lo acompaña. En error la barra conserva su longitud real y el estado lo comunica la insignia: una barra al 100 % en rojo mentiría. En operación completada verificada el relleno pasa a {colors.state-success}. Siempre va acompañada del texto «<n> %»; el valor entero usa {typography.percent} y «%» usa {typography.meta}; sin texto, la barra no es accesible por sí sola |
 | `data-table-row` | Tabla de clientes del servidor | Alto de 40 px. Celdas de dato en {typography.body-strong} y unidades en {typography.meta}. Orden estable por nombre de equipo. Fila seleccionable para ver su detalle |
 | `toast-error` | Aviso transitorio de error | Contenido: causa, acción intentada y siguiente paso. Sin iconografía; el texto es el aviso. No sustituye a la persistencia del error en el registro |
 | `dialog-surface` | Confirmación de operación privilegiada, resumen de error | Un solo nivel. Encabezado `headline`, cuerpo `body`, pie con acciones alineadas a la derecha. `Esc` cancela la acción no destructiva y devuelve el foco al elemento invocador |
@@ -156,11 +211,66 @@ tabla introduce tokens que no existan en `DESIGN.md`.
 ### Reglas de estado por componente
 
 - **Barra de progreso**: el texto que la acompaña es la fuente de verdad del porcentaje; la barra es
-  la fuente de verdad del avance. Cuando no hay texto, la barra no es accesible por sí sola.
+  la fuente de verdad del avance. Cuando no hay texto, la barra no es accesible por sí sola. El
+  porcentaje es un entero derivado de los bytes y su forma es la de la regla única de tamaños y
+  progreso; la barra y el texto nunca muestran fracciones distintas.
 - **Insignia de estado**: nunca dos colores en la misma insignia. Si un estado necesita dos
   dimensiones, son dos insignias con texto.
-- **Tarjeta de juego**: en la biblioteca, la acción primaria es «Jugar» y solo aparece cuando la
-  instalación está validada; si la versión está desactualizada, aparece «Actualizar» en su lugar.
+- **Tarjeta de juego**: en la Biblioteca, la acción primaria depende de la validez de la
+  instalación, no de su mera presencia. Con instalación **validada**, la primaria es «Jugar»;
+  con instalación **inválida**, «Jugar» aparece bloqueado con el motivo a la vista y la primaria
+  es «Reparar» (o «Descargar de nuevo» si la instalación no es reparable). Con versión
+  desactualizada, «Actualizar» sustituye a la primaria y «Jugar» permanece disponible solo si la
+  instalación sigue siendo válida. La regla completa, con su tabla de situaciones, está en
+  *Estados de instalación y acción primaria*.
+
+### Estados de instalación y acción primaria
+
+La distinción entre instalación **validada** e **inválida** es un contrato de comportamiento, no
+un matiz de redacción. Se aplica por igual en la Biblioteca y en la Ficha del videojuego, y
+ninguna de las dos superficies puede abrir un camino de lanzamiento distinto.
+
+| Situación | Acción «Jugar» | Acción primaria | Acciones secundarias |
+|---|---|---|---|
+| Instalación validada | Habilitada | «Jugar» | «Actualizar» si la versión está desactualizada; «Reparar» solo bajo petición expresa («Verificar instalación») |
+| Instalación inválida y reparable | Bloqueada, con el motivo visible junto a la etiqueta | «Reparar» | «Diagnosticar» abre el error registrado |
+| Instalación inválida y no reparable | Bloqueada, con el motivo visible junto a la etiqueta | «Descargar de nuevo» | «Diagnosticar» abre el error registrado |
+
+Reglas transversales:
+
+- **El motivo del bloqueo es visible sin interactuar.** No está en un tooltip, no está solo en el
+  log de Diagnóstico y no requiere hover ni foco: aparece en la propia tarjeta o ficha, junto a la
+  etiqueta «Jugar». El tooltip puede repetirlo, nunca ser su único lugar.
+- **«Jugar» bloqueada no es un error de estado; es un estado con su etiqueta.** La insignia
+  {colors.state-danger} acompaña al motivo, y el texto del motivo es el que explica qué falta.
+- **No hay segunda vía de lanzamiento.** Mientras la instalación no esté validada, ninguna otra
+  superficie (panel de estado, ficha, error de lanzamiento) ofrece ejecutar el juego.
+- **«Reparar» reutiliza el paquete ya validado.** No vuelve a descargar y no pide una confirmación
+  que no tenga consecuencia: la consecuencia es rehacer una instalación inválida, y la interfaz la
+  nombra («Se reparará la instalación; la descarga no se repite»).
+
+### Cobertura de teclado de las acciones de instalación
+
+El teclado llega a las mismas acciones que el ratón, con el mismo resultado y el mismo motivo a la
+vista:
+
+- **`Tab` / `Shift+Tab`** — recorren la Biblioteca y la Ficha en orden de lectura. «Jugar»
+  bloqueada recibe foco como cualquier otro control: no se omite ni se deshabilita de forma
+  invisible; al recibir foco, lee su motivo junto a la etiqueta.
+- **`Enter`** — activa el control enfocado. En una instalación validada lanza el juego; en una
+  instalación inválida lanza «Reparar» o «Descargar de nuevo». `Enter` sobre «Jugar» bloqueada no
+  hace nada y no dispara una descarga ni una reparación implícita.
+- **`Espacio`** — alterna pausa y reanudación de la descarga enfocada; no actúa sobre la
+  instalación. No es una vía para reparar.
+- **`Ctrl+4`** — salta a la Biblioteca; desde la Biblioteca, `Tab` alcanza «Jugar», «Reparar» o
+  «Descargar de nuevo» sin salir de la superficie.
+- **Foco visible** — el control bloqueado conserva un indicador de foco visible
+  ({colors.accent-action}) y un estado de foco que no depende del color de la insignia, para que
+  un usuario de teclado sepa que hay una acción y por qué no puede pulsarse.
+
+Criterio de aceptación verificable: con el foco en «Jugar» de una instalación inválida, un lector
+de pantalla anuncia el nombre de la acción, su estado bloqueado y el motivo, y la tecla `Enter`
+no produce ningún cambio de estado.
 
 ## Patrones de estado
 
@@ -177,12 +287,13 @@ tabla introduce tokens que no existan en `DESIGN.md`.
 | Paquete en descarga | Ficha, Descargas | La acción primaria pasa a «Pausar»; la descarga se puede reanudar desde la misma posición. El progreso persiste ante reinicio |
 | Paquete pausado | Descargas | Estado {colors.state-warning}. Acciones: «Reanudar» (primaria) y «Cancelar» (peligro). Cancelar pide confirmación nombrando lo que se pierde: «Se borrarán los 3,2 GB descargados» |
 | Validación fallida | Ficha, Diagnóstico | Estado {colors.state-danger} con la causa diferenciada: «dañado» (corrupción) o «no confiable» (no validable contra la raíz de confianza). El alta de instalación queda bloqueada y el motivo es visible, no oculto en el log |
-| Instalación existente | Ficha, Biblioteca | «Ya instalado · v1.2». Acción primaria «Jugar»; secundaria «Reparar» solo cuando la instalación es inválida y reparable |
+| Instalación existente validada | Ficha, Biblioteca | «Ya instalado · v1.2». La instalación pasó la validación: la acción primaria es «Jugar» y es la única forma de lanzar el juego desde la Biblioteca o la Ficha |
+| Instalación existente inválida o reparable | Ficha, Biblioteca | «Jugar» aparece **bloqueado** con el motivo visible («No se puede jugar: instalación incompleta», «No se puede jugar: falta el ejecutable», «No se puede jugar: el paquete no coincide con la validación») y la acción primaria pasa a «Reparar», que rehace la instalación desde el paquete ya validado sin volver a descargar. Si la instalación es inválida **y no reparable**, el motivo lo dice y la única acción es «Descargar de nuevo» |
 | Instalación en curso | Descargas | Barra de progreso con fase («Extrayendo», «Aplicando manifiesto») y porcentaje |
 | Instalación fallida | Diagnóstico | Error persistido y reintentable sin reinstalar el cliente. La acción «Reintentar» está disponible |
 | Versión desactualizada | Biblioteca, Ficha | Insignia {colors.state-warning} «Actualización disponible» + acción «Actualizar». La versión instalada y la disponible se muestran en monoespaciada |
 | Error de lanzamiento | Biblioteca | «No se pudo iniciar: <causa>.» con el ejecutable y su ruta exacta cuando el problema es de ruta |
-| Sin games instalados | Biblioteca | «No tienes juegos instalados todavía.» + acción «Ver catálogo» |
+| Sin juegos instalados | Biblioteca | «No tienes juegos instalados todavía.» + acción «Ver catálogo» |
 | Panel de estado sin operación | Panel derecho | Muestra la última operación terminada con su resultado, no un espacio vacío |
 | Cliente desconectado (servidor) | Clientes | Fila con estado {colors.state-danger}; el error asociado se muestra en el detalle de la fila |
 
@@ -267,8 +378,10 @@ Los protagonistas se toman literalmente del PRD §2.2: Ana (jugadora de LAN, UJ-
    app continúa. Si no lo fuera, Ana vería el diagnóstico explícito con su versión y la del servidor,
    y ninguna operación de catálogo, descarga o instalación se habilitaría.
 4. El catálogo se sincroniza. Ana ve la rejilla de tarjetas.
-5. Ana busca por nombre, abre la ficha del juego y comprueba versión, tamaño, jugadores, sistema
-   operativo y requisitos.
+5. Ana busca por nombre y abre la ficha del juego. Comprueba versión, tamaño, jugadores, sistema
+   operativo y requisitos. Si la instalación existente es inválida y reparable, «Jugar» aparece
+   bloqueada con el motivo visible y «Reparar» es la acción primaria; si no es reparable,
+   «Descargar de nuevo» es la acción primaria. «Jugar» no ofrece una vía alternativa.
 6. Pulsa «Descargar». La descarga arranca desde el servidor; la barra del panel derecho avanza con
    el porcentaje en texto.
 7. Pausa la descarga para atender a otra cosa y la reanuda. Cierra el cliente y lo vuelve a abrir: la
@@ -276,10 +389,13 @@ Los protagonistas se toman literalmente del PRD §2.2: Ana (jugadora de LAN, UJ-
 8. La descarga se completa. El cliente valida el paquete: integridad verificada. Si la validación
    fallara, Ana vería la causa diferenciada —paquete dañado o no confiable— y la instalación quedaría
    bloqueada con el motivo visible.
-9. Ana inicia la instalación portable en el directorio configurado. Las operaciones privilegiadas,
-   si el manifiesto las incluye, piden confirmación explícita antes de ejecutarse.
-10. La instalación termina. El cliente detecta que el juego ya está instalado y lo muestra en la
-    Biblioteca con la insignia «Instalado · v1.2».
+9. Ana inicia la instalación portable en el directorio configurado. Si la instalación existente es
+   inválida, «Reparar» rehace la instalación usando el paquete ya validado, sin repetir la descarga;
+   si no es reparable, «Descargar de nuevo» vuelve a obtener el paquete. En ambos casos, «Jugar»
+   permanece bloqueada hasta validar la instalación. Las operaciones privilegiadas, si el manifiesto
+   las incluye, piden confirmación explícita antes de ejecutarse.
+10. La instalación termina. El cliente valida la instalación y la muestra en la Biblioteca con la
+    insignia «Instalado · v1.2».
 11. **Clímax:** Ana pulsa «Jugar». El proceso se lanza con sus argumentos y su directorio de
     trabajo, el panel de estado pasa a «En ejecución» y, en la pantalla del servidor, el equipo de Ana
     aparece con la instalación registrada y la operación cerrada. Ana no ha tenido que preguntar en
@@ -288,7 +404,9 @@ Los protagonistas se toman literalmente del PRD §2.2: Ana (jugadora de LAN, UJ-
 **Fallo:** el servidor se cae a mitad de descarga → el panel derecho pasa a {colors.state-warning}
 «Servidor no disponible», la barra conserva el último porcentaje real, el reintento automático
 reanuda cuando el servidor vuelve y Ana no pierde lo descargado. Un paquete alterado → validación
-fallida, instalación bloqueada, error con causa y siguiente paso en Diagnóstico.
+fallida, instalación bloqueada, error con causa y siguiente paso en Diagnóstico. Una instalación
+inválida → «Jugar» bloqueada con el motivo visible; «Reparar» es la acción primaria si es reparable
+y «Descargar de nuevo» si no lo es.
 
 ### Flujo 2 — Luis diagnostica un equipo (UJ-2)
 
@@ -314,8 +432,10 @@ fila indica que no opera —sin iniciar operaciones de juego—, sin que el esta
    nombre, descripción, categorías, etiquetas, carátula, versión, tamaño, jugadores, sistema
    operativo, tipo de distribución, tipo de instalación, configuración de lanzamiento,
    dependencias, licencia y restricciones de distribución.
-2. Los campos literales —ruta de lanzamiento, tamaño, versión— se muestran en monoespaciada, y el
-   formulario marca como obligatorio lo que FR-1 exige.
+2. La ruta de lanzamiento y la versión se muestran en monoespaciada. El tamaño se introduce en
+   bytes exactos y se presenta en la interfaz como un valor decimal derivado: «7,6» en
+   {typography.size} y «GB» en {typography.meta}. El formulario marca como obligatorio lo que
+   FR-1 exige.
 3. Marta adjunta el paquete. Un paquete no puede publicarse si falta la información de licencia o
    restricciones necesaria para comprobar la publicación: el formulario lo impide y explica cuál
    falta.
@@ -332,9 +452,10 @@ error nombra la causa y el paso siguiente en Diagnóstico.
 ### Flujo 4 — Ana recupera una operación interrumpida (recuperación transversal)
 
 1. Ana reinicia el equipo a mitad de una descarga de 7,6 GB. La app se abre con la operación
-   recuperada: «Reanudando desde 42 %».
+   recuperada: «Reanudando desde 42 % · 3,2 GB de 7,6 GB».
 2. Si la instalación quedó incompleta, el cliente la detecta y la marca como reparable en lugar de
-   repetir el paquete entero.
+   repetir el paquete entero. En la Biblioteca y en la Ficha, «Jugar» permanece bloqueada con el
+   motivo visible y «Reparar» es la acción primaria.
 3. Si el manifiesto contenía una operación privilegiada, al reanudar se vuelve a pedir la
    confirmación explícita: la confirmación no se hereda de una sesión anterior.
 4. **Clímax:** Ana vuelve al juego sin haber perdido ni la descarga ni la decisión sobre lo
@@ -368,8 +489,9 @@ error nombra la causa y el paso siguiente en Diagnóstico.
   formato de firma. La definición del ancla es de Fase D.
 - **[ASSUMPTION: OQ-3 / P2P]** La interfaz no expone intercambio entre peers. La ausencia de esa
   capacidad en la UI es una decisión de alcance del MVP, no un descuido.
-- **[ASSUMPTION: OQ-4 / NFR-2]** Ninguna microcopia promete velocidad de transferencia ni tasa de
-  refresco; el progreso se expresa en porcentaje real y en tamaño, nunca en tiempo restante.
+- **[ASSUMPTION: OQ-4 / NFR-2]** Ninguna microcopia promete velocidad de transferencia, tasa de
+  refresco ni tiempo restante. El progreso se expresa como porcentaje entero y los tamaños como
+  valores decimales en GB, ambos derivados de los bytes reales.
 - **[NOTE FOR UX]** La matriz de versiones compatibles y el formato exacto del diagnóstico de
   incompatibilidad se concretan en Fase D (FR-4). Esta espina define el comportamiento observable:
   diagnóstico explícito, con la versión del cliente y la del servidor, y sin habilitar operaciones.

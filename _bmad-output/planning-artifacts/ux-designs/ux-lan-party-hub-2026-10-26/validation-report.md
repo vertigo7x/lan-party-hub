@@ -25,7 +25,7 @@ El par de espinas es **adecuado y fuerte** como contrato de consumo para arquite
 | Check | Resultado |
 |---|---|
 | UTF-8 de `EXPERIENCE.md` y búsqueda de bloques CJK | PASS tras corregir la línea 346; 0 caracteres CJK restantes |
-| Búsqueda de U+FFFD (`�`) en `EXPERIENCE.md` | PASS; 0 coincidencias |
+| Búsqueda del carácter de reemplazo U+FFFD (codepoint 0xFFFD) en `EXPERIENCE.md` | PASS; 0 coincidencias |
 | Frontmatter `status`/`updated` en `DESIGN.md` | PASS; `status: final`, `updated: 2026-10-26` |
 | Frontmatter `status`/`updated` en `EXPERIENCE.md` | PASS; `status: final`, `updated: 2026-10-26` |
 | Secciones canónicas de `DESIGN.md` | PASS |
@@ -39,6 +39,13 @@ El par de espinas es **adecuado y fuerte** como contrato de consumo para arquite
 | Estructura del workspace | PASS; `.memlog.md`, `DESIGN.md`, `EXPERIENCE.md`, reconciliaciones y reporte presentes |
 | Referencias visuales (`mockups/`, `wireframes/`, `imports/`) | PASS / no aplica; directorios vacíos, sin enlaces huérfanos |
 | Mermaid o sintaxis gráfica | PASS / no aplica; no hay diagramas Mermaid |
+| Barrido byte-level CJK sobre todo el directorio UX | PASS; 0 caracteres CJK en los 6 artefactos |
+| Barrido byte-level U+FFFD (secuencia literal 0xEF 0xBF 0xBD) sobre todo el directorio UX | PASS; 0 coincidencias |
+| Contrato UX-C-001 (estados de instalación y acción primaria) | PASS; tabla propia en `EXPERIENCE.md` |
+| Contrato UX-C-002 (motivo visible, acción primaria reparable, sin segunda vía) | PASS; regla transversal y microcopia de estados |
+| Contrato UX-C-003 (cobertura de teclado y criterio de aceptación) | PASS; sección propia en `EXPERIENCE.md` |
+| Regla única de tamaños y progreso referenciada desde `DESIGN.md` | PASS; la barra de progreso remite a la regla canónica |
+| Integridad del cambio (`git diff --check`) | PASS; sin errores de espacios ni marcadores de conflicto |
 
 ## Hallazgos por severidad
 
@@ -58,7 +65,7 @@ Ninguna.
 
 **Integridad textual** — Caracteres CJK ajenos al español en `EXPERIENCE.md` (línea 346, antes del cierre).
 
-Corrección aplicada: «sin menús anidados ni la我去» → «sin menús anidados ni accesos escondidos». Comprobación posterior: 0 caracteres CJK y 0 U+FFFD.
+Corrección aplicada: «sin menús anidados ni accesos escondidos» restaurado en `EXPERIENCE.md`; el fragmento se había corrompido en la línea citada y quedó restituido a su forma original en español. Comprobación posterior: 0 caracteres CJK y 0 U+FFFD.
 
 ## Cobertura de requisitos y restricciones
 

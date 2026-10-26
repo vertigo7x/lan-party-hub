@@ -31,6 +31,21 @@ Esta entrada reconcilia el PRD aprobado (`prds/prd-lan-party-hub-2026-10-26/prd.
 | NFR-10 Sin cloud obligatorio | Operación LAN local; sin trackers/DHT en la UI | Fundación; escritura de plataforma |
 | SM-1 a SM-5, SM-C1 y SM-C2 | Flujos reproducibles, estado observable, sin promesas prematuras | Flujos clave y validación de cobertura |
 
+## Ajustes de cierre de Fase C (contratos UX-C-001/002/003)
+
+Estos contratos no alteran el alcance del PRD: los precisan en la capa de comportamiento observable.
+
+| Contrato | Precisión introducida | Requisito afectado |
+|---|---|---|
+| UX-C-001 | La distinción entre instalación **validada** e **inválida** es un contrato de comportamiento con tabla propia en `EXPERIENCE.md` («Estados de instalación y acción primaria»), aplicado por igual en Biblioteca y Ficha del videojuego | FR-8, FR-9 |
+| UX-C-002 | «Jugar» bloqueada muestra el motivo visible junto a la etiqueta (no en tooltip ni solo en el log); la acción primaria pasa a «Reparar» (inválida reparable) o «Descargar de nuevo» (no reparable); no existe segunda vía de lanzamiento desde ninguna superficie | FR-8, FR-9, NFR-7 |
+| UX-C-003 | Cobertura de teclado documentada para las acciones de instalación (`Tab`/`Shift+Tab`, `Enter`, `Espacio`, `Ctrl+4`) con criterio de aceptación verificable para lector de pantalla; «Jugar» bloqueada recibe foco visible y `Enter` no produce ningún cambio de estado | NFR-7 |
+
+Regla única de tamaños y progreso (canónica en `EXPERIENCE.md`, referenciada desde `DESIGN.md`): GB
+decimales (10⁹ bytes), separador decimal español, exactamente un decimal, porcentaje entero y par
+«<n> % · <a> GB de <t> GB». Sin unidades mezcladas, sin decimales en el porcentaje y sin punto
+decimal. Afecta a la representación de FR-5 y NFR-3 sin cambiar los datos subyacentes.
+
 ## Restricciones y preguntas abiertas preservadas
 
 | ID | Tratamiento en UX | Estado |
