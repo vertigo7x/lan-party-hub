@@ -1,0 +1,122 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 10-26-2026 17:03
+last_updated: 10-26-2026 17:03
+project: Lan Party Hub
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-estructura-de-solución-y-contratos-compartidos: backlog
+  1-2-arranque-del-servidor-con-superficie-de-red-mínima-y-datos-c: backlog
+  1-3-arranque-del-cliente-con-layout-en-disco-y-persistencia-prop: backlog
+  1-4-observabilidad-correlacionada-desde-el-primer-arranque: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-alta-y-modificación-de-videojuegos-con-metadatos-completos: backlog
+  2-2-publicación-de-un-paquete-con-licencia-y-manifiesto-firmado: backlog
+  2-3-control-de-la-publicación-por-parte-del-organizador: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-sincronización-del-catálogo-por-snapshot-completo: backlog
+  3-2-búsqueda-filtrado-y-categorización-del-catálogo: backlog
+  3-3-ficha-del-videojuego-con-su-estado-de-vista: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-descubrimiento-automático-del-servidor-por-mdns: backlog
+  4-2-dirección-manual-como-vía-permanente-y-equivalente: backlog
+  4-3-compatibilidad-de-versión-de-clientes-sin-autenticación: backlog
+  4-4-fijación-del-ancla-de-confianza-fuera-de-banda: backlog
+  4-5-panel-de-conexión-persistente-y-reconexión: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-abstracción-de-transferencia-con-un-único-camino-http: backlog
+  5-2-descarga-del-paquete-con-progreso-pausa-y-reanudación: backlog
+  5-3-persistencia-del-progreso-y-recuperación-tras-reinicio: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-verificación-de-integridad-y-de-autenticidad-antes-de-instal: backlog
+  6-2-la-ui-diferencia-dañado-de-no-confiable: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-orden-normativo-de-la-instalación-y-rechazo-previo-a-persist: backlog
+  7-2-confines-de-la-extracción-dentro-del-directorio-autorizado: backlog
+  7-3-instalación-portable-con-manifiesto-tipado-y-confirmación-de: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-detección-del-ejecutable-y-lanzamiento-con-argumentos-y-dire: backlog
+  8-2-bloqueo-de-jugar-con-el-motivo-visible: backlog
+  8-3-reparar-sin-volver-a-descargar: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-tabla-densa-de-clientes-conectados: backlog
+  9-2-proyección-de-instalaciones-y-de-operaciones-en-curso: backlog
+  9-3-errores-registrados-con-causa-y-siguiente-paso: backlog
+  9-4-diagnóstico-correlacionado-en-el-cliente: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-detección-de-versión-desactualizada: backlog
+  10-2-actualización-a-versión-completa: backlog
+  10-3-reparación-de-una-instalación-interrumpida: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-sistema-de-tokens-y-tema: backlog
+  11-2-tipografía-y-datos-literales: backlog
+  11-3-regla-única-de-tamaños-y-progreso: backlog
+  11-4-microcopia-de-estado-crítico: backlog
+  11-5-componentes-base-y-jerarquía-de-acciones: backlog
+  11-6-arquitectura-de-información-y-navegación: backlog
+  11-7-accesibilidad: backlog
+  11-8-comportamiento-de-escritorio-y-escalado: backlog
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-s-2-raíz-de-confianza-validación-del-bootstrap-out-of-band-b: backlog
+  12-2-s-1-descubrimiento-validación-de-mdns-junto-a-la-dirección-m: backlog
+  12-3-s-5-reanudación-de-paquetes-grandes-validación-del-offset-pe: backlog
+  12-4-s-4-rendimiento-y-recursos-medición-en-lugar-de-suposición-n: backlog
+  12-5-s-3-poc-p2p-decisión-de-fase-posterior-no-bloqueante: backlog
+  epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-demostración-reproducible-de-extremo-a-extremo-en-lan-real: backlog
+  epic-13-retrospective: optional
