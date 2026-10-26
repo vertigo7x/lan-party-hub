@@ -89,7 +89,7 @@ extraer contratos para UX, arquitectura e historias sin exigir decisiones adicio
 
 ## Ajuste de forma — fuerte
 
-El PRD，适合 una plataforma local multiusuario con tres partes有小但 roles de usuario claramente diferenciados. Los recorridos son轻重 adequate y cada juego de后的 función. No hay sección de arquitectura ni decisiones técnicas, respetando el alcance.
+El PRD es adecuado para una plataforma local multiusuario con tres partes pequeñas, pero con roles de usuario claramente diferenciados. Los recorridos son ligeros y cada juego tiene su función. No hay sección de arquitectura ni decisiones técnicas, respetando el alcance.
 
 ## Notas mecánicas
 
