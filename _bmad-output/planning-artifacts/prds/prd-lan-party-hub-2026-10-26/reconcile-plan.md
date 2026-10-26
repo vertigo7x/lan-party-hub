@@ -4,7 +4,7 @@
 
 - **Entrada:** `docs/plan.md`
 - **Artefactos comparados:** `prd.md` y `.memlog.md`
-- **Resultado:** 7 discrepancias, todas resueltas o preservadas como restricciones.
+- **Resultado:** 8 discrepancias, todas resueltas o preservadas como restricciones.
 
 ## Discrepancias
 
@@ -14,8 +14,8 @@
 4. RF-04 se trazó a FR-6 y FR-8; Installer/External quedan excluidos del MVP.
 5. RF-05 se trazó a FR-9; launchers externos y conexión a servidores de juego quedan fuera.
 6. RF-06 se trazó a FR-10 sin elegir SignalR como decisión definitiva.
-7. RF-07 se trazó a FR-11 con actualizaciones diferenciales avanzadas fuera del MVP; RF-08 modo
-   gestionado queda excluido y explícitamente enlazado en la matriz.
+7. RF-07 se trazó a FR-11 con actualizaciones diferenciales avanzadas fuera del MVP.
+8. RF-08 modo gestionado queda excluido y explícitamente enlazado en la matriz.
 
 ## Suplementos no incorporados
 
@@ -26,7 +26,7 @@ separación entre requisitos de producto y decisiones técnicas.
 ## Nota de vigencia — Enmienda ENM-001-01
 
 `docs/plan.md` no fija un contrato de autenticación ni de autorización de clientes, por lo que
-esta reconciliación no requirió corrección de fondo: los siete ítems de trazabilidad RF-01..RF-08
+esta reconciliación no requirió corrección de fondo: los ocho ítems de trazabilidad RF-01..RF-08
 siguen vigentes tal como se describen arriba.
 
 Lo que sí cambió con la enmienda es el destino de **RF-04** dentro del PRD, que no aparece en
