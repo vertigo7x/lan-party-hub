@@ -208,7 +208,7 @@ tabla introduce tokens que no existan en `DESIGN.md`.
 | `panel-connection` | Panel derecho del cliente | Persistente. Muestra punto de presencia, nombre del servidor, dirección en uso y versión del servidor. Abajo, la operación en curso con su barra. Nunca se colapsa |
 | `status-badge` | Estado de un juego, descarga, cliente u operación | Cápsula de una línea. Un solo color con su significado canónico. El color nunca es la única señal: acompaña a texto. Estados: sincronizando, disponible, descargando, pausado, validado, instalado, instalado con versión desactualizada, en ejecución, error |
 | `progress-bar` | Descarga, instalación, validación | Refleja el progreso real, derivado de los bytes transferidos sobre los bytes totales, igual que el porcentaje que lo acompaña. En error la barra conserva su longitud real y el estado lo comunica la insignia: una barra al 100 % en rojo mentiría. En operación completada verificada el relleno pasa a {colors.state-success}. Siempre va acompañada del texto «<n> %»; el valor entero usa {typography.percent} y «%» usa {typography.meta}; sin texto, la barra no es accesible por sí sola |
-| `data-table-row` | Tabla de clientes del servidor | Alto de 40 px. Celdas de dato en {typography.body-strong} y unidades en {typography.meta}. Orden estable por nombre de equipo. Fila seleccionable para ver su detalle |
+| `data-table-row` | Tabla de clientes del servidor | Alto de 40 px. Celdas de dato en {typography.body-strong} y unidades en {typography.meta}. Orden estable por nombre de equipo. Fila seleccionable para ver su detalle. La columna de nombre muestra siempre el **nombre efectivo** —el único bajo el que esa fila está registrada—, nunca el nombre propuesto que colisionó. Ninguna fila queda oculta por un rechazo de nombre: un equipo homónimo aparece con el nombre único que el servidor le asignó |
 | `toast-error` | Aviso transitorio de error | Contenido: causa, acción intentada y siguiente paso. Sin iconografía; el texto es el aviso. No sustituye a la persistencia del error en el registro |
 | `dialog-surface` | Confirmación de operación privilegiada, resumen de error | Un solo nivel. Encabezado `headline`, cuerpo `body`, pie con acciones alineadas a la derecha. `Esc` cancela la acción no destructiva y devuelve el foco al elemento invocador |
 
@@ -227,6 +227,35 @@ tabla introduce tokens que no existan en `DESIGN.md`.
   desactualizada, «Actualizar» sustituye a la primaria y «Jugar» permanece disponible solo si la
   instalación sigue siendo válida. La regla completa, con su tabla de situaciones, está en
   *Estados de instalación y acción primaria*.
+
+### Nombre del equipo: propuesta, validación y adopción
+
+El nombre del equipo es la **etiqueta humana** con la que el organizador lo distingue en la tabla de
+clientes. El cliente **propone**; el **servidor valida y resuelve**. La interfaz no decide la
+unicidad por su cuenta y nunca presenta un nombre rechazado por el servidor como si fuera el
+definitivo.
+
+| Situación observable | Comportamiento de la interfaz |
+|---|---|
+| Nombre propuesto admisible y libre | El cliente se registra y muestra ese nombre. La tabla del servidor lo muestra con ese mismo nombre |
+| Nombre propuesto **colisiona** con el de otro equipo ya registrado | El servidor **no rechaza** al cliente ni lo deja invisible: le asigna un **nombre único derivado** del propuesto y se lo notifica. El cliente **adopta** ese nombre efectivo y lo muestra en el panel de estado. La tabla del servidor muestra el nombre efectivo, y el cliente que ya usaba el nombre propuesto conserva el suyo |
+| Nombre propuesto **inválido** | El registro se **rechaza** con un error que dice causa y siguiente paso (qué no cumple y qué hacer: elegir otro nombre). El cliente **queda sin registrar y no opera**; el estado de conexión lo refleja y el motivo es visible, no oculto en el log |
+| El equipo cambia su nombre en el cliente | El cliente propone el nuevo nombre en su siguiente registro. Si está libre, se adopta; si colisiona, el servidor aplica la misma regla y asigna el nombre derivado. El **identificador técnico del cliente no cambia** en ningún caso |
+
+Reglas transversales:
+
+- **La causa y el siguiente paso son parte del mensaje.** Un rechazo por nombre no dice solo
+  «nombre inválido»: nombra qué no se cumple y qué hacer ahora. El texto es el del catálogo de
+  errores del servidor, sin reescribirlo.
+- **El nombre efectivo es el único que se muestra.** Una vez resuelto, la interfaz muestra el
+  nombre bajo el que el equipo está registrado. El nombre propuesto que colisionó **no** se
+  muestra en ningún sitio como si fuera el vigente.
+- **La colisión no es un error del cliente.** Un equipo homónimo se registra y aparece en la tabla:
+  el problema resuelto es la ambigüedad de la vista, no el acceso del equipo.
+- **La unicidad del nombre no autentica nada.** No hay campo de credencial, ni pantalla de
+  contraseña, ni estado de sesión: el nombre del equipo es una etiqueta de la vista de
+  organización, y el modelo de acceso sigue siendo **LAN administrada sin autenticación ni
+  autorización de clientes** (FR-4).
 
 ### Estados de instalación y acción primaria
 
@@ -300,6 +329,8 @@ no produce ningún cambio de estado.
 | Sin juegos instalados | Biblioteca | «No tienes juegos instalados todavía.» + acción «Ver catálogo» |
 | Panel de estado sin operación | Panel derecho | Muestra la última operación terminada con su resultado, no un espacio vacío |
 | Cliente desconectado (servidor) | Clientes | Fila con estado {colors.state-danger}; el error asociado se muestra en el detalle de la fila |
+| Registro rechazado por nombre de equipo | Conexión, Diagnóstico | El cliente queda **sin registrar y no opera**. El motivo es visible con causa y siguiente paso («qué no cumple» y «qué hacer ahora»), no oculto en el log. No se pide credencial ni contraseña: el nombre es una etiqueta, no un permiso |
+| Nombre de equipo colisionante | Conexión, Clientes | El servidor asigna un **nombre único derivado** y lo notifica; el cliente lo adopta y lo muestra. No es un estado de error: el equipo está registrado y visible. La tabla del servidor muestra el nombre efectivo |
 
 ## Primitivas de interacción
 

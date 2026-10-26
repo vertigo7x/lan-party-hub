@@ -254,11 +254,31 @@ externos.
 El servidor muestra equipos conectados, identificador y nombre, estado de conexión, juegos y
 versiones instalados, descargas activas, progreso de instalaciones y errores registrados.
 
+El nombre del equipo es la **etiqueta humana** con la que el organizador identifica cada fila del
+panel. Cada cliente **propone** su nombre y el **servidor lo valida y lo hace único** en el momento
+del registro: el servidor rechaza un nombre mal formado y, ante una colisión con otro equipo ya
+registrado, **resuelve el conflicto asignando un nombre único derivado** y notifica al cliente el
+nombre efectivo, que es el que el servidor expone en la vista. La identidad técnica del cliente es
+un identificador propio, persistente y **distinto** del nombre: no cambia en ningún caso.
+
+Esta regla de unicidad es una **regla de nombres de la vista de organización**, no un control de
+acceso: el producto sigue siendo una **LAN confiada sin autenticación ni autorización de
+clientes**, y el nombre del equipo **no** es una credencial, no se usa para autenticar ninguna
+petición y no confiere permisos ni roles.
+
 **Consecuencias verificables:**
 - El servidor refleja la conexión y desconexión de un cliente compatible.
 - El servidor muestra el progreso de una descarga o instalación activa.
 - El servidor registra un error de cliente y lo presenta asociado al equipo.
 - Un cliente incompatible se refleja con su versión y diagnóstico, sin iniciar operaciones de juego.
+- Un cliente cuyo nombre de equipo esté vacío, exceda la longitud admitida o contenga caracteres no
+  admitidos es **rechazado en el registro** con un error que dice la causa y el siguiente paso, y
+  queda sin registrar.
+- Dos equipos que proponen el mismo nombre de equipo quedan **ambos registrados y visibles**: el
+  servidor asigna al segundo un nombre único derivado del propuesto y le notifica ese nombre
+  efectivo, que es el que aparece en el panel.
+- El identificador técnico del cliente **no cambia** ante un rechazo por nombre, ante una colisión
+  resuelta ni ante un cambio de nombre del equipo.
 
 ### 4.6 Actualizaciones de versiones completas
 

@@ -240,7 +240,7 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `InstallationProgressUpdated` | `clientId`, `operationId`, `state` (`InstallationState`), `phase` | Push de estado (AD-5) |
   | `ClientErrorReported` | `clientId`, `operationId`, `error: ApiError` | `error` es la **única** forma de error del sistema; `error.code` pertenece a `ErrorCatalog` (AD-15) |
   | `CatalogChanged` | `catalogVersion` | Disparo de resincronización; **único** evento servidor → cliente del catálogo |
-  | `ClientRegistrationView` | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Forma **exacta** de la vista de clientes; la consume `GET /api/v1/clients` (AD-29). **No** existe el evento `ClientsSnapshotChanged` |
+  | `ClientRegistrationView` | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Forma **exacta** de la vista de clientes; la consume `GET /api/v1/clients` (AD-29). `machineName` es la etiqueta humana **única** que el servidor expone (AD-30). **No** existe el evento `ClientsSnapshotChanged` |
   | `TrustAnchor` | Clave pública Ed25519 del ancla + su `fingerprint` | Ancla fijada out-of-band y persistida por el cliente (AD-27) |
   | `PackageDescriptor` | `packageId`, `gameId`, `version`, `sizeBytes`, `chunkSizeBytes`, `sha256`, `manifestRef` | **Sin** firma (AD-2, AD-7) |
   | `InstallationManifest` + sobre firmado | Manifiesto canónico + `signature` + `keyId` | **Único** objeto firmado (AD-2) |
@@ -287,7 +287,7 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | `PackageDescriptor` | **servidor** | Metadatos inmutables del paquete | `Server/PackageDistribution` |
   | `InstallationManifest` (+ sobre firmado) | **servidor** | Manifiesto canónico y firma | Servido como artefacto aparte (AD-2, AD-20) |
   | `DownloadOperation` (servidor) | **servidor** | Intención de descarga registrada por el cliente | Solo reflejo de la intención; **no** es el estado de la operación (AD-10) |
-  | `ClientRegistration` | **servidor** | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Vista de organización (FR-10). `machineName` es **informativo**, nunca clave (AD-23) |
+  | `ClientRegistration` | **servidor** | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Vista de organización (FR-10). La **clave** es `clientId`; `machineName` es la **etiqueta humana, única y validada por el servidor** (AD-30) |
   | `ClientInstallationView` | **servidor** | **Proyección** de solo lectura: `clientId`, `gameId`, `installedVersion`, `validationStateText` | Proyección **derivada**, alimentada por SignalR. **No** es `CLIENT_INSTALLATION` |
   | `ClientError` (servidor) | **servidor** | `errorId`, `clientId`, `operationId`, `code`, `message`, `cause`, `nextStep`, `occurredAt` | Registro para la vista de organización; conserva la forma de `ApiError` |
   | `ClientInstallation` | **cliente** | `gameId`, `installedVersion`, `validationState` (`InstallationState`), `installPath`, `installDirectoryId` | **Estado local real**. Dueño: el cliente (AD-10) |
@@ -302,11 +302,12 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-23 — Identidad del cliente: `clientId` emitido una vez y persistido
 
-- **Binds:** FR-10, NFR-7, NFR-9, AD-15, AD-22
-- **Prevents:** que el servidor muestre el mismo equipo varias veces con identificadores distintos; que la deduplicación de clientes se haga por nombre de máquina; que la correlación de logs se rompa entre arranques.
+- **Binds:** FR-10, NFR-7, NFR-9, AD-15, AD-22, AD-30
+- **Prevents:** que el servidor muestre el mismo equipo varias veces con identificadores distintos; que la correlación de logs se rompa entre arranques; que la identidad técnica y la etiqueta humana se confundan y una se use como clave de la otra.
 - **Rule:** El `clientId` es un **identificador opaco UUID v7** que el **cliente emite una sola vez** y **persiste** en su base de datos local (`ClientIdentity`, AD-22), en la fila de configuración de su propio archivo SQLite.
   - El `clientId` **no se regenera** en cada arranque, **no se regenera** al reinstalar el binario mientras el archivo de datos sobreviva, y **no se regenera** al cambiar la versión del cliente. Sobrevive a reinicios.
-  - **El servidor no deduplica ni agrupa por `machineName`.** `machineName` es **informativo**: una etiqueta visible para el organizador, nunca una clave. Un `clientId` desconocido se trata como **un cliente nuevo con ese `clientId**`: el servidor crea su `ClientRegistration` y lo muestra.
+  - **`clientId` es la clave técnica; `machineName` es la etiqueta humana y su unicidad la valida el servidor (AD-30).** El servidor **no deduplica ni agrupa por `machineName`**: la identidad de una fila de `ClientRegistration` la fija el `clientId`, nunca el nombre. Lo que el servidor **sí** exige es que **el `machineName` propuesto sea único** entre los clientes ya registrados: esa es una **regla de unicidad de una etiqueta**, no una deduplicación por nombre (AD-30).
+  - Un `clientId` desconocido se trata como **un cliente nuevo con ese `clientId**`: el servidor crea su `ClientRegistration` y lo muestra.
   - Si el usuario borra la carpeta de datos del cliente, ese equipo aparece como un cliente nuevo: es el comportamiento correcto de un identificador persistente, y el servidor **no** intenta reconstruir la identidad por nombre de máquina.
   - El `clientId` viaja en todas las peticiones y eventos como campo obligatorio (AD-15, AD-18) y es la clave de correlación de los logs en el servidor.
 
@@ -388,6 +389,35 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   - **La actualización de la vista no se pierde.** La tabla de clientes se **refresca** por REST cuando la UI lo pide y en el momento en que el servidor detecta un cambio de conexión o de versión (la transición de `connectionState` de un `ClientRegistration` es un evento **interno del servidor**, no un evento de hub). El requisito de FR-10 es «el servidor refleja la conexión y desconexión de un cliente compatible», y el servidor lo cumple por su propia persistencia y su propio refresco de vista: no necesita un bus de eventos para observarse a sí mismo.
   - **Lo que sí viaja por SignalR hacia el cliente** queda como está y no se amplía: `CatalogChanged` (disparo de resincronización) y los eventos que el **cliente** emite (`ClientStateChanged`, `DownloadProgressUpdated`, `InstallationProgressUpdated`, `ClientErrorReported`). Ningún evento **servidor → cliente** transporta datos de otros clientes.
 
+### AD-30 — `machineName` es la etiqueta humana del equipo, única y validada por el servidor; `clientId` sigue siendo la clave
+
+- **Binds:** FR-10, NFR-7, NFR-9, AD-6, AD-12, AD-15, AD-18, AD-22, AD-23, AD-25
+- **Prevents:** que dos equipos de la LAN compartan nombre y el organizador no pueda saber a quién corresponde cada fila de la tabla de clientes; que el servidor acepte un nombre vacío, con espacios indecibles o con caracteres de control; que la unicidad del nombre se confunda con una credencial y se construya un mecanismo de autenticación o de autorización; que la identidad técnica (`clientId`) y la etiqueta humana (`machineName`) se usen interchangeably.
+- **Rule:** El servidor **valida y hace único el `machineName`** de cada cliente registrado. Es la **etiqueta humana** con la que el organizador identifica un equipo en la tabla de clientes (FR-10); el `clientId` (UUID v7 opaco, emitido una vez y persistido) sigue siendo la **clave técnica**, la clave de correlación de logs y la identidad de la fila.
+  - **Dos responsabilidades, no dos claves.** `clientId` identifica **la instancia de cliente** de forma estable e inmutable; `machineName` nombra **al equipo** de forma única dentro de la LAN del evento. La fila de `ClientRegistration` se persiste y se deduplica **siempre por `clientId`**. La unicidad de `machineName` es una **restricción de una columna**, no un mecanismo de deduplicación: el servidor **no** agrupa, no fusiona ni reasigna filas por nombre (AD-23).
+  - **El servidor es el validador, no el cliente.** El cliente **propone** un `machineName`; el servidor lo **valida** y lo **resuelve** en el momento del registro. El cliente no decide por su cuenta que su nombre está libre.
+  - **Reglas de validación del `machineName` (normativas):**
+    1. **Presente y no vacío** tras recortar espacios: un nombre vacío no identifica a nadie.
+    2. **Longitud acotada**: entre 1 y 64 caracteres una vez recortado.
+    3. **Sin caracteres de control** ni saltos de línea: el nombre se muestra en una tabla densa y en logs JSON, y un control inyectado los corrompe.
+    4. **Sin espacios iniciales ni finales**, y **sin espacios interiores consecutivos**: el nombre se muestra en una columna de ancho fijo y el doble espacio produce identificadores visualmente indistinguibles.
+    5. **Comparación por forma canónica**: la comparación de unicidad es **case-insensitive** y **sin distinguir acentos ni signos**, de modo que `EQ-PC`, `eq-pc` y `eq‑pc` (guion largo) se consideran el mismo nombre. El nombre **almacenado** es el que el cliente propuso, con su capitalización original; lo que se compara es su forma canónica.
+    6. **Set de caracteres admitido**: letras, dígitos, `.`, `-`, `_` y espacio interior simple. Cualquier otro carácter se rechaza, lo que excluye por construcción nombres con `\`, `/`, `:` y `;`, que romperían la lectura de logs y de rutas.
+  - **Registro y validación (orden normativo).** En el momento del registro del cliente ante el servidor:
+    1. El cliente envía su `clientId` (UUID v7) y su `machineName` propuesto.
+    2. El servidor valida el `machineName` contra las seis reglas anteriores. Si **falla una regla de forma**, el registro se **rechaza** con un `ApiError` del `ErrorCatalog`, con `code` propio y `cause`/`nextStep` obligatorios (AD-15, AD-25). El cliente **no** queda registrado y **no** puede operar.
+    3. El servidor busca una `ClientRegistration` existente cuya forma canónica de `machineName` coincida. Si **existe** y su `clientId` es **distinto** del que se registra, hay **colisión** (paso 4). Si **existe** y su `clientId` es **el mismo**, es el **mismo cliente** reconectándose: no hay colisión, se actualiza la fila (paso 5).
+    4. **Colisión: el servidor resuelve el conflicto con un nombre único derivado.** El servidor **no** rechaza al segundo cliente ni lo deja invisible: le asigna un `machineName` único derivado del nombre propuesto —`<nombre>-2`, `-3`, … hasta `<nombre>-<n>` libre en forma canónica— y lo **persiste**. El `clientId` del cliente **no cambia**: la identidad técnica es intocable (AD-23). El servidor **notifica** el nombre efectivo al cliente, y el cliente **adopta** ese nombre como el suyo para el resto del evento.
+    5. **Reanudación.** El cliente que se registra de nuevo con su `clientId` y su `machineName` canónicos conserva su fila: el servidor actualiza `connectionState`, `lastSeenAt` y `clientVersion`, y **no** le asigna un nombre nuevo.
+  - **La unicidad del `machineName` no es un mecanismo de acceso.** Esta decisión **no introduce credenciales, autenticación ni autorización** (AD-6, AD-12): el modelo sigue siendo una **LAN confiada sin autenticación**, y el único control de acceso al protocolo sigue siendo la **compatibilidad de versión**. La unicidad del nombre es una **regla de nombres de la vista de organización** (FR-10): sirve para que el organizador distinga a quién pertenece cada fila, no para decidir quién puede entrar. En consecuencia:
+    - **No hay contraseña, token, sesión ni rol** asociados al `machineName`, y el `machineName` **no viaja como credencial** ni se usa para autenticar ninguna petición.
+    - **Un cliente que conoce un `machineName` ajeno puede proposinglo**: el servidor no lo rechaza por eso, sino por la regla de unicidad, y le asigna un nombre derivado. La regla **impide la ambigüedad de la vista**, no el acceso.
+    - **La consecuencia de un `machineName` no válido es el rechazo del registro**, no el denegamiento de una operación de juego ya en curso: el error es de **identificación**, no de **permiso**, y su `nextStep` dice qué hacer (elegir otro nombre o aceptar el propuesto).
+  - **Renombrado por el organizador.** El servidor **no** ofrece en el MVP una operación de renombrado de otro cliente: el renombrado es una **consecuencia de la colisión** (paso 4) y del **cambio de nombre del equipo** en el cliente. Si el usuario renombra su equipo, el cliente propone el nuevo nombre en su siguiente registro y el servidor aplica la misma regla: si el nuevo nombre está libre, se adopta; si colisiona, se le asigna el nombre derivado y se le notifica. El `clientId` **no cambia** en ningún caso.
+  - **Contrato.** `ClientRegistration` y `ClientRegistrationView` conservan la forma exacta ya fijada (AD-18, AD-29): `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt`. **No** se añade ningún campo de credencial, hash de contraseña, rol ni permiso. El `machineName` que el servidor expone en la vista es **siempre el nombre efectivo** —el único bajo el que esa fila está registrada—, nunca el nombre propuesto que colisionó.
+  - **Diagnóstico.** El rechazo por nombre inválido y la colisión se comunican con la **forma única** `ApiError` (`code`, `message`, `cause`, `nextStep`), con `code` **distintos** entre sí y distintos del de «firma inválida» y del de «fingerprint de ancla no coincide» (AD-15, AD-25, AD-27). La UI muestra el `message`, la `cause` y el `nextStep` tal cual, sin inventar el texto fuera de la tabla (AD-25).
+  - **Alcance.** Esta decisión **no amplía el MVP**: no añade endpoints de administración, ni tabla de nombres, ni cuentas de usuario, ni ningún artefacto fuera de los ya previstos en la tabla REST (la validación ocurre en el mismo registro que ya existe) y no cambia la forma de `ClientRegistrationView` (AD-29).
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -395,7 +425,7 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 | Naming | PascalCase para tipos y miembros; `camelCase` para parámetros y variables locales; un solo nombre por concepto en todo el repositorio (`GameId`, `PackageId`, `DownloadOperationId`); sufijos `...Id` para identificadores, `...State` para máquinas de estado, `...Descriptor` para metadatos inmutables, `I...` para puertos. Código, contratos y nombres de tipo en **inglés**; documentación y mensajes de UI en **español**. |
 | Data & formats | JSON canónico (sin espacios superfluos, claves ordenadas) para todo lo que se firma (AD-2). Fechas en UTC ISO-8601. `sizeBytes` siempre en bytes exactos; la conversión a GB decimales es de presentación (AD-7). Identificadores opacos tipo UUID v7; las versiones de juego son cadenas opacas del editor, no números. Toda respuesta de error usa la **misma** forma y el **mismo** tipo: `ApiError` de `Shared` = `{ code, message, cause, nextStep }`, con `code` estable del `ErrorCatalog` y `cause`/`nextStep` **obligatorios** (AD-15, AD-18, AD-25). **El progreso persistido del MVP es `bytesPersisted`** (offset acumulado del camino HTTP, único formato y única columna de progreso del esquema del cliente): `chunkMap` **no existe en el MVP** —ni como columna, ni como tipo, ni como valor opcional— y solo aparece si S-3 valida la PoC P2P, con el formato que fije ese spike (AD-24, AD-28). La regla es **un motor, un formato**: el formato se deduce de `transferEngine`, no de un parámetro configurable. |
 | Contratos API | Prefijo `/api/v1`; `schemaVersion` en el cuerpo de toda mutación; DTOs en `Shared`; los nombres de evento de SignalR son `PascalCase` en pasado (`CatalogChanged`, `DownloadProgressUpdated`, `ClientStateChanged`). La vista de clientes se obtiene por REST, no por evento (AD-29). |
-| State & cross-cutting | Las transiciones de estado solo ocurren por el dominio; ni la UI ni los adaptadores escriben estado directamente. La mutación de datos persistidos ocurre **solo** en `Infrastructure` a través de un puerto de repositorio; la UI nunca toca EF Core. Cada entidad persistida tiene **un** dueño; la proyección del servidor (`ClientInstallationView`) es una entidad **distinta** de la del cliente (`ClientInstallation`) y no comparte nombre (AD-22). El texto de UI de cada estado sale **solo** de `StateDisplayMap`; «sincronizando», «disponible» y «desactualizado» son estados de vista derivados y «error» es la proyección de los estados terminales de fallo, no un estado de máquina (AD-10, AD-25). Configuración por archivo + variables de entorno + flags de línea de comandos, con precedencia `flags > env > archivo`. Logging JSON con correlación `operationId`/`clientId` obligatoria en toda operación (AD-15, AD-23). |
+| State & cross-cutting | Las transiciones de estado solo ocurren por el dominio; ni la UI ni los adaptadores escriben estado directamente. La mutación de datos persistidos ocurre **solo** en `Infrastructure` a través de un puerto de repositorio; la UI nunca toca EF Core. Cada entidad persistida tiene **un** dueño; la proyección del servidor (`ClientInstallationView`) es una entidad **distinta** de la del cliente (`ClientInstallation`) y no comparte nombre (AD-22). El texto de UI de cada estado sale **solo** de `StateDisplayMap`; «sincronizando», «disponible» y «desactualizado» son estados de vista derivados y «error» es la proyección de los estados terminales de fallo, no un estado de máquina (AD-10, AD-25). Configuración por archivo + variables de entorno + flags de línea de comandos, con precedencia `flags > env > archivo`. Logging JSON con correlación `operationId`/`clientId` obligatoria en toda operación (AD-15, AD-23). El `clientId` es la clave técnica y el `machineName` la etiqueta humana única validada por el servidor: la unicidad del nombre es una regla de nombres, **no** un control de acceso (AD-30). |
 | Errores | Excepciones de dominio tipadas en `Domain`; adaptador que las traduce a la forma de error de API. Ningún mensaje al usuario contiene una excepción sin traducir ni un código interno como texto principal. |
 | Concurrencia | Cada operación de larga duración (descarga, instalación) es una unidad de trabajo con su propio `operationId` y su registro de estado persistido. Las operaciones que tocan el mismo recurso se serializan por recurso, no globalmente. |
 | Configuración y red | El servidor se configura por `--data-dir` y `--http-port`; el cliente, por `serverAddress`, `installDirectory` y `theme`. Ninguna de las dos aplicaciones contacta un servicio en Internet. No existe flag ni selector de motor P2P en el MVP: `BitTorrentTransferEngine` y el módulo `Tracking` aparecen solo tras cerrar S-3 (AD-4, AD-13). |
@@ -621,7 +651,7 @@ erDiagram
 
     CLIENT_REGISTRATION {
         string clientId PK
-        string machineName
+        string machineName UK
         string clientVersion
         int protocolVersion
         string connectionState
@@ -688,6 +718,7 @@ erDiagram
 - `PACKAGE_DESCRIPTOR` **no** lleva `signature` ni `keyId`: la firma vive **solo** en el sobre firmado del `InstallationManifest` (AD-2, AD-7).
 - `CLIENT_ERROR.code` es el `code` estable de `ErrorCatalog` y `message`/`cause`/`nextStep` conservan la forma de `ApiError` (AD-15, AD-22, AD-25).
 - `DOWNLOAD_INTENT` (servidor) registra la **intención**; no es el estado de la operación, que es del cliente (AD-10).
+- `CLIENT_REGISTRATION.machineName` tiene **unicidad** por **forma canónica** (case-insensitive y sin distinguir acentos ni signos): es la **etiqueta humana** del equipo, validada por el servidor (AD-30). La **clave** de la fila es `clientId`. La unicidad es una **restricción de columna**, no una deduplicación por nombre: el servidor nunca fusiona ni reasigna filas por `machineName` (AD-23).
 
 ### Estados de descarga e instalación
 
@@ -772,7 +803,7 @@ Sin cloud, sin servicio de Windows, sin base de datos externa: **un** proceso de
 | Abstracción multi-mecanismo y PoC P2P (FR-7) | `Client/Download` (`ITransferEngine`); **PoC P2P fuera del MVP** (S-3) | AD-4, AD-13, AD-14, AD-21, AD-24, AD-28 |
 | Instalación portable (FR-8) | `Client/Installation` + `Domain/InstallationManifest` | AD-7, AD-8, AD-9, AD-10, AD-22, AD-27 |
 | Ejecución de videojuegos (FR-9) | `Client/GameLauncher` | AD-19, AD-10 |
-| Panel de estado de clientes (FR-10) | `Server/ClientManagement` + **vista por REST** (`GET /api/v1/clients`); **no** por evento | AD-5, AD-10, AD-15, AD-22, AD-23, AD-25, AD-29 |
+| Panel de estado de clientes (FR-10) | `Server/ClientManagement` + **vista por REST** (`GET /api/v1/clients`); **no** por evento | AD-5, AD-10, AD-15, AD-22, AD-23, AD-25, AD-29, AD-30 |
 | Detección y distribución de versiones completas (FR-11) | `Client/CatalogSync` + `Client/Installation` | AD-7, AD-10, AD-11, AD-22, AD-26 |
 | Red local autónoma (NFR-1) | Todo el sistema | AD-12, AD-13 |
 | Paquetes de varios GB (NFR-3) | `Client/Download` + `Infrastructure/Persistence`; **sin mapa de fragmentos en el MVP** | AD-11, AD-20, AD-24, AD-28 |
@@ -851,6 +882,7 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | AD-27 | FR-6, FR-8, NFR-5, SM-3, R5, OQ-1 | PRD FR-6, FR-8, NFR-5; Brief R5; PRD §12 OQ-1 |
 | AD-28 | FR-5, FR-7, NFR-3, NFR-10, SM-C2, R3, R5, P2P, OQ-3 | PRD FR-7, NFR-10, SM-C2; Brief P2P; PRD §12 OQ-3 |
 | AD-29 | FR-10, NFR-7, NFR-9, R-05 | PRD FR-10, NFR-7; UX *Tabla de clientes del servidor* |
+| AD-30 | FR-10, NFR-7, NFR-9 | PRD FR-10, NFR-7; UX *Tabla de clientes del servidor*; decisión de producto del usuario (2026-10-26) |
 
 ### Restricciones abiertas del PRD resueltas por esta espina
 
@@ -862,7 +894,8 @@ Cada spike cierra una decisión con evidencia. No son implementación de product
 | Forma de errores y catálogo único | AD-15, AD-18, AD-25 (`ApiError`: `code`, `message`, `cause`, `nextStep`) | **Resuelta** |
 | Forma exacta de eventos SignalR | AD-18, AD-22 | **Resuelta** |
 | Propietario de datos persistidos y proyección del servidor | AD-22 | **Resuelta** |
-| Identidad estable del cliente | AD-23 | **Resuelta** |
+| Identidad estable del cliente | AD-23 (`clientId` UUID v7 emitido una vez y persistido, clave de la fila) | **Resuelta** |
+| Unicidad y validación del nombre del equipo | AD-30 (`machineName` como etiqueta humana única, validada por el servidor; el servidor es el validador y resuelve la colisión con un nombre derivado) | **Resuelta** |
 | Granularidad del progreso persistido | AD-24 | **Resuelta** |
 | Consistencia del catálogo con operaciones en curso | AD-26 | **Resuelta** |
 | Forma del ancla de confianza y su distribución | AD-27 (fingerprint out-of-band por QR o contraste en la pantalla del organizador; ancla inmutable durante el evento) | **Resuelta en diseño**; la rotación del ancla queda en `Deferred` |
