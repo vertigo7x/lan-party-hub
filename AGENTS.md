@@ -37,3 +37,12 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 - `epics/.../reviews/` cite a `verify_epics.py` script that does not exist in this repo; the real guard is `tools/check-epics.ps1` — use the counts recorded in each review.
 
 <!-- /bmad:context -->
+
+## Modo automático (bucle de historias)
+
+`bmad-build-auto` ejecuta una historia sin intervención humana: planifica, implementa con un subagente, revisa con cuatro capas, parchea, verifica y commitea localmente. No hace push ni fusiona.
+
+- Se invoca por historia (`bmad-build-auto "<intent de la historia>"`); una invocación es una historia, y el bucle es externo.
+- La política que lo gobierna —dos ciclos de corrección y revisión, los cuatro comandos de verificación, la rama por historia desde `main`— vive en `_bmad/custom/bmad-build-auto.toml`, en la capa de equipo.
+- **Puerta de fusión**: el bucle se detiene al terminar cada historia. La siguiente parte de `main` y solo cuando la persona ha revisado y fusionado el PR anterior.
+- `bmad-build-auto` no aparece en `_bmad/_config/bmad-help.csv`: es un skill de proyecto (`.agents/skills/`), no de un módulo BMAD.

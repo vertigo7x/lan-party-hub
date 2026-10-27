@@ -1,0 +1,35 @@
+# Team customization for bmad-build-auto (the unattended / "yolo" build loop).
+#
+# Committed to the repo: applies to every developer and every CI run.
+# Personal overrides go in `_bmad/custom/bmad-build-auto.user.toml` (gitignored).
+#
+# Merge rules (from the skill's customize.toml):
+#   strings replace, lists append, tables merge key by key,
+#   arrays of tables merge by id.
+#
+# Why this file exists: the shipped `bmad-build-auto` is generic. This project
+# has a stricter policy than the skill's defaults (branch per story, human
+# review before merge, two fix/review cycles per story), and the skill must
+# carry those rules as facts for the whole unattended run.
+
+[workflow]
+
+# Facts kept in context for the whole run.
+persistent_facts = [
+  "Politica del repositorio LAN Party Hub, vigente para toda la historia de este run: una rama por historia (`story/<numero>-<slug>`) creada desde `main` ya actualizado con las historias anteriores; PR con revision humana antes de fusionar; nunca push directo a `main`; nunca fusionar a `main` de forma automatica; nunca anadir atribucion de IA a los commits.",
+  "Puerta de fusion: el bucle automatico es autonomo DENTRO de una historia y se detiene al terminar cada una. La siguiente historia no empieza hasta que la persona ha revisado y fusionado en `main` el PR de la historia anterior. Si al arrancar este run el PR de la historia anterior sigue abierto o sin fusionar, HALT con estado `blocked` y condicion `previous story not merged into main`.",
+  "Limite de ciclos de correccion y revision: como maximo DOS ciclos automaticos por historia (docs/plan.md seccion 8). Si el workflow propone un tercer ciclo, HALT con estado `blocked` y condicion `project cycle cap reached` en lugar de continuar. No reabrir un hallazgo ya resuelto sin evidencia nueva.",
+  "Verificacion obligatoria antes de cerrar la historia, los cuatro en verde: `dotnet build LANPartyHub.sln`; `dotnet test LANPartyHub.sln`; `powershell -NoProfile -File tools/check-encoding.ps1`; `powershell -NoProfile -File tools/check-epics.ps1`.",
+  "Documentacion y explicaciones en espanol; identificadores, nombres de tipo, miembros, contratos tecnicos y comentarios de codigo en ingles. Identificadores opacos UUID v7, fechas en UTC, `sizeBytes` en bytes exactos.",
+  "Fuentes de verdad: la espina de arquitectura `_bmad-output/planning-artifacts/architecture/architecture-lan-party-hub-2026-10-26/ARCHITECTURE-SPINE.md` (AD-1..AD-34) manda en las decisiones tecnicas, y el backlog `_bmad-output/planning-artifacts/epics/epics-lan-party-hub-2026-10-26/epics.md` manda en el alcance. Léelos antes de tocar un contrato o una entidad.",
+  "Los diferidos se registran en la lista `deferred:` del frontmatter del propio spec de la historia, no en `deferred-work.md`.",
+  "El MVP no es P2P: ninguna dependencia de MonoTorrent ni de biblioteca de transferencia P2P, y ninguna referencia al vocabulario de peer, swarm, tracker o seeding en el dominio.",
+]
+
+# Extra instructions to run after config is loaded and before step 01.
+activation_steps_append = [
+  "Antes del paso 01, comprueba que el arbol de trabajo esta limpio y que la rama actual corresponde a la historia de este run. Si el arbol esta sucio, HALT con estado `blocked` y condicion `dirty working tree`.",
+]
+
+# Instruction run by HALT after writing the terminal result.
+on_complete = "Publica en el chat el hash del commit, la rama, el story key y el resultado de los cuatro comandos de verificacion, y detente. No hagas push ni abras PR. La historia siguiente no se planifica hasta que la persona haya revisado y fusionado en `main` el PR de esta historia: ese es el punto de control humano del bucle."
