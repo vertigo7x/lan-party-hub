@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LANPartyHub.Shared</RootNamespace>
+    <AssemblyName>LANPartyHub.Shared</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    AD-18: Shared contains contracts only. It must not reference any other project
+    of the repository, and it must not pull EF Core, Avalonia or networking stacks.
+    That is why this project declares no PackageReference and no ProjectReference.
+  -->
+
+</Project>

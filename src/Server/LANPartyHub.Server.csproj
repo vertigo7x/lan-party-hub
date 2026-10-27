@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LANPartyHub.Server</RootNamespace>
+    <AssemblyName>LANPartyHub.Server</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shared\LANPartyHub.Shared.csproj" />
+  </ItemGroup>
+
+  <!--
+    AD-18: the server consumes the shared contracts.
+    The web SDK already references the ASP.NET Core shared framework implicitly, so the
+    explicit <FrameworkReference Include="Microsoft.AspNetCore.App" /> would only raise
+    NETSDK1086 ("already referenced by the SDK"). The runtime is therefore the installed
+    10.0.x shared framework and no runtime patch version is pinned anywhere (NFR-1, AD-12).
+  -->
+
+</Project>

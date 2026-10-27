@@ -199,12 +199,13 @@ implementación. Se expresan como requisitos exigibles, no como decisiones de di
   estado. El cliente no consulta el estado de otro cliente por *polling*. Los DTOs son de `Shared`
   y son la forma congelada del contrato. *(AD-5, convención `Contratos API`)*
 - **AR-3 (Forma de los contratos de `Shared`).** `Shared` contiene solo contratos, con la
-  enumeración exhaustiva de AD-18: `ApiError`, `ErrorCatalog`, `DownloadState`,
-  `InstallationState`, `StateDisplayMap`, `CatalogViewState`, `ClientStateChanged`,
-  `DownloadProgressUpdated`, `InstallationProgressUpdated`, `ClientErrorReported`,
-  `CatalogChanged`, `ClientRegistrationView`, `TrustAnchor`, `PackageDescriptor`,
-  `InstallationManifest` + sobre firmado, `VersionInfo`. Ninguno de estos tipos puede declararse
-  también en `Server` o `Client`. *(AD-18)*
+  enumeración exhaustiva de AD-18 ampliada con `ServerEndpoint` (AD-3) y `ConnectionState`
+  (AD-27): `ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationState`, `OperationOutcome`,
+  `StateDisplayMap`, `CatalogViewState`, `ClientStateChanged`, `DownloadProgressUpdated`,
+  `InstallationProgressUpdated`, `ClientErrorReported`, `CatalogChanged`,
+  `ClientRegistrationView`, `TrustAnchor`, `PackageDescriptor`, `GameDescriptor`,
+  `InstallationManifest` + sobre firmado, `VersionInfo`, `ServerEndpoint` y `ConnectionState`.
+  Ninguno de estos tipos puede declararse también en `Server` o `Client`. *(AD-18, AD-33, AD-34)*
 - **AR-4 (Formato de error único).** `ApiError` = `code` + `message` + `cause` + `nextStep`, con
   `cause` y `nextStep` **obligatorios**. Es el único tipo serializable en un cuerpo de error de la
   API REST y el único que puede viajar en `ClientErrorReported`. La estructura de tres partes es
@@ -936,12 +937,13 @@ SignalR y la versión de protocolo,
 
 **Given** los contratos de `Shared`,
 **When** se implementan,
-**Then** existen exactamente estos tipos, sin duplicación en `Server` o `Client`: `ApiError`,
-`ErrorCatalog`, `DownloadState`, `InstallationState`, `StateDisplayMap`, `CatalogViewState`,
-`ClientStateChanged`, `DownloadProgressUpdated`, `InstallationProgressUpdated`,
-`ClientErrorReported`, `CatalogChanged`, `ClientRegistrationView`, `TrustAnchor`,
-`PackageDescriptor`, `InstallationManifest` + sobre firmado y `VersionInfo`
-*(AR-3, AD-18)*.
+**Then** existen exactamente estos **veinte** tipos, sin duplicación en `Server` o `Client`:
+`ApiError`, `ErrorCatalog`, `DownloadState`, `InstallationState`, `OperationOutcome`,
+`StateDisplayMap`, `CatalogViewState`, `ClientStateChanged`, `DownloadProgressUpdated`,
+`InstallationProgressUpdated`, `ClientErrorReported`, `CatalogChanged`,
+`ClientRegistrationView`, `TrustAnchor`, `PackageDescriptor`, `GameDescriptor`,
+`InstallationManifest` + sobre firmado, `VersionInfo`, `ServerEndpoint` y `ConnectionState`
+*(AR-3, AD-18, AD-33, AD-34)*.
 
 **Given** `DownloadState` e `InstallationState`,
 **When** se declaran,

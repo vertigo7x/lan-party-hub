@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LANPartyHub.UnitTests</RootNamespace>
+    <AssemblyName>LANPartyHub.UnitTests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- AD-16: the three test levels share the same runner stack, pinned to exact versions. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shared\LANPartyHub.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Server\LANPartyHub.Server.csproj" />
+    <ProjectReference Include="..\..\src\Client\LANPartyHub.Client.csproj" />
+  </ItemGroup>
+
+</Project>
