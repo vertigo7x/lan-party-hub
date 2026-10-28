@@ -23,27 +23,32 @@ public sealed class ClientBootstrap
     private readonly IClientDataLayout _layout;
     private readonly IClientStateStore _stateStore;
     private readonly IDownloadProgressReconciler _reconciler;
+    private readonly IClientCorrelationScope _correlationScope;
     private readonly ILogger<ClientBootstrap> _logger;
 
     /// <summary>Creates the use case of the startup.</summary>
     /// <param name="layout">Layout of the data folder of the client.</param>
     /// <param name="stateStore">Access to the database of the client.</param>
     /// <param name="reconciler">Reconciliation of the persisted progress.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
     /// <param name="logger">Log of the startup.</param>
     public ClientBootstrap(
         IClientDataLayout layout,
         IClientStateStore stateStore,
         IDownloadProgressReconciler reconciler,
+        IClientCorrelationScope correlationScope,
         ILogger<ClientBootstrap> logger)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(stateStore);
         ArgumentNullException.ThrowIfNull(reconciler);
+        ArgumentNullException.ThrowIfNull(correlationScope);
         ArgumentNullException.ThrowIfNull(logger);
 
         _layout = layout;
         _stateStore = stateStore;
         _reconciler = reconciler;
+        _correlationScope = correlationScope;
         _logger = logger;
     }
 
@@ -72,12 +77,24 @@ public sealed class ClientBootstrap
         // never regenerated, neither on a restart nor on a reinstallation of the binary while
         // the data folder survives (AD-23).
         var identity = await _stateStore.LoadIdentityAsync(cancellationToken);
+        var emitted = false;
 
         if (identity is null)
         {
             identity = ClientIdentity.Emit();
-            await _stateStore.SaveIdentityAsync(identity, cancellationToken);
+            emitted = true;
 
+            await _stateStore.SaveIdentityAsync(identity, cancellationToken);
+        }
+
+        // AD-15, AD-23: the scope of the client is opened as soon as the identity of the
+        // team is known, and it is not closed here: the composition root owns it and it
+        // lives as long as the session, so every entry that the client writes after the
+        // startup carries the client and the unit of work too.
+        _correlationScope.Open(identity.CanonicalId, Guid.CreateVersion7().ToString("N"));
+
+        if (emitted)
+        {
             _logger.LogInformation(
                 "Se ha emitido el identificador del cliente {ClientId}.",
                 identity.CanonicalId);

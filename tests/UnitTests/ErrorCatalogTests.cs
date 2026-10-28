@@ -114,6 +114,21 @@ public sealed class ErrorCatalogTests
     }
 
     [Fact]
+    public void The_missing_client_identifier_has_its_own_code_and_its_three_parts()
+    {
+        var codes = ErrorCatalog.Codes;
+
+        Assert.Contains(ErrorCatalog.ClientIdMissingCode, codes);
+        Assert.Equal(codes.Count, codes.Distinct(StringComparer.Ordinal).Count());
+
+        Assert.True(ErrorCatalog.TryGet(ErrorCatalog.ClientIdMissingCode, out var entry));
+        Assert.NotNull(entry);
+        Assert.False(string.IsNullOrWhiteSpace(entry!.Message));
+        Assert.False(string.IsNullOrWhiteSpace(entry.Cause));
+        Assert.False(string.IsNullOrWhiteSpace(entry.NextStep));
+    }
+
+    [Fact]
     public void The_withdrawn_package_outcome_is_not_registered_as_an_error()
     {
         foreach (var entry in ErrorCatalog.Entries)

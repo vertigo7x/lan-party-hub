@@ -97,14 +97,91 @@ dotnet ef migrations add <nombre> --project src\Server\LANPartyHub.Server.csproj
 El esquema se materializa **una sola vez**, desde el ERD de la espina. El servidor nunca usa
 `EnsureCreated()`: esquiva el historial de migraciones y hace que `Migrate()` falle después.
 
-### Métricas y diagnóstico
+### Observabilidad: correlación, log y métricas
 
-- El log del servidor es **JSON** desde el primer arranque (AD-15).
-- Las métricas del host se exponen **localmente** en el mismo puerto HTTP, en `/metrics`:
-  tasa de transferencia, operaciones activas y errores por código.
-- **Los contadores están inertes en esta historia**: la forma es la que fija AD-15, pero los
-  valores los instrumenta la Story 1.4. Hasta entonces `/metrics` devuelve ceros y el
-  diccionario de errores vacío; no es un servidor roto.
+El log de los **dos** binarios es **JSON estructurado** desde el primer arranque (AD-15).
+Cada entrada lleva su marca de tiempo en UTC ISO-8601, su nivel, su categoría y su
+mensaje. Las que se escriben dentro de una operación llevan además el **ámbito** de
+correlación:
+
+```json
+{"Timestamp":"2026-10-28T09:15:03.1234567+00:00","EventId":0,"LogLevel":"Information","Category":"LANPartyHub.Server.Infrastructure.Http.CorrelationMiddleware","Message":"Petición de la superficie de cliente atendida con el estado 200.","State":{"StatusCode":200,"{OriginalFormat}":"..."},"Scopes":[{"Message":"CorrelationScope","OperationId":"…","ClientId":"…"}]}
+```
+
+El ámbito lleva dos campos y solo dos: `OperationId`, que identifica la **unidad de
+trabajo**, y `ClientId`, que identifica al **equipo**. Los dos viajan en el ámbito y
+nunca en el texto del mensaje.
+
+Las entradas que se emiten antes de que exista un cliente al que correlacionar —el
+arranque del host y la configuración efectiva del cliente— no llevan ámbito: no hay
+identificador que correlacionar.
+
+#### Cabeceras de correlación
+
+Toda petición del cliente a la superficie REST `/api/v1` lleva dos cabeceras:
+
+| Cabecera | Qué es | Qué pasa si falta o no es válida |
+|---|---|---|
+| `X-Client-Id` | Identificador técnico del equipo, en su forma canónica de 32 hexadecimales en minúsculas (AD-23) | La petición se rechaza con **400** y un `ApiError` del catálogo: `CLIENT_ID_MISSING` si no llega, `CLIENT_ID_INVALID` si no lleva la forma canónica |
+| `X-Operation-Id` | Identificador de la unidad de trabajo en curso, en la misma forma canónica (AD-12) | El servidor genera uno por petición —un UUID v7— y lo correlaciona |
+
+El identificador efectivo de la unidad de trabajo **vuelve al cliente** en la cabecera
+`X-Operation-Id` de la respuesta, aunque el cliente no mandara ninguno: con él, el log del
+servidor y el log del cliente se pueden unir.
+
+Un `clientId` que el servidor no conoce **se acepta**: es un cliente nuevo (AD-23).
+
+Hoy el cliente **todavía no habla con el servidor**: no tiene cliente HTTP. Lo que existe es
+el *sender* que estampa las cabeceras (`CorrelationHeadersHandler`), que el futuro cliente
+HTTP instalará en su `HttpClient` con la dirección base que le dé el jugador. Lo que el
+servidor exige es que toda petición que llegue a `/api/v1` traiga las cabeceras.
+
+El `clientId` es una **clave de correlación**, no una credencial: no autentica nada, no
+habilita ningún control de acceso y no concede ningún permiso (AD-30). La superficie del
+host, `/metrics`, **no** es superficie de cliente: se atiende sin cabeceras, para que el
+diagnóstico del servidor nunca dependa del identificador de un equipo.
+
+#### Métricas del host
+
+Las tres métricas se exponen **localmente**, en el mismo puerto HTTP, en `/metrics`:
+
+```json
+{"transferRateBytesPerSecond":0,"activeOperations":0,"errorsByCode":{"CLIENT_ID_MISSING":1}}
+```
+
+- `transferRateBytesPerSecond`: los bytes que el host escribe divididos por el tiempo que la
+  ventana cubre de verdad. La ventana mira los últimos cinco segundos, y el divisor es el
+  tiempo transcurrido de verdad, así que la tasa **decae sola** cuando el host deja de
+  transferir.
+- `activeOperations`: las unidades de trabajo en curso.
+- `errorsByCode`: los errores contados por código estable del catálogo.
+
+**Ninguna telemetría sale a ningún servicio externo** (NFR-10): las métricas se publican
+en la máquina del servidor y nada más.
+
+#### Ver el log, el rechazo y las métricas
+
+El log del servidor sale por la consola en JSON, así que se ve con el servidor en marcha:
+
+```powershell
+dotnet run --project src\Server\LANPartyHub.Server.csproj -- --data-dir D:\datos --http-port 8080
+```
+
+Una petición **sin** `X-Client-Id` se rechaza con **400** y con el `ApiError` del catálogo:
+
+```powershell
+curl.exe -i http://192.168.1.10:8080/api/v1/catalog
+```
+
+```json
+{"code":"CLIENT_ID_MISSING","message":"La petición no lleva el identificador del cliente","cause":"La cabecera X-Client-Id no está en la petición o llega vacía.","nextStep":"Añade la cabecera X-Client-Id con el identificador del equipo y vuelve a intentarlo."}
+```
+
+Y las métricas se leen en el mismo puerto:
+
+```powershell
+curl.exe http://192.168.1.10:8080/metrics
+```
 
 ## Arrancar el cliente
 
@@ -218,6 +295,38 @@ reinstalar el binario mientras la carpeta de datos sobreviva; si se borra la car
 el equipo aparece como cliente nuevo, que es el comportamiento correcto de un identificador
 persistente.
 
+El identificador viaja en la cabecera `X-Client-Id` de **toda** petición a `/api/v1`, y el
+del cliente lo pone también en el ámbito del log, de modo que cada entrada del cliente
+lleva su `clientId` y el `operationId` de la operación que la escribió (AD-15, AD-23). El
+*sender* que estampa la cabecera es `CorrelationHeadersHandler`; el cliente todavía no
+habla con el servidor, así que hoy lo estampa quien construya su cliente HTTP.
+
+### Log del cliente
+
+El log del cliente es **JSON**, con los mismos campos que el del servidor, y su fábrica
+vive **toda la sesión**: el log de un cliente que dura horas no se evapora al terminar el
+arranque (AD-15).
+
+El cliente es una aplicación de escritorio y no tiene consola cuando el jugador la lanza
+desde el escritorio, así que el log se escribe **además** en un fichero JSON junto al
+binario, al lado del `client.appsettings.json`:
+
+```text
+<carpeta del binario>/
+  client.appsettings.json   # configuración del cliente
+  client.log                # log del cliente, en JSON
+  client.log.1              # la rotación anterior, cuando el log llega a su tamaño máximo
+```
+
+El fichero rota cuando llega a **1 MiB** y se queda con la rotación anterior, así que el
+espacio que el log toma en el disco está acotado.
+
+El log del cliente se ve cuando se arranca desde una terminal:
+
+```powershell
+dotnet run --project src\Client\LANPartyHub.Client.csproj -- --server-address 192.168.1.10:8080
+```
+
 ### Publicar el artefacto del cliente
 
 El artefacto es **self-contained single-file para Windows x64** (AD-17) y `win-x64.pubxml` es
@@ -239,11 +348,20 @@ LANPartyHub/
   src/
     Shared/                   # solo contratos: DTOs, enumeraciones, eventos, versión
     Server/                   # servidor del evento (ASP.NET Core, monolito modular)
-      Domain/ Application/ Infrastructure/
+      Domain/
+      Application/Ports/      # puertos: contadores del host
+      Infrastructure/         # adaptadores: red y persistencia
+        Http/                 # correlación de las peticiones y bytes de la respuesta
+        Logging/              # ámbito de correlación del servidor
       Host/                   # composición del host: configuración, métricas, arranque
     Client/                   # cliente de escritorio (Avalonia, MVVM)
-      Domain/ Application/ Infrastructure/ Presentation/
-      Host/                   # composición del cliente: configuración y arranque
+      Domain/
+      Application/Ports/      # puertos: layout, estado, correlación y cabeceras
+      Infrastructure/         # adaptadores: disco, base de datos, configuración y red
+        Logging/              # log del cliente en fichero JSON
+        Networking/           # cabeceras de correlación de las peticiones
+      Presentation/           # ventana y view models
+      Host/                   # composición del cliente: configuración, arranque y correlación
   tests/
     UnitTests/                # dominio, máquinas de estado, estructura del repositorio
     IntegrationTests/         # SQLite real en archivo, arranque real del servidor y del cliente
@@ -306,6 +424,9 @@ dotnet ef migrations has-pending-model-changes --project src\Client\LANPartyHub.
   exactos.
 - La microcopia de estado sale solo de `StateDisplayMap` y los errores visibles solo de
   `ErrorCatalog`, ambos en `Shared`.
+- El log de los dos binarios es JSON y lleva el ámbito de correlación con el `operationId`
+  y el `clientId`. Ningún log contiene credenciales, y el código de un error aparece
+  siempre como `code` del catálogo, nunca como texto principal.
 - Los documentos de planificación viven en `_bmad-output/planning-artifacts/`; la espina de
   arquitectura (`ARCHITECTURE-SPINE.md`) es la referencia de las decisiones y se lee **antes**
   de tocar un módulo, un contrato o una entidad.

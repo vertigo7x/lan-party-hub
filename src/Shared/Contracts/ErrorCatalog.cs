@@ -24,6 +24,18 @@ public static class ErrorCatalog
     /// <summary>The proposed team name does not satisfy the shape rules of the server (AD-30).</summary>
     public const string MachineNameInvalidCode = "MACHINE_NAME_INVALID";
 
+    /// <summary>
+    /// The request of the client does not carry the mandatory identifier of the client
+    /// (AD-15, AD-23).
+    /// </summary>
+    public const string ClientIdMissingCode = "CLIENT_ID_MISSING";
+
+    /// <summary>
+    /// The request of the client carries an identifier of the client that is not in its
+    /// canonical form (AD-15, AD-23).
+    /// </summary>
+    public const string ClientIdInvalidCode = "CLIENT_ID_INVALID";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -46,6 +58,16 @@ public static class ErrorCatalog
             "El nombre del equipo no es válido",
             "El nombre propuesto no cumple las reglas de forma del servidor.",
             "Elige otro nombre de equipo y vuelve a registrar el cliente."),
+        new(
+            ClientIdMissingCode,
+            "La petición no lleva el identificador del cliente",
+            "La cabecera X-Client-Id no está en la petición o llega vacía.",
+            "Añade la cabecera X-Client-Id con el identificador del equipo y vuelve a intentarlo."),
+        new(
+            ClientIdInvalidCode,
+            "El identificador del cliente no es válido",
+            "La cabecera X-Client-Id no lleva los 32 dígitos hexadecimales en minúsculas del identificador del equipo.",
+            "Envía el identificador del equipo en su forma canónica y vuelve a intentarlo."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

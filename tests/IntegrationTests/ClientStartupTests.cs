@@ -408,10 +408,7 @@ public sealed class ClientStartupTests : IDisposable
         File.WriteAllText(blocked, "no es una carpeta");
 
         var exception = await Assert.ThrowsAsync<ClientStartupException>(
-            () => ClientProgram.StartClientAsync(
-                [],
-                dataFolder: blocked,
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => StartClientAsync(blocked));
 
         Assert.Contains(blocked, exception.Message);
         Assert.DoesNotContain("   at ", exception.Message, StringComparison.Ordinal);
@@ -433,15 +430,27 @@ public sealed class ClientStartupTests : IDisposable
         return folder.FullName;
     }
 
-    private Task<ClientStartupResult> StartClientAsync(
+    private async Task<ClientStartupResult> StartClientAsync(
         string dataFolder,
         string[]? args = null,
-        string? baseDirectory = null) =>
-        ClientProgram.StartClientAsync(
+        string? baseDirectory = null)
+    {
+        // The log of the client goes to a file next to the deployment, and the deployment
+        // of this test is a temporary folder so the file does not stay in the output of the
+        // tests.
+        var logFolder = CreateTemporaryDataFolder();
+
+        using var factory = ClientProgram.CreateLoggerFactory(logFolder);
+        using var correlation = new ClientCorrelationFactory(factory);
+
+        return await ClientProgram.StartClientAsync(
             args ?? [],
+            correlation,
+            factory,
             dataFolder: dataFolder,
             baseDirectory: baseDirectory,
             cancellationToken: TestContext.Current.CancellationToken);
+    }
 
     private static void WritePartialFile(string dataFolder, string packageId, int length)
     {

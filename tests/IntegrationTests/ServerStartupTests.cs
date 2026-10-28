@@ -42,7 +42,7 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         Assert.True(File.Exists(Path.Combine(dataDirectory, DataDirectory.CatalogDatabaseFileName)));
         Assert.True(Directory.Exists(Path.Combine(dataDirectory, DataDirectory.PackagesFolderName)));
@@ -53,7 +53,7 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         using var connection = new SqliteConnection($"Data Source={Path.Combine(dataDirectory, DataDirectory.CatalogDatabaseFileName)}");
         connection.Open();
@@ -98,7 +98,7 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         using var connection = new SqliteConnection($"Data Source={Path.Combine(dataDirectory, DataDirectory.CatalogDatabaseFileName)}");
         connection.Open();
@@ -113,12 +113,12 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using (var first = await StartServerAsync(dataDirectory))
+        await using (var first = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken))
         {
             Assert.NotNull(first);
         }
 
-        await using var second = await StartServerAsync(dataDirectory);
+        await using var second = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         using var connection = new SqliteConnection($"Data Source={Path.Combine(dataDirectory, DataDirectory.CatalogDatabaseFileName)}");
         connection.Open();
@@ -133,7 +133,7 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         using var client = new HttpClient { BaseAddress = new Uri($"http://{host.BoundAddress}:{host.Port}") };
 
@@ -158,7 +158,7 @@ public sealed class ServerStartupTests
 
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         var opened = ReadListeningEndpoints(Environment.ProcessId).Except(listenersBefore).ToArray();
 
@@ -183,7 +183,7 @@ public sealed class ServerStartupTests
 
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         var newConnections = ProcessTcpConnections.GetConnected(Environment.ProcessId)
             .Select(Describe)
@@ -201,7 +201,7 @@ public sealed class ServerStartupTests
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
-        await using var host = await StartServerAsync(dataDirectory);
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
 
         var advertiser = host.Application.Services.GetRequiredService<IMdnsServiceAdvertiser>();
 
@@ -464,30 +464,6 @@ public sealed class ServerStartupTests
         return folder.FullName;
     }
 
-    private static async Task<RunningServer> StartServerAsync(string dataDirectory)
-    {
-        SkipWithoutPrivateInterface();
-
-        var port = GetFreeTcpPort();
-
-        var application = await Program.BuildServerAsync(["--data-dir", dataDirectory, "--http-port", port.ToString()]);
-
-        try
-        {
-            await application.StartAsync(TestContext.Current.CancellationToken);
-        }
-        catch
-        {
-            // The application is disposed so a failed start does not leave the port of the
-            // server bound and poison the next test.
-            await application.DisposeAsync();
-
-            throw;
-        }
-
-        return new RunningServer(application, GetPrivateAddresses().First(), port);
-    }
-
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -501,31 +477,6 @@ public sealed class ServerStartupTests
         finally
         {
             listener.Stop();
-        }
-    }
-
-    private sealed class RunningServer : IAsyncDisposable
-    {
-        private readonly WebApplication _application;
-
-        public RunningServer(WebApplication application, IPAddress boundAddress, int port)
-        {
-            _application = application;
-            BoundAddress = boundAddress;
-            Port = port;
-        }
-
-        public IPAddress BoundAddress { get; }
-
-        public int Port { get; }
-
-        public WebApplication Application => _application;
-
-        public async ValueTask DisposeAsync()
-        {
-            await _application.StopAsync();
-
-            await _application.DisposeAsync();
         }
     }
 

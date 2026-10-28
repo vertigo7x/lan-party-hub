@@ -1,4 +1,7 @@
+using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
+using LANPartyHub.Server.Infrastructure.Http;
+using LANPartyHub.Server.Infrastructure.Logging;
 using LANPartyHub.Server.Infrastructure.Networking;
 using LANPartyHub.Server.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +20,10 @@ using Microsoft.Extensions.Logging;
 // network surface reduced to the private interfaces, the local metrics endpoint and the mDNS
 // advertisement. The REST surface of the catalog, the packages and the clients belongs to the
 // stories of the epics 2, 3, 5 and 9.
+//
+// Story 1.4 fixes the observability of the server: the log is JSON with scopes, the surface
+// of the client is correlated with the client identifier and the one of the unit of work,
+// and the metrics of the host are instrumented (AD-15, AD-23).
 
 try
 {
@@ -47,6 +54,12 @@ catch (Exception exception)
 /// </summary>
 public partial class Program
 {
+    /// <summary>
+    /// Prefix of the surface of the client (AD-5). Every request under this prefix carries
+    /// the identifier of the client and opens the correlation scope of its unit of work.
+    /// </summary>
+    public const string ClientSurfacePrefix = "/api/v1";
+
     /// <summary>
     /// Builds the host of the event server.
     /// </summary>
@@ -86,9 +99,16 @@ public partial class Program
             ApplicationName = typeof(Program).Assembly.GetName().Name,
         });
 
-        // AD-15: the log of the server is JSON from the very first startup.
+        // AD-15: the log of the server is JSON from the very first startup, and it carries
+        // the scopes, so the correlation of the operation and the client travels in every
+        // entry. The timestamps are UTC in ISO-8601, as the data convention fixes.
         builder.Logging.ClearProviders();
-        builder.Logging.AddJsonConsole();
+        builder.Logging.AddJsonConsole(options =>
+        {
+            options.IncludeScopes = true;
+            options.TimestampFormat = "O";
+            options.UseUtcTimestamp = true;
+        });
 
         // AD-12, AR-23: the providers are registered in the order file > env > flags, and the
         // last provider that holds the key wins.
@@ -137,7 +157,10 @@ public partial class Program
         }.ToString();
 
         builder.Services.AddSingleton(dataDirectory);
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<HostMetrics>();
+        builder.Services.AddSingleton<IMetricsCounters>(provider => provider.GetRequiredService<HostMetrics>());
+        builder.Services.AddSingleton<CorrelationScopeFactory>();
         builder.Services.AddSingleton<IMdnsPublisher>(mdnsPublisher ?? new HaukcodeMdnsPublisher(
             Environment.MachineName,
             MdnsServiceAdvertiser.ServiceType,
@@ -176,6 +199,14 @@ public partial class Program
                     $"Quedan migraciones sin aplicar en la base de datos del servidor: {string.Join(", ", pending)}.");
             }
         }
+
+        // AD-15, AD-23: the surface of the client is correlated. Every request that
+        // reaches /api/v1 opens the scope of its unit of work and has to carry the
+        // identifier of the client. The surface of the host, /metrics, is not the surface
+        // of the client: the diagnosis of the server never depends on a client.
+        app.UseWhen(
+            context => context.Request.Path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase),
+            branch => branch.UseMiddleware<CorrelationMiddleware>());
 
         // AD-15: the metrics are published locally, on the same HTTP port.
         MetricsEndpoint.Map(app, app.Services.GetRequiredService<HostMetrics>());
