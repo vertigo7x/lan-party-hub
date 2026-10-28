@@ -55,8 +55,7 @@ internal static class ProcessTcpConnections
     /// </summary>
     /// <param name="processId">Identifier of the process.</param>
     /// <returns>The connections of the process.</returns>
-    public static IReadOnlyList<ProcessTcpConnection> Get(int processId)
-    {
+    public static IReadOnlyList<ProcessTcpConnection> Get(int processId)    {
         var connections = new List<ProcessTcpConnection>();
 
         var size = 0;
@@ -102,6 +101,27 @@ internal static class ProcessTcpConnections
 
         return connections;
     }
+
+    /// <summary>
+    /// Returns the sockets that a process has in listening state.
+    /// </summary>
+    /// <param name="processId">Identifier of the process.</param>
+    /// <returns>The listening sockets of the process.</returns>
+    public static IReadOnlyList<ProcessTcpConnection> GetListening(int processId) =>
+        Get(processId)
+            .Where(connection => connection.State == TcpState.Listen)
+            .ToArray();
+
+    /// <summary>
+    /// Returns the connections that a process has, without the sockets that it only listens
+    /// with.
+    /// </summary>
+    /// <param name="processId">Identifier of the process.</param>
+    /// <returns>The connections of the process.</returns>
+    public static IReadOnlyList<ProcessTcpConnection> GetConnected(int processId) =>
+        Get(processId)
+            .Where(connection => connection.State != TcpState.Listen)
+            .ToArray();
 
     private static IPEndPoint ToEndPoint(uint address, uint port)
     {

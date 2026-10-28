@@ -16,8 +16,56 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
   </ItemGroup>
 
+  <!--
+    AD-11, AD-17: the client owns exactly one SQLite file (state.sqlite) and applies versioned
+    EF Core migrations at startup. EF Core and its SQLite provider always share the same
+    version, so the three packages are pinned to the same version as the server and as the
+    spine.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!--
+    AD-12, AR-23: the effective configuration of the client is composed by three sources in the
+    order file > env > flags. The client is a desktop application and not a web application, so
+    the configuration packages are not part of a shared framework and they are declared here.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.13" />
+  </ItemGroup>
+
+  <!--
+    AD-15: the client writes a structured log. The JSON shape and the correlation of the
+    operation and the client belong to the story 1.4, so the console provider is enough here.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Shared\LANPartyHub.Shared.csproj" />
+  </ItemGroup>
+
+  <!--
+    AD-12, AR-23: the optional configuration file that sits next to the binary is the source of
+    the lowest priority. The plain SDK does not copy it to the output, so it is declared here.
+    The file is named differently from the one of the server because both projects land in the
+    same output folder of the test projects that reference them, and one would replace the
+    other.
+  -->
+  <ItemGroup>
+    <None Update="client.appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!--

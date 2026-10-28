@@ -19,7 +19,11 @@ prueba y los contratos compartidos que consumen el resto del backlog.
 Paquetes fijados a versión exacta (sin versiones flotantes): `Avalonia` 12.1.4,
 `Microsoft.Data.Sqlite` 10.0.13, `Microsoft.EntityFrameworkCore` 10.0.13,
 `Microsoft.EntityFrameworkCore.Sqlite` 10.0.13, `Microsoft.EntityFrameworkCore.Design`
-10.0.13, `Haukcode.Mdns` 1.0.22, `xunit.v3` 3.2.2, `xunit.runner.visualstudio` 3.1.5 y
+10.0.13, `Microsoft.Extensions.Configuration` 10.0.13,
+`Microsoft.Extensions.Configuration.Json` 10.0.13,
+`Microsoft.Extensions.Configuration.EnvironmentVariables` 10.0.13,
+`Microsoft.Extensions.Logging` 10.0.13, `Microsoft.Extensions.Logging.Console` 10.0.13,
+`Haukcode.Mdns` 1.0.22, `xunit.v3` 3.2.2, `xunit.runner.visualstudio` 3.1.5 y
 `Microsoft.NET.Test.Sdk` 18.11.0.
 
 ## Arrancar el servidor
@@ -102,6 +106,130 @@ El esquema se materializa **una sola vez**, desde el ERD de la espina. El servid
   valores los instrumenta la Story 1.4. Hasta entonces `/metrics` devuelve ceros y el
   diccionario de errores vacío; no es un servidor roto.
 
+## Arrancar el cliente
+
+El cliente es una aplicación de escritorio de Avalonia. Arranca sin instalar nada y en el
+primer arranque crea su carpeta de datos, aplica las migraciones de su base de datos y emite
+su identificador de equipo (AD-9, AD-17, AD-23).
+
+```powershell
+dotnet run --project src\Client\LANPartyHub.Client.csproj -- --server-address 192.168.1.10:8080
+```
+
+O, con el binario ya publicado:
+
+```powershell
+.\LANPartyHub.Client.exe --install-directory D:\juegos
+```
+
+Los **únicos** tres flags del cliente son `--server-address`, `--install-directory` y
+`--theme`. Un flag desconocido, un valor ausente y un valor vacío abortan el arranque con un
+mensaje y con el código de salida 1; no se ignoran en silencio. El cliente no expone ningún
+flag, selector ni puerto de motor de transferencia P2P, porque en el MVP solo existe el camino
+HTTP (AD-4, AD-28).
+
+### Configuración efectiva del cliente
+
+La precedencia es `flags > env > archivo` (AD-12, AR-23): los proveedores se registran en ese
+orden y el último que tiene la clave gana.
+
+| Clave | Variable de entorno | Valor por defecto | Qué es |
+|---|---|---|---|
+| `Client:serverAddress` | `Client__serverAddress` | — | Dirección del servidor del evento; sin ella el cliente usa el descubrimiento o la dirección manual, que son vías equivalentes (AD-3) |
+| `Client:installDirectory` | `Client__installDirectory` | `<carpeta de datos>\install` | Raíz de instalación: el único directorio confinado (AD-9) |
+| `Client:theme` | `Client__theme` | `System` | Tema de la interfaz |
+
+El fichero de configuración del cliente se llama **`client.appsettings.json`** y vive junto al
+binario. No se llama `appsettings.json` como el del servidor porque los dos proyectos caen en
+la misma carpeta de salida de los proyectos de prueba que los referencian, y un fichero
+sustituiría al otro.
+
+**El formato de `serverAddress` es `host:puerto`**: el host no puede estar vacío y el puerto es
+un número entero entre 1 y 65535 (`192.168.1.10:8080`, `servidor:8080`, `[::1]:8080`). Un
+valor con otro formato aborta el arranque con un mensaje que muestra el formato esperado. El
+host y el puerto viajan por separado en el contrato `ServerEndpoint` de `Shared`.
+
+Las variables de entorno usan `__` como separador de sección. Una ruta relativa de
+`installDirectory` se resuelve contra la carpeta de datos del cliente. El fichero
+`client.appsettings.json`, junto al binario, es la fuente de menor prioridad.
+
+El tema se resuelve y se publica en el arranque; la capa de presentación lo aplica en las
+historias siguientes.
+
+### Cambiar el directorio de instalación
+
+El directorio de instalación se cambia **en Configuración**, en el campo *Directorio de
+instalación* de la ventana del cliente. Al guardar:
+
+1. el valor se escribe en `client.appsettings.json`, junto al binario, y **se conservan las
+   demás claves** del fichero;
+2. el valor se aplica **en el acto**: la carpeta nueva se crea y pasa a ser el único
+   directorio confinado por la regla de extract (AD-9). El `install/` de la carpeta de datos
+   sigue existiendo y se queda sin usar;
+3. el siguiente arranque lee el valor persistido.
+
+El valor persistido vive en la capa de menor prioridad de la configuración, así que **un flag
+o una variable de entorno siguen ganando sobre él** en el arranque. El resto de la superficie
+de Configuración (la conexión, el tema y el log de diagnósticos) es de la épica 11 y no entra
+en este cambio.
+
+### Carpeta de datos del cliente
+
+La carpeta de datos del cliente es `%LOCALAPPDATA%\LanPartyHub` y **sobrevive al reemplazo
+del binario** (AD-17). Contiene:
+
+```text
+%LOCALAPPDATA%\LanPartyHub/
+  install/             # raíz de instalación por defecto: se deja sin usar si se configura otra
+  downloads/           # descargas parciales (*.part): ruta fija y fuera de la raíz
+  manifests/           # caché de manifiestos firmados
+  state.sqlite         # base de datos del cliente: su identidad y sus operaciones
+```
+
+El `install/` de la carpeta de datos es la raíz de instalación **por defecto** y **siempre
+existe**: la carpeta de datos contiene exactamente esas cuatro entradas (AD-9, AD-17). La raíz
+que confina la instalación es la **efectiva**, y la configuración puede apuntar a otra
+carpeta; en ese caso `install/` se queda sin usar y el directorio nuevo es el único
+confinado.
+
+Los archivos parciales viven **solo** en `downloads/`, nunca en la raíz de instalación ni en
+`%TEMP%`, para que el progreso persistido sobreviva al reinicio (AD-9, AD-11).
+
+El esquema de `state.sqlite` se materializa con **migraciones versionadas de EF Core** que se
+aplican automáticamente al arrancar (AD-11). Las cuatro tablas del cliente son
+`CLIENT_IDENTITY`, `CLIENT_INSTALLATION`, `DOWNLOAD_OPERATION` y `DOWNLOAD_PROGRESS`; **ninguna
+tabla del servidor se replica** en el archivo del cliente (AD-22).
+
+La herramienta tiene que coincidir con la versión de los paquetes de EF Core:
+
+```powershell
+dotnet tool install --global dotnet-ef --version 10.0.13
+dotnet ef migrations add <nombre> --project src\Client\LANPartyHub.Client.csproj `
+    --startup-project src\Client\LANPartyHub.Client.csproj `
+    --output-dir Infrastructure\Persistence\Migrations
+```
+
+### Identidad del equipo
+
+El `clientId` es un **UUID v7** que el cliente emite **una sola vez** y que persiste en
+`CLIENT_IDENTITY`, en su forma canónica: los 32 dígitos hexadecimales en minúsculas de
+`Guid.ToString("N")`, sin guiones (AD-23, AD-31). No se regenera al reiniciar ni al
+reinstalar el binario mientras la carpeta de datos sobreviva; si se borra la carpeta de datos,
+el equipo aparece como cliente nuevo, que es el comportamiento correcto de un identificador
+persistente.
+
+### Publicar el artefacto del cliente
+
+El artefacto es **self-contained single-file para Windows x64** (AD-17) y `win-x64.pubxml` es
+el único perfil de publicación:
+
+```powershell
+dotnet publish src\Client\LANPartyHub.Client.csproj -p:PublishProfile=win-x64 -o .\publicacion
+```
+
+Sale un único `LANPartyHub.Client.exe` que no necesita runtime instalado, junto al
+`appsettings.json` opcional. El MVP no declara soporte para ninguna otra plataforma (NFR-4).
+
 ## Estructura
 
 ```text
@@ -115,9 +243,10 @@ LANPartyHub/
       Host/                   # composición del host: configuración, métricas, arranque
     Client/                   # cliente de escritorio (Avalonia, MVVM)
       Domain/ Application/ Infrastructure/ Presentation/
+      Host/                   # composición del cliente: configuración y arranque
   tests/
     UnitTests/                # dominio, máquinas de estado, estructura del repositorio
-    IntegrationTests/         # SQLite real en archivo, arranque real del servidor
+    IntegrationTests/         # SQLite real en archivo, arranque real del servidor y del cliente
     EndToEndTests/            # escenario de aceptación SM-1 en LAN real
   docs/
     estrategia-pruebas.md     # niveles de prueba y clasificación de casos
@@ -133,6 +262,8 @@ Reglas estructurales que la propia suite verifica:
   tipo de `Domain` importa EF Core, Avalonia, HTTP ni un adaptador; ningún tipo de
   `Application` menciona `Infrastructure` o `Presentation`; ningún tipo de `Infrastructure`
   menciona `Presentation`.
+- La capa `Application` no importa EF Core, SQLite, sockets ni el cliente HTTP: el log del
+  caso de uso es el único framework que admite.
 - El proyecto del MVP **no** referencia MonoTorrent ni ninguna biblioteca P2P (AD-28).
 - El SDK está pineado en `global.json` (`10.0.403`, `rollForward: latestFeature`) y el fichero
   de solución declara los seis proyectos.
@@ -156,12 +287,15 @@ powershell -NoProfile -File tools/check-encoding.ps1   # sin CJK ni U+FFFD en el
 powershell -NoProfile -File tools/check-epics.ps1      # integridad del backlog de épicas
 ```
 
-Y, cuando se toca el esquema del servidor, la comprobación de que el modelo y la última
-migración siguen de acuerdo:
+Y, cuando se toca el esquema del servidor o el del cliente, la comprobación de que el modelo
+y la última migración siguen de acuerdo:
 
 ```powershell
 dotnet ef migrations has-pending-model-changes --project src\Server\LANPartyHub.Server.csproj `
     --startup-project src\Server\LANPartyHub.Server.csproj
+
+dotnet ef migrations has-pending-model-changes --project src\Client\LANPartyHub.Client.csproj `
+    --startup-project src\Client\LANPartyHub.Client.csproj
 ```
 
 ## Convenciones

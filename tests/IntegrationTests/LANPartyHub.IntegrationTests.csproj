@@ -27,6 +27,9 @@
     <!-- AD-16: the integration level starts the real host of the server, with the real
          Kestrel and the real sockets, so it needs the composition root of the server. -->
     <ProjectReference Include="..\..\src\Server\LANPartyHub.Server.csproj" />
+    <!-- AD-16: the integration level also starts the real client, with its real layout on
+         disk and its real SQLite file, so it needs the composition root of the client. -->
+    <ProjectReference Include="..\..\src\Client\LANPartyHub.Client.csproj" />
   </ItemGroup>
 
 </Project>

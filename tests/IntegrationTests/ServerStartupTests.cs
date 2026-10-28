@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Networking;
@@ -150,15 +149,18 @@ public sealed class ServerStartupTests
     [Fact]
     public async Task The_only_tcp_port_in_listening_state_is_the_http_port_and_its_address_is_private()
     {
-        var listenersBefore = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
-        var udpListenersBefore = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
+        // The sockets of the machine cannot be used to observe the surface of the server: the
+        // machine runs background processes that open sockets of their own, and a diff of the
+        // whole machine reports them as if the server had opened them. Only the sockets of the
+        // process that hosts the server tell them apart.
+        var listenersBefore = ReadListeningEndpoints(Environment.ProcessId);
+        var udpBefore = ReadUdpEndpoints(Environment.ProcessId);
 
         var dataDirectory = CreateTemporaryDataDirectory();
 
         await using var host = await StartServerAsync(dataDirectory);
 
-        var listenersAfter = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
-        var opened = listenersAfter.Except(listenersBefore).ToArray();
+        var opened = ReadListeningEndpoints(Environment.ProcessId).Except(listenersBefore).ToArray();
 
         Assert.NotEmpty(opened);
         Assert.All(opened, endpoint => Assert.Equal(host.Port, endpoint.Port));
@@ -167,8 +169,7 @@ public sealed class ServerStartupTests
             $"The server opened a listener in an address that is not private: {endpoint}."));
 
         // The only new UDP socket is the one of the mDNS announcement (AD-12).
-        var udpListenersAfter = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
-        var openedUdp = udpListenersAfter.Except(udpListenersBefore).ToArray();
+        var openedUdp = ReadUdpEndpoints(Environment.ProcessId).Except(udpBefore).ToArray();
 
         Assert.All(openedUdp, endpoint => Assert.Equal(MdnsPort, endpoint.Port));
     }
@@ -176,17 +177,17 @@ public sealed class ServerStartupTests
     [Fact]
     public async Task The_server_opens_no_outbound_tcp_connection()
     {
-        var connectionsBefore = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpConnections();
+        var connectionsBefore = ProcessTcpConnections.Get(Environment.ProcessId)
+            .Select(Describe)
+            .ToHashSet(StringComparer.Ordinal);
 
         var dataDirectory = CreateTemporaryDataDirectory();
 
         await using var host = await StartServerAsync(dataDirectory);
 
-        var connectionsAfter = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpConnections();
-
-        var known = connectionsBefore.Select(Describe).ToHashSet(StringComparer.Ordinal);
-        var newConnections = connectionsAfter
-            .Where(connection => !known.Contains(Describe(connection)))
+        var newConnections = ProcessTcpConnections.GetConnected(Environment.ProcessId)
+            .Select(Describe)
+            .Where(connection => !connectionsBefore.Contains(connection))
             .ToArray();
 
         // The server only opens listeners: it never reaches out to any service (NFR-10). The
@@ -213,9 +214,12 @@ public sealed class ServerStartupTests
             return;
         }
 
-        var udpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
+        // The socket is looked up in the table of the process that hosts the server, and not
+        // in the table of the machine: another program of the machine could be listening on
+        // the same port and the assertion would pass without the announcement.
+        var udpSockets = ProcessUdpSockets.Get(Environment.ProcessId);
 
-        Assert.Contains(udpListeners, endpoint => endpoint.Port == MdnsPort);
+        Assert.Contains(udpSockets, socket => socket.LocalEndPoint.Port == MdnsPort);
     }
 
     [Fact]
@@ -277,7 +281,7 @@ public sealed class ServerStartupTests
         {
             Environment.SetEnvironmentVariable(UrlsVariable, "http://+:5000");
 
-            var listenersBefore = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
+            var listenersBefore = ReadListeningEndpoints(Environment.ProcessId);
 
             var dataDirectory = CreateTemporaryDataDirectory();
             var port = GetFreeTcpPort();
@@ -288,8 +292,7 @@ public sealed class ServerStartupTests
             {
                 await application.StartAsync(TestContext.Current.CancellationToken);
 
-                var listenersAfter = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
-                var opened = listenersAfter.Except(listenersBefore).ToArray();
+                var opened = ReadListeningEndpoints(Environment.ProcessId).Except(listenersBefore).ToArray();
 
                 Assert.NotEmpty(opened);
                 Assert.All(opened, endpoint => Assert.Equal(port, endpoint.Port));
@@ -331,7 +334,10 @@ public sealed class ServerStartupTests
         {
             await application.StartAsync(TestContext.Current.CancellationToken);
 
-            var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
+            // The listener is looked up in the table of the process that hosts the server, and
+            // not in the table of the machine: another program of the machine could be
+            // listening on the same port and the assertion would pass without the server.
+            var listeners = ReadListeningEndpoints(Environment.ProcessId);
 
             Assert.Contains(listeners, endpoint => endpoint.Port == port);
 
@@ -404,8 +410,24 @@ public sealed class ServerStartupTests
         return false;
     }
 
-    private static string Describe(TcpConnectionInformation connection) =>
+    private static string Describe(ProcessTcpConnection connection) =>
         $"{connection.LocalEndPoint}|{connection.RemoteEndPoint}|{connection.State}";
+
+    /// <summary>
+    /// Endpoints of the sockets that the process has in listening state.
+    /// </summary>
+    private static IReadOnlyList<IPEndPoint> ReadListeningEndpoints(int processId) =>
+        ProcessTcpConnections.GetListening(processId)
+            .Select(connection => connection.LocalEndPoint)
+            .ToArray();
+
+    /// <summary>
+    /// Endpoints of the UDP sockets that the process has.
+    /// </summary>
+    private static IReadOnlyList<IPEndPoint> ReadUdpEndpoints(int processId) =>
+        ProcessUdpSockets.Get(processId)
+            .Select(socket => socket.LocalEndPoint)
+            .ToArray();
 
     private static IReadOnlyList<IPAddress> GetPrivateAddresses() =>
         new PrivateAddressResolver().GetPrivateAddresses();

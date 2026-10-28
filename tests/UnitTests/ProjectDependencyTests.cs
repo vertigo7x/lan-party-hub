@@ -32,6 +32,32 @@ public sealed class ProjectDependencyTests
         "Infrastructure",
     ];
 
+    /// <summary>
+    /// Namespaces of the framework that the Application layer is allowed to import. The log of
+    /// the use case is the only one: the use cases depend on the ports declared in this layer
+    /// and never on an adapter (AD-1, AD-15).
+    /// </summary>
+    private static readonly string[] AllowedApplicationNamespaces =
+    [
+        "Microsoft.Extensions.Logging",
+    ];
+
+    /// <summary>
+    /// Namespaces that the Application layer may never import. EF Core, SQLite, the sockets
+    /// and the HTTP client are adapters, and the use cases never reach them (AD-1).
+    /// </summary>
+    private static readonly string[] ForbiddenApplicationNames =
+    [
+        "Avalonia",
+        "Microsoft.EntityFrameworkCore",
+        "Microsoft.Data.Sqlite",
+        "Microsoft.AspNetCore",
+        "System.Data.Common",
+        "System.Net.Http",
+        "System.Net.Sockets",
+        "HttpClient",
+    ];
+
     private static readonly string[] ExpectedSolutionProjects =
     [
         "LANPartyHub.Client",
@@ -228,6 +254,42 @@ public sealed class ProjectDependencyTests
         }
 
         Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void No_type_of_the_application_layer_imports_a_framework()
+    {
+        var applicationFiles = RepositoryLayout.SourceFiles(Path.Combine("src", "Server", "Application"))
+            .Concat(RepositoryLayout.SourceFiles(Path.Combine("src", "Client", "Application")))
+            .ToArray();
+
+        Assert.NotEmpty(applicationFiles);
+
+        var offenders = new List<string>();
+
+        foreach (var file in applicationFiles)
+        {
+            var content = File.ReadAllText(file);
+
+            foreach (var forbidden in ForbiddenApplicationNames)
+            {
+                if (content.Contains(forbidden, StringComparison.Ordinal))
+                {
+                    offenders.Add($"{Path.GetFileName(file)}: {forbidden}");
+                }
+            }
+        }
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void The_log_is_the_only_framework_that_the_application_layer_may_use()
+    {
+        // The namespaces that the layer may use are never rejected by the guard above, so the
+        // two lists cannot drift apart.
+        Assert.All(AllowedApplicationNamespaces, allowed =>
+            Assert.DoesNotContain(allowed, ForbiddenApplicationNames));
     }
 
     [Fact]

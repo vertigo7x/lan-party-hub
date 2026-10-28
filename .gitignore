@@ -67,6 +67,7 @@ packages.lock.json
 *.nupkg
 *.publishsettings
 *.pubxml
+!src/Client/Properties/PublishProfiles/*.pubxml
 *.pubxml.user
 *.publishprofiles
 *.VSharp
