@@ -13,6 +13,36 @@
   </ItemGroup>
 
   <!--
+    AD-11: the server owns exactly one SQLite file (catalog.sqlite) and applies versioned
+    EF Core migrations at startup. EF Core and its SQLite provider always share the same
+    version, so the three packages are pinned to the same version as the spine.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!--
+    AD-3, AD-12: the event server advertises itself as _lanpartyhub._tcp over mDNS
+    (UDP 5353). The library is isolated behind MdnsServiceAdvertiser, so its types never
+    leave src/Server/Infrastructure/Networking.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Haukcode.Mdns" Version="1.0.22" />
+  </ItemGroup>
+
+  <!--
+    AD-17: the configuration file that sits next to the binary is optional and carries the
+    lowest priority of the three configuration sources (flags > env > file). It is copied to
+    the output by the web SDK default, which already includes appsettings.json as Content
+    with CopyToOutputDirectory=PreserveNewest, so no item group is needed for it.
+  -->
+
+  <!--
     AD-18: the server consumes the shared contracts.
     The web SDK already references the ASP.NET Core shared framework implicitly, so the
     explicit <FrameworkReference Include="Microsoft.AspNetCore.App" /> would only raise

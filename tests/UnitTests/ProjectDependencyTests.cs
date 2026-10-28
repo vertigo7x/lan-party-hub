@@ -312,6 +312,17 @@ public sealed class ProjectDependencyTests
     }
 
     [Fact]
+    public void The_server_does_not_reference_the_http_client()
+    {
+        var referencedAssemblies = typeof(LANPartyHub.Server.Domain.DomainLayer).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name ?? string.Empty)
+            .ToArray();
+
+        Assert.DoesNotContain("System.Net.Http", referencedAssemblies);
+    }
+
+    [Fact]
     public void The_solution_file_holds_the_six_projects_of_the_solution()
     {
         var solutionFile = Path.Combine(RepositoryLayout.Root, "LANPartyHub.sln");

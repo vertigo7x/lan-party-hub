@@ -1,7 +1,7 @@
 # Estrategia de pruebas
 
 > Nivel de prueba mínimo de cada caso obligatorio del MVP, el contenido declarado de los tres
-> niveles y el estado de la estrategia en la historia 1.1.
+> niveles y el estado de la estrategia en las historias 1.1 y 1.2.
 >
 > Fuentes: `docs/plan.md` §10 (checklist de casos), AD-16 (niveles y clasificación),
 > AD-27 (caso derivado del bootstrap del ancla), AD-28 (el MVP no es P2P) y
@@ -41,7 +41,7 @@ que abre una base de datos real.
 ### 2.1 Contenido declarado de cada nivel y la historia que lo implementa
 
 Cada ítem del contenido declarado de AD-16 tiene una historia propietaria. La columna «Estado»
-declara lo que existe hoy, con la historia 1.1 como base de los tres niveles.
+declara lo que existe hoy, con las historias 1.1 y 1.2 como base de los tres niveles.
 
 | Nivel | Ítem del contenido declarado (AD-16) | Historia propietaria | Estado |
 |---|---|---|---|
@@ -51,8 +51,11 @@ declara lo que existe hoy, con la historia 1.1 como base de los tres niveles.
 | Unitarias | Verificación del ancla de confianza | 4.4, 12.1 (S-2) | Pendiente: la historia 1.1 declara el contrato `TrustAnchor` y los códigos del catálogo |
 | Unitarias | Confines de ruta, incluida la extracción fuera del directorio autorizado | 7.2 | Pendiente |
 | Unitarias | Estructura del repositorio (grafo de dependencias, inventario de contratos, ausencia de P2P) | 1.1 | **Hecho** |
-| Integración | Persistencia contra **SQLite real en archivo** | 1.2 (servidor), 1.3 (cliente), 5.3 (progreso) | **Parcial**: la historia 1.1 persiste el progreso contra un archivo SQLite real en `tests/IntegrationTests`; el esquema de cada rol llega con 1.2 y 1.3 |
-| Integración | Endpoints con `WebApplicationFactory` | 1.2 | Pendiente: la historia 1.1 solo declara el host del servidor |
+| Unitarias | Configuración efectiva del servidor (parser estricto de la línea de comandos y precedencia `flags > env > archivo`) | 1.2 | **Hecho**: `ServerCommandLineTests` cubre el flag válido, el flag desconocido, el valor ausente, el valor que parece otro flag, el puerto inválido y la precedencia de las tres fuentes |
+| Integración | Persistencia contra **SQLite real en archivo** | 1.2 (servidor), 1.3 (cliente), 5.3 (progreso) | **Parcial**: la historia 1.1 persiste el progreso contra un archivo SQLite real en `tests/IntegrationTests`; la historia 1.2 añade el esquema del servidor (`catalog.sqlite`, siete tablas del ERD y `__EFMigrationsHistory`) con migraciones versionadas aplicadas al arranque; el esquema del cliente llega con 1.3 |
+| Integración | Arranque real del host (Kestrel real, sockets reales y SQLite real) | 1.2 | **Hecho**: la historia 1.2 arranca el host real contra un `--data-dir` temporal y comprueba el enlace, el esquema y el endpoint local de métricas |
+| Integración | Endpoints con `WebApplicationFactory` | 2.x, 4.x, 5.x (endpoints REST) | Pendiente: el arnés `WebApplicationFactory` llega con las historias que traen los endpoints REST del catálogo, los paquetes y los clientes. La historia 1.2 no lo usa: arranca el host real |
+| Integración | Superficie de red mínima (solo interfaces privadas, solo el puerto HTTP y el UDP 5353 de mDNS) | 1.2 | **Hecho**: `ServerStartupTests` compara los sockets TCP y UDP en escucha antes y después del arranque, comprueba que cada dirección en escucha pertenece a RFC1918 o a ULA, que el único puerto TCP nuevo es el HTTP, que el único socket UDP nuevo es el 5353 y que el enlace no se mueve por `ASPNETCORE_URLS` |
 | Integración | Motor de transferencia HTTP contra servidor de prueba | 5.1, 5.2 | Pendiente: el puerto `ITransferEngine` llega con la story 5.1 |
 | E2E en LAN real | Escenario de aceptación del MVP con dos o más clientes | 13.1 | **Declarado**: la historia 1.1 declara el escenario, su nivel y su precondición; la ejecución es de la story 13.1 |
 
@@ -119,16 +122,20 @@ El caso presupone el intercambio de fragmentos entre peers, que **no existe en e
 - Ningún otro caso de la checklist presupone P2P, y ningún requisito, endpoint, puerto,
   esquema ni artefacto de despliegue del MVP depende de esta PoC.
 
-## 5. Contenido declarado por la historia 1.1
+## 5. Contenido declarado por las historias 1.1 y 1.2
 
 La historia 1.1 crea la estructura de los tres niveles y deja cada uno con contenido real y
-ejecutable:
+ejecutable. La historia 1.2 añade el arranque real del servidor al nivel de integración.
 
-| Proyecto | Contenido declarado en la historia 1.1 |
-|---|---|
-| `tests/UnitTests` | Transiciones válidas, inválidas y terminales de las dos máquinas de estado; inventario exhaustivo de los 20 contratos de `Shared` y ausencia de duplicación en `Server` y `Client`; ausencia de referencias a MonoTorrent, BitTorrent o cualquier biblioteca P2P en los `.csproj`; grafo de dependencias; aislamiento de la capa `Domain`; microcopia de estado y catálogo de errores |
-| `tests/IntegrationTests` | Persistencia real contra **SQLite en archivo** (no en memoria) con la tabla de progreso del camino HTTP (`operationId`, `bytesPersisted`, `totalBytes`), reconciliación del offset persistido contra el archivo parcial y ausencia de mapa de fragmentos |
-| `tests/EndToEndTests` | Escenario de aceptación SM-1 **declarado**: nivel, precondición y los diez pasos del PRD §9. La ejecución sobre una LAN real con dos o más clientes pertenece a la Story 13.1; mientras la precondición no se satisfaga, la prueba se omite con el motivo explícito |
+| Proyecto | Contenido declarado en la historia 1.1 | Contenido declarado en la historia 1.2 |
+|---|---|---|
+| `tests/UnitTests` | Transiciones válidas, inválidas y terminales de las dos máquinas de estado; inventario exhaustivo de los 20 contratos de `Shared` y ausencia de duplicación en `Server` y `Client`; ausencia de referencias a MonoTorrent, BitTorrent o cualquier biblioteca P2P en los `.csproj`; grafo de dependencias; aislamiento de la capa `Domain`; microcopia de estado y catálogo de errores | Parser estricto de `--data-dir` y `--http-port` (flag válido, flag desconocido, valor ausente, valor que parece otro flag, puerto inválido) y precedencia de la configuración efectiva `flags > env > archivo` con sus valores por defecto |
+| `tests/IntegrationTests` | Persistencia real contra **SQLite en archivo** (no en memoria) con la tabla de progreso del camino HTTP (`operationId`, `bytesPersisted`, `totalBytes`), reconciliación del offset persistido contra el archivo parcial y ausencia de mapa de fragmentos | Arranque del **host real** contra un `--data-dir` temporal: creación de `catalog.sqlite` y de `packages/`, existencia de las siete tablas del ERD con el nombre y el orden exactos de sus columnas, registro en `__EFMigrationsHistory`, idempotencia sobre una base ya migrada, respuesta del endpoint local de métricas, único puerto TCP en escucha (el HTTP) con dirección privada RFC1918 o ULA, único socket UDP nuevo (el 5353 de mDNS), enlace explícito a las interfaces privadas pese a `ASPNETCORE_URLS`, ausencia de conexiones TCP salientes y negativa a arrancar sin interfaz privada |
+| `tests/EndToEndTests` | Escenario de aceptación SM-1 **declarado**: nivel, precondición y los diez pasos del PRD §9. La ejecución sobre una LAN real con dos o más clientes pertenece a la Story 13.1; mientras la precondición no se satisfaga, la prueba se omite con el motivo explícito | — |
+
+El nivel de integración de la historia 1.2 arranca el host real y no un `TestServer`: la
+superficie de red (AD-12) y el esquema de la base de datos (AD-11) solo son observables con
+Kestrel real y con SQLite real en archivo.
 
 ## 6. Comandos
 
