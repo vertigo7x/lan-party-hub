@@ -208,6 +208,7 @@ public partial class Program
         builder.Services.AddScoped<IPackageContentStore, PackageContentStore>();
         builder.Services.AddSingleton<IManifestSigner, Ed25519ManifestSigner>();
         builder.Services.AddScoped<PublishPackage>();
+        builder.Services.AddScoped<ListPackages>();
 
         var app = builder.Build();
 

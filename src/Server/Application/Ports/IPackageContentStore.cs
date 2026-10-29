@@ -24,7 +24,10 @@ public interface IPackageContentStore
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>
     /// The bytes of the package, or <c>null</c> when the package does not have bytes in the
-    /// repository of the server.
+    /// repository of the server, and also when the identifier is not the plain name of a
+    /// file of that repository: an identifier that carries a directory part or a relative
+    /// path does not name a package of the repository, and it never makes the server read
+    /// a file that is outside of it (AD-9).
     /// </returns>
     Task<byte[]?> ReadBytesAsync(string packageId, CancellationToken cancellationToken);
 }

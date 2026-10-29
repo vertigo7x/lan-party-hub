@@ -138,6 +138,19 @@ public static class ErrorCatalog
     public const string PackagePayloadMissingCode = "PACKAGE_PAYLOAD_MISSING";
 
     /// <summary>
+    /// The identity that the installation manifest declares does not match the identity
+    /// that the descriptor of the package declares (AD-2, AD-7).
+    ///
+    /// <para>
+    /// The manifest y el descriptor son dos formas de la misma publicación, así que su
+    /// identificador, su versión y su tamaño tienen que coincidir: si no coinciden, la
+    /// correspondencia entre el manifiesto y el paquete no está firmada y la publicación
+    /// se rechaza antes de escribir nada (AC7).
+    /// </para>
+    /// </summary>
+    public const string PackageManifestMismatchCode = "PACKAGE_MANIFEST_MISMATCH";
+
+    /// <summary>
     /// The videogame whose package is being published does not carry the license that the
     /// catalog demands before publishing (AD-7, FR-1, NFR-8).
     /// </summary>
@@ -172,6 +185,18 @@ public static class ErrorCatalog
     /// the manifest declares (AD-2, AD-7).
     /// </summary>
     public const string PackageContentMismatchCode = "PACKAGE_CONTENT_MISMATCH";
+
+    /// <summary>
+    /// The body of the publication is not a well formed JSON document, or one of its
+    /// fields does not have the shape that the contract declares (AD-5).
+    ///
+    /// <para>
+    /// It is a different absence from the one of the operation that is not allowed: a body
+    /// that cannot be read is not a manifest with an operation outside the closed set, and
+    /// the metric of errors per code does not mix the two (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string PackageBodyMalformedCode = "PACKAGE_BODY_MALFORMED";
 
     private static readonly ApiError[] CatalogEntries =
     [
@@ -331,6 +356,11 @@ public static class ErrorCatalog
             "El cuerpo de la publicación no lleva el descriptor del paquete ni su manifiesto de instalación.",
             "Añade el descriptor del paquete y su manifiesto al cuerpo de la petición y vuelve a intentarlo."),
         new(
+            PackageManifestMismatchCode,
+            "El manifiesto no coincide con el descriptor del paquete",
+            "El manifiesto declara un identificador, una versión o un tamaño que no son los que declara el descriptor del paquete.",
+            "Haz que el manifiesto y el descriptor declaren la misma publicación y vuelve a intentarlo: no se ha escrito ninguna fila."),
+        new(
             PackageLicenseMissingCode,
             "Falta la licencia del videojuego del paquete",
             "El registro del videojuego no lleva la licencia que el catálogo exige para publicar su paquete.",
@@ -360,6 +390,11 @@ public static class ErrorCatalog
             "El contenido del paquete no coincide con lo declarado",
             "Los bytes del paquete no existen o su tamaño no coincide con el tamaño que declara el manifiesto.",
             "Revisa la ruta del paquete y su tamaño en bytes exactos, y vuelve a publicarlo: no se ha escrito ninguna fila."),
+        new(
+            PackageBodyMalformedCode,
+            "El cuerpo de la publicación no se puede leer",
+            "El cuerpo de la petición no es un JSON válido o alguno de sus campos no tiene la forma que el contrato declara.",
+            "Revisa el JSON del cuerpo de la publicación y los campos que el contrato declara, y vuelve a intentarlo."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

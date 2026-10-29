@@ -279,6 +279,8 @@ public sealed class GameCatalogTests
     }
 
     [Theory]
+    [InlineData("license", "GAME_LICENSE_MISSING")]
+    [InlineData("distributionRestrictions", "GAME_DISTRIBUTION_RESTRICTIONS_MISSING")]
     [InlineData("name", "GAME_NAME_MISSING")]
     [InlineData("description", "GAME_DESCRIPTION_MISSING")]
     [InlineData("coverImage", "GAME_COVER_IMAGE_MISSING")]
@@ -564,7 +566,7 @@ public sealed class GameCatalogTests
         using var client = host.CreateClient();
 
         var request = BuildValidRequest();
-        request.Game = request.Game! with { Name = string.Empty };
+        request.Game = request.Game! with { License = string.Empty };
 
         using var response = await client.PostAsync(
             GamesEndpoint.Route,
@@ -580,7 +582,7 @@ public sealed class GameCatalogTests
 
         // La métrica cuenta el error por su código estable, y el código nombra el campo
         // que falta (AD-15, AD-25).
-        Assert.Equal(1, errors.GetProperty(ErrorCatalog.GameNameMissingCode).GetInt64());
+        Assert.Equal(1, errors.GetProperty(ErrorCatalog.GameLicenseMissingCode).GetInt64());
     }
 
     [Fact]
@@ -858,6 +860,8 @@ public sealed class GameCatalogTests
         "operatingSystem" => descriptor with { OperatingSystem = string.Empty },
         "distributionType" => descriptor with { DistributionType = string.Empty },
         "installationType" => descriptor with { InstallationType = string.Empty },
+        "license" => descriptor with { License = string.Empty },
+        "distributionRestrictions" => descriptor with { DistributionRestrictions = string.Empty },
         "tags" => descriptor with { Tags = [] },
         "images" => descriptor with { Images = [] },
         "dependencies" => descriptor with { Dependencies = [] },

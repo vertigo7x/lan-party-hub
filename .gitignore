@@ -27,7 +27,11 @@
 *.nupkg
 *.snupkg
 *.nupkg
-packages/
+# La carpeta de paquetes de NuGet sólo se ignora en la RAÍZ del repositorio.
+# Sin el ancla, el patrón casa con cualquier directorio llamado "packages" a
+# cualquier profundidad, y las fuentes del módulo de paquetes del servidor
+# (src/Server/*/Packages/) dejan de versionarse.
+/packages/
 !packages/build/
 project.lock.json
 project.fragment.lock.json

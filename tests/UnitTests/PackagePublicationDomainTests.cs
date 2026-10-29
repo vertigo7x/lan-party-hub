@@ -1,5 +1,9 @@
+using System.Reflection;
+using System.Text.Json.Serialization;
+using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Domain.Catalog;
 using LANPartyHub.Server.Domain.Packages;
+using LANPartyHub.Server.Host;
 using LANPartyHub.Shared.Contracts;
 using Xunit;
 
@@ -102,6 +106,75 @@ public sealed class PackagePublicationDomainTests
     }
 
     /// <summary>
+    /// The closed set of the domain is EXACTLY the one that the contract declares in its
+    /// <see cref="JsonDerivedTypeAttribute"/> discriminators (AD-7).
+    ///
+    /// <para>
+    /// The names que declara el contrato son la fuente que manda, porque el contrato es
+    /// lo que el cliente deserializa. La lista del dominio, el <c>switch</c> del
+    /// canonicalizador y los atributos del contrato son tres declaraciones del mismo
+    /// conjunto, y esta prueba es la que las ata entre sí: una séptima operación
+    /// añadida al contrato rompe esta prueba, en lugar de ser aceptada por la
+    /// deserialización y rechazada más tarde, en la firma.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_closed_set_of_the_domain_is_exactly_the_one_that_the_contract_declares()
+    {
+        var declared = typeof(InstallationManifest.ManifestOperation)
+            .GetCustomAttributes<JsonDerivedTypeAttribute>()
+            .Select(attribute => ReadDiscriminator(attribute))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.NotEmpty(declared);
+
+        Assert.Equal(
+            declared,
+            ManifestOperations.AllowedNames.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// Every operation of the closed set of the domain is one of the derived types of the
+    /// contract, so the canonicalizer can write it (AD-2, AD-7).
+    /// </summary>
+    [Fact]
+    public void Every_operation_of_the_closed_set_is_a_derived_type_of_the_contract()
+    {
+        var derived = typeof(InstallationManifest.ManifestOperation)
+            .GetCustomAttributes<JsonDerivedTypeAttribute>()
+            .Select(attribute => attribute.DerivedType)
+            .ToArray();
+
+        foreach (var name in ManifestOperations.AllowedNames)
+        {
+            var operation = BuildOperation(name);
+
+            Assert.NotNull(operation);
+            Assert.Contains(operation.GetType(), derived);
+        }
+    }
+
+    /// <summary>
+    /// The version of the schema of the manifest that the use case publishes is the same
+    /// that the endpoint declares (AD-5, AD-8).
+    ///
+    /// <para>
+    /// La versión del esquema del CUERPO y la versión del esquema del MANIFIESTO son dos
+    /// cosas distintas, y cada una tiene su sitio. Esta prueba ata la del manifiesto con
+    /// la que el endpoint usa para el manifiesto, de modo que las dos no puedan separarse
+    /// sin que se note.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_version_of_the_schema_of_the_manifest_is_the_one_that_the_use_case_publishes()
+    {
+        Assert.Equal(
+            InstallationManifestSchema.Version,
+            PackagesEndpoint.SupportedManifestSchemaVersion);
+    }
+
+    /// <summary>
     /// An operation that is not one of the six is rejected before anything is written
     /// (AD-7, AD-8).
     /// </summary>
@@ -178,6 +251,56 @@ public sealed class PackagePublicationDomainTests
             throw new PackageDistributionRestrictionsMissingException(
                 GameRegistration.FieldNames.DistributionRestrictions);
         }
+    }
+
+    /// <summary>
+    /// Builds the operation of the closed set that carries the given name (AD-7).
+    /// </summary>
+    /// <param name="name">Name of the operation.</param>
+    /// <returns>The operation of the manifest.</returns>
+    private static InstallationManifest.ManifestOperation? BuildOperation(string name) => name switch
+    {
+        "extract" => new InstallationManifest.Extract("game.zip", "game"),
+        "createDirectory" => new InstallationManifest.CreateDirectory("game"),
+        "copyFile" => new InstallationManifest.CopyFile("game\\data.bin", "game\\data.bin"),
+        "writeConfig" => new InstallationManifest.WriteConfig("game.ini", "[game]"),
+        "setLaunchConfig" => new InstallationManifest.SetLaunchConfig(
+            new InstallationManifest.LaunchSettings("game\\game.exe", [], "game")),
+        "verify" => new InstallationManifest.Verify("game\\game.exe"),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Reads the discriminator that the contract declares for a derived type.
+    ///
+    /// <para>
+    /// The discriminator is the second argument of the constructor of
+    /// <see cref="JsonDerivedTypeAttribute"/> and the attribute does not expose it as a
+    /// property, so it is read from the raw metadata of the attribute.
+    /// </para>
+    /// </summary>
+    /// <param name="attribute">Attribute that declares a derived type of the contract.</param>
+    /// <returns>The discriminator that the contract declares.</returns>
+    private static string ReadDiscriminator(JsonDerivedTypeAttribute attribute)
+    {
+        var declared = CustomAttributeData
+            .GetCustomAttributes(typeof(InstallationManifest.ManifestOperation))
+            .Where(candidate => candidate.AttributeType == typeof(JsonDerivedTypeAttribute))
+            .Select(candidate => candidate.ConstructorArguments)
+            .Where(arguments => arguments.Count >= 2)
+            .Where(arguments => arguments[0].Value is Type derivedType
+                && derivedType == attribute.DerivedType)
+            .Select(arguments => (string)arguments[1].Value!)
+            .ToArray();
+
+        return declared.Length switch
+        {
+            1 => declared[0],
+            0 => throw new InvalidOperationException(
+                $"The contract does not declare a discriminator for the derived type '{attribute.DerivedType}'."),
+            _ => throw new InvalidOperationException(
+                $"The contract declares more than one discriminator for the derived type '{attribute.DerivedType}'."),
+        };
     }
 
     /// <summary>

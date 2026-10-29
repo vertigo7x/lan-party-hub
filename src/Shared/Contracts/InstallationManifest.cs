@@ -7,11 +7,15 @@ namespace LANPartyHub.Shared.Contracts;
 /// system: the signature covers its canonical JSON form (AD-2).
 /// The operations are typed and closed; there is no operation that runs arbitrary commands.
 ///
-/// The canonical JSON that is signed is exactly what the serializer produces for this type:
-/// the properties in declaration order, the nested objects in their declaration order and
-/// the <c>operation</c> discriminator of the polymorphic operations. The canonicalizer of
-/// Stories 2.2 and 6.1 has to reproduce that form byte for byte, because the signature is
-/// verified against it.
+/// The canonical JSON that is signed is the canonical form that AD-2 fixes: canonical
+/// JSON with no superfluous whitespace and with the PROPERTIES of every object sorted BY
+/// NAME, in the nested objects too. The <c>operation</c> discriminator of the polymorphic
+/// operations is the type tag of the operation and NOT one of its properties: the
+/// serializer of this contract requires it to be the FIRST property of the object, so it
+/// leads in the canonical form. The canonicalizer of Stories 2.2 and 6.1 has to
+/// reproduce that form byte for byte, because the signature is verified against it, and
+/// the canonical text has to be readable back by
+/// <c>JsonSerializer.Deserialize&lt;InstallationManifest&gt;</c>.
 /// </summary>
 /// <param name="SchemaVersion">Version of the manifest schema; an unsupported value is rejected (AD-8).</param>
 /// <param name="PackageId">Opaque UUID v7 identifier of the package this manifest belongs to.</param>

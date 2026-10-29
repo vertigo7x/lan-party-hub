@@ -97,15 +97,106 @@ public sealed class ManifestCanonicalizerTests
         Assert.Contains("\"operation\":\"createDirectory\"", canonical, StringComparison.Ordinal);
         Assert.Contains("\"operation\":\"setLaunchConfig\"", canonical, StringComparison.Ordinal);
 
-        // The keys of the extract operation are sorted by name: the discriminator comes
-        // before the paths, and the archive path before the destination path.
-        var extract = canonical.IndexOf("\"operation\":\"extract\"", StringComparison.Ordinal);
+        // The keys of the extract operation are sorted by name: the archive path comes
+        // before the destination path (AD-2).
         var archive = canonical.IndexOf("\"archivePath\"", StringComparison.Ordinal);
         var destination = canonical.IndexOf("\"destinationPath\"", StringComparison.Ordinal);
+        var extract = canonical.IndexOf("\"operation\":\"extract\"", StringComparison.Ordinal);
 
-        Assert.True(extract >= 0);
-        Assert.True(extract < archive);
+        Assert.True(archive >= 0);
         Assert.True(archive < destination);
+
+        // The discriminator leads the object, so it comes before the properties of the
+        // derived type.
+        Assert.True(extract < archive);
+    }
+
+    /// <summary>
+    /// The discriminator of an operation LEADS its object: it is the type tag of the
+    /// operation and the serializer of the contract of <c>Shared</c> requires it to be the
+    /// first property, so a canonical text that puts it after the properties cannot be
+    /// read back (AD-2, AD-7).
+    /// </summary>
+    [Fact]
+    public void The_discriminator_leads_the_object_of_its_operation()
+    {
+        var canonical = ManifestCanonicalizer.Canonicalize(BuildManifest());
+
+        var operation = canonical.IndexOf("\"operation\":\"extract\"", StringComparison.Ordinal);
+        var objectStart = canonical.LastIndexOf('{', operation);
+        var archive = canonical.IndexOf("\"archivePath\"", StringComparison.Ordinal);
+
+        Assert.True(operation >= 0);
+        Assert.True(objectStart >= 0);
+        Assert.True(archive >= 0);
+
+        // The discriminator is the first key of the object: the opening brace is
+        // immediately followed by the name of the property.
+        Assert.StartsWith("\"operation\"", canonical[(objectStart + 1)..], StringComparison.Ordinal);
+        Assert.Equal(objectStart + 1, operation);
+
+        // And it comes before the properties of the derived type.
+        Assert.True(operation < archive);
+    }
+
+    /// <summary>
+    /// The canonical text is READABLE BACK by the serializer of the contract of
+    /// <c>Shared</c>, which is what makes it verifiable by the client of the Story 6.1: a
+    /// canonical text that nobody can deserialize does not authenticate anything (AD-2).
+    /// </summary>
+    [Fact]
+    public void The_canonical_text_can_be_read_back_by_the_contract()
+    {
+        var manifest = BuildManifest();
+
+        var canonical = ManifestCanonicalizer.Canonicalize(manifest);
+
+        var read = System.Text.Json.JsonSerializer.Deserialize<InstallationManifest>(
+            canonical,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        Assert.NotNull(read);
+        Assert.Equal(manifest.SchemaVersion, read!.SchemaVersion);
+        Assert.Equal(manifest.PackageId, read.PackageId);
+        Assert.Equal(manifest.PackageVersion, read.PackageVersion);
+        Assert.Equal(manifest.SizeBytes, read.SizeBytes);
+        Assert.Equal(manifest.Sha256, read.Sha256);
+        Assert.Equal(manifest.Launch.ExecutablePath, read.Launch!.ExecutablePath);
+        Assert.Equal(manifest.Launch.WorkingDirectory, read.Launch.WorkingDirectory);
+        Assert.Equal(manifest.Launch.Arguments, read.Launch.Arguments);
+
+        Assert.Equal(manifest.Operations.Count, read.Operations.Count);
+        Assert.IsType<InstallationManifest.CreateDirectory>(read.Operations[0]);
+        Assert.IsType<InstallationManifest.Extract>(read.Operations[1]);
+        Assert.IsType<InstallationManifest.SetLaunchConfig>(read.Operations[2]);
+        Assert.Equal("game.zip", Assert.IsType<InstallationManifest.Extract>(read.Operations[1]).ArchivePath);
+        Assert.Equal("game", Assert.IsType<InstallationManifest.Extract>(read.Operations[1]).DestinationPath);
+    }
+
+    /// <summary>
+    /// The exact bytes of the canonical form of a fixed manifest are pinned, so a change
+    /// of the canonical form breaks this test instead of silently invalidating the
+    /// signatures that were produced with it (AD-2).
+    /// </summary>
+    [Fact]
+    public void The_canonical_text_of_a_fixed_manifest_is_exactly_the_pinned_one()
+    {
+        const string expected =
+            "{\"launch\":{\"arguments\":[\"-windowed\"],\"executablePath\":\"game\\\\game.exe\",\"workingDirectory\":\"game\"},"
+            + "\"operations\":["
+            + "{\"operation\":\"createDirectory\",\"path\":\"game\"},"
+            + "{\"operation\":\"extract\",\"archivePath\":\"game.zip\",\"destinationPath\":\"game\"},"
+            + "{\"operation\":\"setLaunchConfig\","
+            + "\"launch\":{\"arguments\":[\"-windowed\"],\"executablePath\":\"game\\\\game.exe\",\"workingDirectory\":\"game\"}}],"
+            + "\"packageId\":\"0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e40\","
+            + "\"packageVersion\":\"1.0.0\","
+            + "\"schemaVersion\":1,"
+            + "\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+            + "\"sizeBytes\":1024}";
+
+        var canonical = ManifestCanonicalizer.Canonicalize(BuildManifest());
+
+        Assert.Equal(expected, canonical);
     }
 
     /// <summary>

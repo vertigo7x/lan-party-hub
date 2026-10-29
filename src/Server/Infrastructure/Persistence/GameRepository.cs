@@ -139,10 +139,17 @@ public sealed class GameRepository : IGameRepository
 
     /// <summary>
     /// Projects the row of the table <c>GAME</c> onto the registration of a videogame.
+    ///
+    /// <para>
+    /// The projection uses the factory of the domain that rebuilds a persisted row
+    /// without demanding the license and the restrictions of distribution: a row whose
+    /// license is empty has to stay observable, porque la publicación de un paquete es
+    /// el momento en que el catálogo los exige y nombra el que falta (AC1).
+    /// </para>
     /// </summary>
     /// <param name="entity">Row of the videogame.</param>
     /// <returns>The registration of the videogame.</returns>
-    private static GameRegistration ToRegistration(GameEntity entity) => new(
+    private static GameRegistration ToRegistration(GameEntity entity) => GameRegistration.FromPersisted(
         entity.GameId,
         entity.Name,
         entity.Description,

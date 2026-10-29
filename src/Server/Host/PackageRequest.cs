@@ -1,3 +1,4 @@
+using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Domain.Packages;
 using LANPartyHub.Shared.Contracts;
 
@@ -57,6 +58,10 @@ public sealed class PackageRequest
     /// <exception cref="PackagePayloadMissingException">
     /// The body does not carry the data of the package or the manifest.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The body carries the data, pero alguno de sus campos no tiene la forma que el
+    /// contrato declara.
+    /// </exception>
     public PackagePublicationData ToPublicationData()
     {
         if (Package is null || Manifest is null)
@@ -64,14 +69,49 @@ public sealed class PackageRequest
             throw new PackagePayloadMissingException();
         }
 
+        // Un cuerpo que lleva los bloques pero no la forma que el contrato declara es un
+        // cuerpo que no se puede leer, y su rechazo es el del cuerpo mal formado, no el
+        // de una ausencia de datos (AD-5, AD-15).
+        if (string.IsNullOrWhiteSpace(GameId))
+        {
+            throw new ArgumentException("El cuerpo de la publicación no lleva el identificador del videogame.", nameof(GameId));
+        }
+
+        if (string.IsNullOrWhiteSpace(Package.PackageId))
+        {
+            throw new ArgumentException("El cuerpo de la publicación no lleva el identificador del paquete.", nameof(Package));
+        }
+
+        if (string.IsNullOrWhiteSpace(Package.Version))
+        {
+            throw new ArgumentException("El cuerpo de la publicación no lleva la versión del paquete.", nameof(Package));
+        }
+
+        if (Manifest.Launch is null)
+        {
+            throw new ArgumentException("El manifiesto de la publicación no lleva la configuración de lanzamiento.", nameof(Manifest));
+        }
+
+        if (Manifest.Operations is null)
+        {
+            throw new ArgumentException("El manifiesto de la publicación no lleva las operaciones.", nameof(Manifest));
+        }
+
         return new PackagePublicationData(
-            GameId ?? string.Empty,
+            GameId,
             Package.PackageId,
             Package.Version,
             Package.SizeBytes,
             Package.ChunkSizeBytes,
+            Package.Sha256,
             Manifest.Launch,
-            Manifest.Operations);
+            Manifest.Operations,
+            new ManifestIdentity(
+                Manifest.PackageId,
+                Manifest.PackageVersion,
+                Manifest.SizeBytes,
+                Manifest.SchemaVersion,
+                Manifest.Sha256));
     }
 }
 
@@ -84,13 +124,21 @@ public sealed class PackageRequest
 /// <param name="Version">Opaque version string of the publisher.</param>
 /// <param name="SizeBytes">Exact size of the package in bytes.</param>
 /// <param name="ChunkSizeBytes">Informative chunk size; optional in the HTTP path of the MVP.</param>
+/// <param name="DeclaredSha256">
+/// Hash that the descriptor of the body declares. It has to agree with the hash that
+/// the manifest declares: the descriptor and the manifest are two halves of the same
+/// publication, and a body whose halves disagree does not describe a package (AC7).
+/// </param>
 /// <param name="Launch">Launch configuration that the manifest materializes.</param>
 /// <param name="Operations">Typed operations of the manifest, in order.</param>
+/// <param name="ManifestIdentity">Identity that the manifest of the body declares.</param>
 public sealed record PackagePublicationData(
     string GameId,
     string PackageId,
     string Version,
     long SizeBytes,
     long? ChunkSizeBytes,
+    string DeclaredSha256,
     InstallationManifest.LaunchSettings Launch,
-    IReadOnlyList<InstallationManifest.ManifestOperation> Operations);
+    IReadOnlyList<InstallationManifest.ManifestOperation> Operations,
+    ManifestIdentity ManifestIdentity);

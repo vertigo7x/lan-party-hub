@@ -151,10 +151,10 @@ public sealed class GameFormViewModel
     /// ones (AC4).
     /// </summary>
     /// <remarks>
-    /// The license and the restrictions of distribution are **not** in this list: NFR-8
-    /// makes them obligatory before publishing a package, not before registering the
-    /// videogame, and the publication is the moment in which the catalog demands them
-    /// (AC1 of the story of the publication).
+    /// The license and the restrictions of distribution ARE obligatory metadata of the
+    /// videogame, so the registration demands them and the form marks them (FR-1,
+    /// NFR-8). The story of the publication demands them AGAIN when the package is
+    /// published, which is a second and different check (AC1 of that story).
     /// </remarks>
     public static IReadOnlyList<string> RequiredFieldNames =>
     [
@@ -173,6 +173,8 @@ public sealed class GameFormViewModel
         GameRegistration.FieldNames.InstallationType,
         GameRegistration.FieldNames.LaunchConfiguration,
         GameRegistration.FieldNames.Dependencies,
+        GameRegistration.FieldNames.License,
+        GameRegistration.FieldNames.DistributionRestrictions,
     ];
 
     /// <summary>

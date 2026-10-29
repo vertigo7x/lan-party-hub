@@ -171,6 +171,8 @@ public sealed class ErrorCatalogTests
             ErrorCatalog.PackageAlreadyPublishedCode,
             ErrorCatalog.PackageContentMismatchCode,
             ErrorCatalog.ManifestOperationNotAllowedCode,
+            ErrorCatalog.PackageBodyMalformedCode,
+            ErrorCatalog.PackageManifestMismatchCode,
         ];
 
         foreach (var code in codes)
@@ -183,6 +185,31 @@ public sealed class ErrorCatalogTests
             Assert.False(string.IsNullOrWhiteSpace(entry.Cause));
             Assert.False(string.IsNullOrWhiteSpace(entry.NextStep));
         }
+    }
+
+    [Fact]
+    public void The_body_that_cannot_be_read_is_not_the_operation_that_is_not_allowed()
+    {
+        // Un cuerpo que no se puede leer y un manifiesto con una operación fuera del
+        // conjunto cerrado son dos rechazos distintos, con dos códigos estables
+        // distintos, y la métrica de errores por código no los mezcla (AD-15, AD-25).
+        Assert.NotEqual(
+            ErrorCatalog.PackageBodyMalformedCode,
+            ErrorCatalog.ManifestOperationNotAllowedCode);
+    }
+
+    [Fact]
+    public void The_manifest_that_does_not_match_the_descriptor_has_its_own_code()
+    {
+        // Un manifiesto que no coincide con el descriptor es un rechazo distinto del
+        // cuerpo mal formado y del de la operación que no está permitida (AD-2, AC7).
+        Assert.NotEqual(
+            ErrorCatalog.PackageManifestMismatchCode,
+            ErrorCatalog.PackageBodyMalformedCode);
+
+        Assert.NotEqual(
+            ErrorCatalog.PackageManifestMismatchCode,
+            ErrorCatalog.ManifestOperationNotAllowedCode);
     }
 
     [Fact]

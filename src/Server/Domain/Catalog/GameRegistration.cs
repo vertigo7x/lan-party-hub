@@ -148,6 +148,64 @@ public sealed class GameRegistration
         IReadOnlyList<string> dependencies,
         string license,
         string distributionRestrictions)
+        : this(
+            gameId,
+            name,
+            description,
+            categories,
+            tags,
+            coverImage,
+            images,
+            version,
+            sizeBytes,
+            minPlayers,
+            maxPlayers,
+            operatingSystem,
+            distributionType,
+            installationType,
+            launchExecutablePath,
+            launchArguments,
+            launchWorkingDirectory,
+            dependencies,
+            license,
+            distributionRestrictions,
+            demandLicenseAndRestrictions: true)
+    {
+    }
+
+    /// <summary>
+    /// Creates the registration of a videogame, demanding or not the license and the
+    /// restrictions of distribution.
+    ///
+    /// <para>
+    /// The public constructor always demands them (FR-1). The relaxation belongs to
+    /// <see cref="FromPersisted"/>, which projects a row that is already persisted and
+    /// whose empty license has to stay observable so that the publication can reject it
+    /// (AC1 of the story of the publication).
+    /// </para>
+    /// </summary>
+    private GameRegistration(
+        string gameId,
+        string name,
+        string description,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<string> tags,
+        string coverImage,
+        IReadOnlyList<string> images,
+        string version,
+        long sizeBytes,
+        int minPlayers,
+        int maxPlayers,
+        string operatingSystem,
+        string distributionType,
+        string installationType,
+        string launchExecutablePath,
+        IReadOnlyList<string> launchArguments,
+        string launchWorkingDirectory,
+        IReadOnlyList<string> dependencies,
+        string license,
+        string distributionRestrictions,
+        bool demandLicenseAndRestrictions)
     {
         ArgumentNullException.ThrowIfNull(categories);
         ArgumentNullException.ThrowIfNull(tags);
@@ -174,16 +232,26 @@ public sealed class GameRegistration
         _launchWorkingDirectory = RequireText(launchWorkingDirectory, FieldNames.LaunchConfiguration);
         _dependencies = RequireItems(dependencies, FieldNames.Dependencies);
 
-        // NFR-8: the license and the restrictions of distribution are obligatory before
-        // PUBLISHING a package, not before registering the videogame. The administrator
-        // can register a videogame whose license is still unknown, and the publication is
-        // the moment in which the catalog demands them, naming the one that is missing
-        // (AC1 of the story of the publication).
+        // FR-1, NFR-8: the license and the restrictions of distribution are mandatory
+        // metadata of the videogame, so a registration that does not carry them is
+        // rejected here, naming the concrete field (AD-25).
         //
-        // The two texts are still trimmed, and an absent one is an empty text, so that
-        // the check of the publication has a single shape to look at.
-        _license = RequireOptionalText(license);
-        _distributionRestrictions = RequireOptionalText(distributionRestrictions);
+        // The publication of a package demands them AGAIN, and that second check belongs
+        // to the story of the publication: a videogame that is ALREADY PERSISTED without
+        // a license has to stay observable so that the publication can block it, naming
+        // which one of the two is missing (AC1 of the story of the publication). That
+        // relaxation lives in the factory that projects what is persisted and in nothing
+        // else: the public constructor always demands them.
+        if (demandLicenseAndRestrictions)
+        {
+            _license = RequireText(license, FieldNames.License);
+            _distributionRestrictions = RequireText(distributionRestrictions, FieldNames.DistributionRestrictions);
+        }
+        else
+        {
+            _license = license?.Trim() ?? string.Empty;
+            _distributionRestrictions = distributionRestrictions?.Trim() ?? string.Empty;
+        }
 
         if (sizeBytes <= 0)
         {
@@ -208,6 +276,102 @@ public sealed class GameRegistration
         SizeBytes = sizeBytes;
         MinPlayers = minPlayers;
         MaxPlayers = maxPlayers;
+    }
+
+    /// <summary>
+    /// Rebuilds the registration of a videogame out of the values that are already
+    /// persisted (AD-1, AD-22).
+    ///
+    /// <para>
+    /// The constructor demands the license and the restrictions of distribution, because
+    /// FR-1 makes them mandatory metadata at the time of the registration. This factory
+    /// does not: it rebuilds what the catalog **already holds**, and a row whose license
+    /// or whose restrictions are empty has to be observable, because the publication of
+    /// a package is the moment in which the catalog demands them and names the one that
+    /// is missing (AC1 of the story of the publication).
+    /// </para>
+    /// <para>
+    /// Every other invariant of the registration still holds, because the persisted row
+    /// was written by a registration that already obeyed them.
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Opaque UUID v7 identifier of the videogame.</param>
+    /// <param name="name">Human readable name.</param>
+    /// <param name="description">Description of the videogame.</param>
+    /// <param name="categories">Categories used to filter the catalog.</param>
+    /// <param name="tags">Free form tags of the videogame.</param>
+    /// <param name="coverImage">Reference of the cover image.</param>
+    /// <param name="images">References of the additional images.</param>
+    /// <param name="version">Version published in the catalog.</param>
+    /// <param name="sizeBytes">Exact size of the package in bytes.</param>
+    /// <param name="minPlayers">Minimum number of players.</param>
+    /// <param name="maxPlayers">Maximum number of players.</param>
+    /// <param name="operatingSystem">Operating system the videogame runs on.</param>
+    /// <param name="distributionType">Type of distribution of the videogame.</param>
+    /// <param name="installationType">Type of installation of the videogame.</param>
+    /// <param name="launchExecutablePath">Path of the executable, relative to the install root.</param>
+    /// <param name="launchArguments">Arguments passed to the executable.</param>
+    /// <param name="launchWorkingDirectory">Working directory of the process.</param>
+    /// <param name="dependencies">Dependencies required by the videogame.</param>
+    /// <param name="license">
+    /// License of the videogame as it is persisted. It may be empty, and the publication
+    /// is what rejects it.
+    /// </param>
+    /// <param name="distributionRestrictions">
+    /// Restrictions of distribution of the videogame as they are persisted. They may be
+    /// empty, and the publication is what rejects them.
+    /// </param>
+    /// <returns>The registration of the persisted videogame.</returns>
+    public static GameRegistration FromPersisted(
+        string gameId,
+        string name,
+        string description,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<string> tags,
+        string coverImage,
+        IReadOnlyList<string> images,
+        string version,
+        long sizeBytes,
+        int minPlayers,
+        int maxPlayers,
+        string operatingSystem,
+        string distributionType,
+        string installationType,
+        string launchExecutablePath,
+        IReadOnlyList<string> launchArguments,
+        string launchWorkingDirectory,
+        IReadOnlyList<string> dependencies,
+        string? license,
+        string? distributionRestrictions)
+    {
+        ArgumentNullException.ThrowIfNull(categories);
+        ArgumentNullException.ThrowIfNull(tags);
+        ArgumentNullException.ThrowIfNull(images);
+        ArgumentNullException.ThrowIfNull(launchArguments);
+        ArgumentNullException.ThrowIfNull(dependencies);
+
+        return new GameRegistration(
+            gameId,
+            name,
+            description,
+            categories,
+            tags,
+            coverImage,
+            images,
+            version,
+            sizeBytes,
+            minPlayers,
+            maxPlayers,
+            operatingSystem,
+            distributionType,
+            installationType,
+            launchExecutablePath,
+            launchArguments,
+            launchWorkingDirectory,
+            dependencies,
+            license ?? string.Empty,
+            distributionRestrictions ?? string.Empty,
+            demandLicenseAndRestrictions: false);
     }
 
     /// <summary>Opaque UUID v7 identifier of the videogame.</summary>
@@ -322,17 +486,6 @@ public sealed class GameRegistration
 
         return value.Trim();
     }
-
-    /// <summary>
-    /// Requires a text that is mandatory before publishing but not before registering the
-    /// videogame. A text that is empty, or that holds only white space, is an empty text,
-    /// and it is the publication that rejects it, naming the concrete field (NFR-8,
-    /// AC1).
-    /// </summary>
-    /// <param name="value">Value of the field.</param>
-    /// <returns>The trimmed value of the field, or an empty text when it is absent.</returns>
-    private static string RequireOptionalText(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
     /// <summary>
     /// Requires a mandatory collection. A collection that is empty, that holds an absent
