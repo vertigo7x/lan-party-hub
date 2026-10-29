@@ -902,16 +902,30 @@ def parse_commit_messages(raw: str) -> list[str]:
     return messages
 
 
-def select_commit_message(messages: Sequence[str], skip_prefix: str = "chore(") -> tuple[str, str]:
+BOOKKEEPING_PREFIXES = ("chore(", "revert(story):", "fix(story):")
+
+
+def select_commit_message(messages: Sequence[str], story: Story | None = None) -> tuple[str, str]:
     """The subject and body of the squashed commit, from the branch messages.
 
-    The oldest commit carries the story, so its subject is the one that lands
-    on `main`. The driver's own bookkeeping commits are left out: they are part
-    of the story branch but not part of the story.
+    The oldest commit that carries the story gives the subject, so the subject
+    of the squash on `main` is the subject of the change. The commits the
+    driver makes to keep the work of an interrupted story are bookkeeping and
+    never give the subject; when the story left no commit of its own, the
+    subject is written from the story itself.
     """
-    story_messages = [message for message in messages if not message.startswith(skip_prefix)]
+    story_messages = [
+        message for message in messages if not message.startswith(BOOKKEEPING_PREFIXES)
+    ]
     if not story_messages:
-        raise DriverError("the story branch carries no story commit")
+        subject = f"feat({story.label}): {story.title}" if story else "feat: story work"
+        bodies = []
+        for message in messages:
+            _, _, remainder = message.partition("\n")
+            if remainder.strip():
+                bodies.append(remainder.strip())
+                break
+        return subject, "\n\n".join(bodies)
     first = story_messages[0]
     subject, _, remainder = first.partition("\n")
     body_parts = [remainder.strip()] if remainder.strip() else []
@@ -919,13 +933,13 @@ def select_commit_message(messages: Sequence[str], skip_prefix: str = "chore(") 
     return subject.strip(), "\n\n".join(part for part in body_parts if part)
 
 
-def branch_commit_message(base: str = f"origin/{BASE_BRANCH}") -> tuple[str, str]:
+def branch_commit_message(story: Story, base: str = f"origin/{BASE_BRANCH}") -> tuple[str, str]:
     """The conventional commit message the story branch carries."""
     raw = git("log", "--reverse", "--format=%H%x1f%B%x1e", f"{base}..HEAD").stdout
     messages = parse_commit_messages(raw)
     if not messages:
         raise DriverError(f"the story branch carries no commit against {base}")
-    return select_commit_message(messages)
+    return select_commit_message(messages, story)
 
 
 def is_conventional_subject(subject: str) -> bool:
@@ -1316,7 +1330,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     update_and_commit_sprint_status(story)
     ensure_committed(spec)
 
-    subject, body = branch_commit_message()
+    subject, body = branch_commit_message(story)
     if not is_conventional_subject(subject):
         raise DriverError(
             f"the story commit subject is not a conventional commit: {subject!r}. The repository "
@@ -1361,13 +1375,24 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         git("branch", "-D", story.branch)
 
     # The merge has to be in `origin/main` and the story has to read as done,
-    # otherwise the loop would pick the same story again.
-    if not git("merge-base", "--is-ancestor", revision, f"origin/{BASE_BRANCH}", check=False).ok:
+    # otherwise the loop would pick the same story again. The remote needs a
+    # moment to publish the merge, so the check waits for it.
+    deadline = time.time() + 120
+    landed = False
+    while time.time() < deadline:
+        git("fetch", "origin", BASE_BRANCH)
+        landed = git(
+            "merge-base", "--is-ancestor", revision, f"origin/{BASE_BRANCH}", check=False
+        ).ok
+        if landed:
+            break
+        time.sleep(10)
+    if not landed:
         raise DriverError(
             f"the merge of pull request #{pr_number} is not in origin/main yet; the loop stops here"
         )
-    landed = read_sprint_status()
-    if str(landed.get(story.key, "")).strip().lower() != "done":
+    status = read_sprint_status()
+    if str(status.get(story.key, "")).strip().lower() != "done":
         raise DriverError(
             f"story {story.short_id} does not read as done in the merged sprint status; "
             "the loop stops here"
@@ -1636,11 +1661,18 @@ deferred:
         check(subject == "feat: the subject", "the squash subject is not the oldest commit's subject")
         check("the body." in commit_body, "the squash body loses the story commit body")
         check("chore(sprint)" not in commit_body, "the squash body carries the driver's own chore commit")
-        try:
-            select_commit_message(["chore(spec): record spec-7-3.md"])
-            check(False, "a branch with only bookkeeping commits should not produce a squash subject")
-        except DriverError:
-            check(True, "a branch with only bookkeeping commits should not produce a squash subject")
+        synthesized, synthesized_body = select_commit_message(
+            ["chore(story): work in progress", "revert(story): withdraw the implementation"],
+            Story(epic=7, num=3, key="7-3", title="Fixture", slug="fixture"),
+        )
+        check(
+            synthesized == "feat(7-3): Fixture",
+            "a branch with only bookkeeping commits does not get a written subject",
+        )
+        check(
+            synthesized_body == "",
+            "the written subject picks up a body that does not describe the change",
+        )
         check(is_conventional_subject("feat: the subject"), "a conventional subject is rejected")
         check(not is_conventional_subject("wip"), "a non conventional subject is accepted")
         check(not is_conventional_subject("Arreglando cosas"), "a Spanish subject is accepted")
