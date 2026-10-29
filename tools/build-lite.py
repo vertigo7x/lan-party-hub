@@ -201,7 +201,7 @@ def verify_or_repair(story, log_dir: Path, repair_available: bool = True) -> boo
     if not repair_available:
         raise legacy.DriverError(f"verification failed after the repair budget was spent: {', '.join(failed)}")
     evidence = "; ".join(failed)
-        run_phase("repair", IMPLEMENT_MODEL, repair_prompt(story, evidence), log_dir, timeout_minutes=30)
+    run_phase("repair", IMPLEMENT_MODEL, repair_prompt(story, evidence), log_dir, timeout_minutes=30)
     second = run_verifications(log_dir / "after-repair")
     failed = [label for label, result in second if not result.ok]
     if failed:
