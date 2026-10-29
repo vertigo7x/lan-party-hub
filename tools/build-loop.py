@@ -588,6 +588,28 @@ def run_verifications(
 # ---------------------------------------------------------------------------
 
 
+def preserve_pending_work(story: Story) -> None:
+    """Commit the work of an interrupted story so it is never lost.
+
+    The work of a story that did not finish is uncommitted, and uncommitted
+    work only exists in the working tree: it cannot survive a checkout, and
+    the driver would have to be launched from a dirty branch with an outdated
+    copy of itself. Committing it as bookkeeping keeps the tree clean and the
+    story recoverable. The subject starts with `chore(` on purpose, so it is
+    left out of the squashed commit that lands on `main`.
+    """
+    if not branch_exists(story.branch):
+        return
+    branch = git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    if branch != story.branch:
+        return
+    if not git("status", "--porcelain").stdout.strip():
+        return
+    _log(f"committing the pending work of story {story.short_id} so it is not lost")
+    git("add", "-A")
+    git("commit", "-m", f"chore(story): work in progress for story {story.short_id}")
+
+
 def require_clean_tree() -> None:
     status = git("status", "--porcelain").stdout.strip()
     if status:
@@ -1128,6 +1150,14 @@ def preflight(args: argparse.Namespace) -> None:
         raise DriverError("the repository has no 'origin' remote")
     if (REPO_ROOT / ".git/rebase-merge").exists() or (REPO_ROOT / ".git/rebase-apply").exists():
         raise DriverError("the repository is in the middle of a rebase")
+    # The driver must run the copy of itself that is on `main`: a story branch
+    # carries the copy it was created with, which is older.
+    current = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if current != BASE_BRANCH:
+        raise DriverError(
+            f"the driver must be launched from '{BASE_BRANCH}', not from '{current}': a story "
+            "branch carries an outdated copy of the driver"
+        )
     if args.model:
         models = run_command(("opencode", "models"), timeout=120)
         if args.model not in models.stdout:
@@ -1562,10 +1592,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             outcome = process_story(story, args, story_log_dir)
         except DriverError as error:
             _log(f"STOP: {error}")
+            preserve_pending_work(story)
             _log(f"the story is left on its branch; logs: {story_log_dir}")
             return 1
         except Exception as error:  # noqa: BLE001 - the loop must report, not crash
             _log(f"STOP: unexpected {type(error).__name__}: {error}")
+            preserve_pending_work(story)
             _log(f"the story is left on its branch; logs: {story_log_dir}")
             return 1
 
