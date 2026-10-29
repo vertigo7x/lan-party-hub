@@ -1,3 +1,4 @@
+using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Presentation.Formatting;
 using LANPartyHub.Server.Presentation.Packages;
 using LANPartyHub.Shared.Contracts;
@@ -12,6 +13,11 @@ namespace LANPartyHub.UnitTests;
 /// El formulario de la publicación es la superficie donde la publicación se bloquea y
 /// donde se explica el bloqueo, así que tiene que nombrar el campo concreto que falta y
 /// no un error genérico (AC1, UX-DR-44). La lista muestra el tamaño ya derivado (AD-7).
+/// </para>
+/// <para>
+/// La fila de la lista lleva el juego, la versión, los bytes exactos, la licencia, las
+/// restricciones de distribución y el estado de la retirada, porque el organizador tiene
+/// que ver toda esa información antes de decidir (AC1, FR-1, NFR-8).
 /// </para>
 /// </summary>
 public sealed class PackagePresentationTests
@@ -123,7 +129,7 @@ public sealed class PackagePresentationTests
     [Fact]
     public void The_list_shows_the_size_that_the_formatter_derives()
     {
-        var viewModel = new PackagesViewModel([CreateDescriptor()]);
+        var viewModel = new PackagesViewModel([CreatePublishedRow()]);
 
         var row = Assert.Single(viewModel.Rows);
 
@@ -138,7 +144,7 @@ public sealed class PackagePresentationTests
     [Fact]
     public void The_list_counts_the_packages_that_are_published()
     {
-        var viewModel = new PackagesViewModel([CreateDescriptor(), CreateDescriptor("2.0.0")]);
+        var viewModel = new PackagesViewModel([CreatePublishedRow(), CreatePublishedRow(version: "2.0.0")]);
 
         Assert.Equal(2, viewModel.Count);
         Assert.Equal(2, viewModel.Rows.Count);
@@ -147,25 +153,83 @@ public sealed class PackagePresentationTests
     [Fact]
     public void The_list_is_replaced_by_the_packages_that_the_repository_returns()
     {
-        var viewModel = new PackagesViewModel([CreateDescriptor()]);
+        var viewModel = new PackagesViewModel([CreatePublishedRow()]);
 
-        viewModel.Replace([CreateDescriptor("2.0.0")]);
+        viewModel.Replace([CreatePublishedRow(version: "2.0.0")]);
 
         Assert.Equal(1, viewModel.Count);
         Assert.Equal("2.0.0", viewModel.Rows[0].Version);
     }
 
     /// <summary>
-    /// Builds the contract of a published package.
+    /// The row of the list carries the game, the license, the restrictions of
+    /// distribution and the exact size in bytes, because the organizer has to see all of
+    /// it before deciding (AC1, FR-1, NFR-8).
+    /// </summary>
+    [Fact]
+    public void The_row_carries_the_game_the_license_the_restrictions_and_the_exact_bytes()
+    {
+        var viewModel = new PackagesViewModel([CreatePublishedRow()]);
+
+        var row = Assert.Single(viewModel.Rows);
+
+        Assert.Equal("Counter-Strike 2", row.GameName);
+        Assert.Equal("Propietaria", row.License);
+        Assert.Equal("Solo para el evento", row.DistributionRestrictions);
+
+        // Los bytes exactos son el valor que el modelo sostiene, y los gigabytes
+        // decimales son solo su presentación (AD-7).
+        Assert.Equal(7_600_000_000, row.SizeBytes);
+        Assert.Equal("7,6", row.SizeValue);
+    }
+
+    /// <summary>
+    /// A package that is still in the catalog carries no state of the withdrawal
+    /// (AC2).
+    /// </summary>
+    [Fact]
+    public void A_package_that_is_in_the_catalog_carries_no_state_of_withdrawal()
+    {
+        var viewModel = new PackagesViewModel([CreatePublishedRow()]);
+
+        var row = Assert.Single(viewModel.Rows);
+
+        Assert.Null(row.WithdrawalText);
+    }
+
+    /// <summary>
+    /// The state of the withdrawal is the text of the single table of microcopy of the
+    /// system for the result <c>PackageWithdrawn</c>, and the view does not write a text
+    /// of its own (AD-10, AD-25, AD-33).
+    /// </summary>
+    [Fact]
+    public void The_state_of_the_withdrawal_reuses_the_microcopy_of_the_system()
+    {
+        var viewModel = new PackagesViewModel(
+            [CreatePublishedRow(withdrawnAt: "2026-10-29T19:50:23.0000000Z")]);
+
+        var row = Assert.Single(viewModel.Rows);
+
+        Assert.Equal(
+            StateDisplayMap.GetText(OperationOutcome.PackageWithdrawn),
+            row.WithdrawalText);
+    }
+
+    /// <summary>
+    /// Builds the row of the repository that the listing returns.
     /// </summary>
     /// <param name="version">Version published in the catalog.</param>
-    /// <returns>The contract of the package.</returns>
-    private static PackageDescriptor CreateDescriptor(string version = "1.0.0") => new(
-        PackageId,
-        GameId,
-        version,
-        7_600_000_000,
-        0,
-        new string('a', 64),
-        "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e41");
+    /// <param name="withdrawnAt">Instant of the withdrawal, or <c>null</c> when the package is in the catalog.</param>
+    /// <returns>The enriched row of the published package.</returns>
+    private static PublishedPackageRow CreatePublishedRow(
+        string version = "1.0.0",
+        string? withdrawnAt = null) => new(
+            PackageId,
+            GameId,
+            "Counter-Strike 2",
+            version,
+            7_600_000_000,
+            "Propietaria",
+            "Solo para el evento",
+            withdrawnAt);
 }

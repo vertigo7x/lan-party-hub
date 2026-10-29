@@ -16,6 +16,22 @@ namespace LANPartyHub.Server.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
+            modelBuilder.Entity("LANPartyHub.Server.Infrastructure.Persistence.Entities.CatalogVersionEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<long>("CatalogVersion")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("catalogVersion");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CATALOG_VERSION", (string)null);
+                });
+
             modelBuilder.Entity("LANPartyHub.Server.Infrastructure.Persistence.Entities.ClientErrorEntity", b =>
                 {
                     b.Property<string>("ErrorId")
@@ -323,6 +339,10 @@ namespace LANPartyHub.Server.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("version");
 
+                    b.Property<string>("WithdrawnAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("withdrawnAt");
+
                     b.HasKey("PackageId");
 
                     b.HasIndex("GameId");
@@ -374,11 +394,13 @@ namespace LANPartyHub.Server.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("LANPartyHub.Server.Infrastructure.Persistence.Entities.PackageDescriptorEntity", b =>
                 {
-                    b.HasOne("LANPartyHub.Server.Infrastructure.Persistence.Entities.GameEntity", null)
+                    b.HasOne("LANPartyHub.Server.Infrastructure.Persistence.Entities.GameEntity", "Game")
                         .WithMany()
                         .HasForeignKey("GameId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Game");
                 });
 #pragma warning restore 612, 618
         }

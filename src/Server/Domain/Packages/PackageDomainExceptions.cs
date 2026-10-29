@@ -231,6 +231,30 @@ public sealed class PackageManifestMismatchException : PackageDomainException
 }
 
 /// <summary>
+/// The withdrawal names a videogame that is not in the catalog of the event, so there is
+/// nothing to withdraw (AD-22, AD-26).
+///
+/// <para>
+/// The exception is typed and it carries the identifier of the videogame that was not
+/// found, so the organizer knows which one is missing and the adapter that serves the
+/// request can translate it into the single error shape of the system (AD-15, AD-25).
+/// </para>
+/// </summary>
+public sealed class GameWithdrawalNotFoundException : PackageDomainException
+{
+    /// <summary>Creates the exception of a withdrawal of a videogame that does not exist.</summary>
+    /// <param name="gameId">Identifier of the videogame that was not found.</param>
+    public GameWithdrawalNotFoundException(string gameId)
+        : base($"El videogame '{gameId}' no está en el catálogo, así que no hay nada que retirar.")
+    {
+        GameId = gameId;
+    }
+
+    /// <summary>Identifier of the videogame that was not found.</summary>
+    public string GameId { get; }
+}
+
+/// <summary>
 /// The manifest of the package declares an operation that is outside the closed set of
 /// the operations of AD-7. There is no operation that runs arbitrary commands (AD-7, AD-8).
 /// </summary>

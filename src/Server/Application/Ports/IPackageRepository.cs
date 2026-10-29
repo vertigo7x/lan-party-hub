@@ -51,6 +51,53 @@ public interface IPackageRepository
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The descriptors of the published packages.</returns>
     Task<IReadOnlyList<PackageDescriptorRow>> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the published packages of the event enriched with the metadata of the
+    /// videogame that owns them (AC1, FR-1).
+    ///
+    /// <para>
+    /// The enriched row is an internal type of the server and it is NOT a contract of
+    /// <c>Shared</c>: the twenty contracts of <c>Shared</c> are fixed and the server does
+    /// not redeclare any of them (AD-18). The row carries the name of the videogame, its
+    /// version, the exact size in bytes, the license, the restrictions of distribution and
+    /// the state of the withdrawal, so the organizer sees everything that the catalog
+    /// demands before deciding (FR-1, NFR-8, AD-7).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The enriched rows of the published packages.</returns>
+    Task<IReadOnlyList<PublishedPackageRow>> ListPublishedAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Marks the published packages of a videogame as withdrawn. The withdrawal MARKS and
+    /// never deletes: no row of the packages, of the videogames or of the projection of the
+    /// installations of the clients is removed (AC2, AD-26).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame to withdraw.</param>
+    /// <param name="withdrawnAt">Instant of the withdrawal, in UTC ISO-8601.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The number of packages that the withdrawal marked, and the version of the catalog
+    /// after the withdrawal.
+    /// </returns>
+    Task<WithdrawalResult> WithdrawGameAsync(
+        string gameId,
+        string withdrawnAt,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the current version of the catalog (AC3, AD-26).
+    ///
+    /// <para>
+    /// The version grows monotonically and it grows in the same transaction as the write
+    /// that causes it, so the value that this reading returns is the value that the last
+    /// publication or the last withdrawal committed (AC3).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The current version of the catalog.</returns>
+    Task<long> GetCatalogVersionAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -103,3 +150,54 @@ public sealed record SignedManifestRow(
     string CanonicalManifest,
     string Signature,
     string KeyId);
+
+/// <summary>
+/// A published package of the event, enriched with the metadata of the videogame that
+/// owns it (AC1, FR-1, NFR-8).
+///
+/// <para>
+/// The row is an internal type of the server: it is NOT a contract of <c>Shared</c> and it
+/// does not redeclare any of the twenty contracts that <c>Shared</c> fixes (AD-18). It
+/// exists because the organizer has to see the game, the version, the exact size, the
+/// license and the restrictions of distribution before deciding what to do with the
+/// package (AC1).
+/// </para>
+/// <para>
+/// The exact size travels in bytes and it is not derived here: the conversion to decimal
+/// gigabytes is a rule of presentation and it belongs to the interface, not to the model
+/// (AD-7).
+/// </para>
+/// </summary>
+/// <param name="PackageId">Opaque UUID v7 identifier of the package.</param>
+/// <param name="GameId">Opaque UUID v7 identifier of the videogame the package belongs to.</param>
+/// <param name="GameName">Human readable name of the videogame.</param>
+/// <param name="Version">Opaque version string of the publisher.</param>
+/// <param name="SizeBytes">Exact size of the package in bytes.</param>
+/// <param name="License">License of the videogame.</param>
+/// <param name="DistributionRestrictions">Restrictions of distribution of the videogame.</param>
+/// <param name="WithdrawnAt">
+/// Instant of the withdrawal of the package, in UTC ISO-8601, or <c>null</c> when the
+/// package is still in the catalog.
+/// </param>
+public sealed record PublishedPackageRow(
+    string PackageId,
+    string GameId,
+    string GameName,
+    string Version,
+    long SizeBytes,
+    string License,
+    string DistributionRestrictions,
+    string? WithdrawnAt);
+
+/// <summary>
+/// The outcome of a withdrawal of a videogame (AC2, AD-26).
+///
+/// <para>
+/// The withdrawal marks and never deletes, so the result carries how many packages it
+/// marked and the version of the catalog after the withdrawal: the version grew in the
+/// same transaction as the marking (AC3).
+/// </para>
+/// </summary>
+/// <param name="WithdrawnPackages">Number of packages that the withdrawal marked.</param>
+/// <param name="CatalogVersion">Version of the catalog after the withdrawal.</param>
+public sealed record WithdrawalResult(int WithdrawnPackages, long CatalogVersion);

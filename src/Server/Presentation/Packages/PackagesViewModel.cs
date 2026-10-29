@@ -1,4 +1,4 @@
-using LANPartyHub.Server.Application.Packages;
+using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Presentation.Formatting;
 using LANPartyHub.Shared.Contracts;
 
@@ -12,10 +12,15 @@ namespace LANPartyHub.Server.Presentation.Packages;
 /// a new one. It holds no rule of the domain: the validation of the publication belongs to
 /// the domain (AD-1).
 /// </para>
+/// <para>
+/// The row of the list carries the videogame, the version, the exact size in bytes, the
+/// license, the restrictions of distribution and the state of the withdrawal, so the
+/// organizer sees everything that the catalog demands before deciding (AC1, FR-1, NFR-8).
+/// </para>
 /// </summary>
 public sealed class PackagesViewModel
 {
-    private readonly List<PackageDescriptor> _packages = [];
+    private readonly List<PublishedPackageRow> _packages = [];
 
     /// <summary>Creates the view model of the section of the packages.</summary>
     public PackagesViewModel()
@@ -27,7 +32,7 @@ public sealed class PackagesViewModel
     /// already published.
     /// </summary>
     /// <param name="packages">Packages that are published.</param>
-    public PackagesViewModel(IEnumerable<PackageDescriptor> packages)
+    public PackagesViewModel(IEnumerable<PublishedPackageRow> packages)
     {
         ArgumentNullException.ThrowIfNull(packages);
 
@@ -37,7 +42,7 @@ public sealed class PackagesViewModel
     /// <summary>
     /// The published packages, as the list shows them.
     /// </summary>
-    public IReadOnlyList<PackageDescriptor> Packages => _packages;
+    public IReadOnlyList<PublishedPackageRow> Packages => _packages;
 
     /// <summary>
     /// The published packages with the size already derived for the interface (AD-7).
@@ -47,10 +52,16 @@ public sealed class PackagesViewModel
             .Select(package => new PackageRow(
                 package.PackageId,
                 package.GameId,
+                package.GameName,
                 package.Version,
+                package.SizeBytes,
                 SizeFormatter.FormatValue(package.SizeBytes),
                 SizeFormatter.Unit,
-                package.Sha256))
+                package.License,
+                package.DistributionRestrictions,
+                package.WithdrawnAt is null
+                    ? null
+                    : StateDisplayMap.GetText(OperationOutcome.PackageWithdrawn)))
             .ToArray();
 
     /// <summary>
@@ -62,7 +73,7 @@ public sealed class PackagesViewModel
     /// Replaces the published packages with the ones that the section shows.
     /// </summary>
     /// <param name="packages">Packages that are published.</param>
-    public void Replace(IEnumerable<PackageDescriptor> packages)
+    public void Replace(IEnumerable<PublishedPackageRow> packages)
     {
         ArgumentNullException.ThrowIfNull(packages);
 
@@ -77,19 +88,36 @@ public sealed class PackagesViewModel
 /// <para>
 /// The row carries the values that the list shows, and the size already derived: the
 /// numeric value in decimal gigabytes and the unit apart, so the view can put each one in
-/// its own token (AD-7, AC4).
+/// its own token (AD-7, AC4). The exact size in bytes travels too, because the bytes are
+/// the value that the model holds and the gigabytes are only its presentation (AD-7).
+/// </para>
+/// <para>
+/// The state of the withdrawal is the text of the single table of microcopy of the system
+/// for the result <c>PackageWithdrawn</c>, and the view never writes a text of its own
+/// (AD-10, AD-25, AD-33).
 /// </para>
 /// </summary>
 /// <param name="PackageId">Opaque UUID v7 identifier of the package.</param>
 /// <param name="GameId">Opaque UUID v7 identifier of the videogame.</param>
+/// <param name="GameName">Human readable name of the videogame.</param>
 /// <param name="Version">Version published in the catalog, as an opaque string.</param>
+/// <param name="SizeBytes">Exact size of the package in bytes.</param>
 /// <param name="SizeValue">Numeric value of the size, in decimal gigabytes.</param>
 /// <param name="SizeUnit">Unit of the size.</param>
-/// <param name="Sha256">Hexadecimal sha256 of the package bytes.</param>
+/// <param name="License">License of the videogame.</param>
+/// <param name="DistributionRestrictions">Restrictions of distribution of the videogame.</param>
+/// <param name="WithdrawalText">
+/// Text of the state of the withdrawal, or <c>null</c> when the package is still in the
+/// catalog.
+/// </param>
 public sealed record PackageRow(
     string PackageId,
     string GameId,
+    string GameName,
     string Version,
+    long SizeBytes,
     string SizeValue,
     string SizeUnit,
-    string Sha256);
+    string License,
+    string DistributionRestrictions,
+    string? WithdrawalText);

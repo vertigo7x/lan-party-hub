@@ -172,17 +172,66 @@ public sealed class PackagePublicationDomainTests
     }
 
     /// <summary>
-    /// The closed set of the domain is EXACTLY the one that the contract declares in its
-    /// <see cref="JsonDerivedTypeAttribute"/> discriminators (AD-7).
+    /// The publication grows the version of the catalog, and it grows it exactly once
+    /// (AC3, AD-26).
     ///
     /// <para>
-    /// The names que declara el contrato son la fuente que manda, porque el contrato es
-    /// lo que el cliente deserializa. La lista del dominio, el <c>switch</c> del
-    /// canonicalizador y los atributos del contrato son tres declaraciones del mismo
-    /// conjunto, y esta prueba es la que las ata entre sí: una séptima operación
-    /// añadida al contrato rompe esta prueba, en lugar de ser aceptada por la
-    /// deserialización y rechazada más tarde, en la firma.
+    /// The version of the catalog is what tells the clients that the catalog changed, so
+    /// it has to grow with EVERY publication that goes through and never with a
+    /// publication that is rejected (AC3). The double of the port models the contract of
+    /// the write: the write of the publication and the growth of the version are the SAME
+    /// unit of work, so the version only grows when the write is committed.
     /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_publication_grows_the_version_of_the_catalog()
+    {
+        var repository = new RecordingPackageRepository();
+
+        Assert.Equal(0, await repository.GetCatalogVersionAsync(TestContext.Current.CancellationToken));
+
+        await PublishAsync(repository);
+
+        Assert.Equal(1, await repository.GetCatalogVersionAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A publication that is rejected does not grow the version of the catalog (AC3).
+    ///
+    /// <para>
+    /// The version announces a change of the catalog, and a publication that never
+    /// happened is not a change: a version that grew anyway would make every client of the
+    /// LAN resynchronize for nothing (AC3, AD-26).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_blocked_publication_does_not_grow_the_version_of_the_catalog()
+    {
+        var repository = new RecordingPackageRepository();
+
+        await Assert.ThrowsAsync<PackageLicenseMissingException>(
+            () => PublishAsync(repository, license: string.Empty));
+
+        Assert.Equal(0, await repository.GetCatalogVersionAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Two publications grow the version twice, and the version never goes back (AC3).
+    /// </summary>
+    [Fact]
+    public async Task The_version_of_the_catalog_grows_monotonically()
+    {
+        var repository = new RecordingPackageRepository();
+
+        await PublishAsync(repository);
+        await PublishAsync(repository);
+
+        Assert.Equal(2, await repository.GetCatalogVersionAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The closed set of the domain is EXACTLY the one that the contract declares in its
+    /// <see cref="JsonDerivedTypeAttribute"/> discriminators (AD-7).
     /// </summary>
     [Fact]
     public void The_closed_set_of_the_domain_is_exactly_the_one_that_the_contract_declares()
@@ -593,12 +642,21 @@ public sealed class PackagePublicationDomainTests
     /// <summary>
     /// Repository of packages that records what the use case persists, para que la
     /// prueba pueda observar que el bloqueo no escribe nada (AC1).
+    ///
+    /// <para>
+    /// El doble modela el contrato del puerto tal como lo cumple el adaptador: la
+    /// escritura de la publicación y el crecimiento de la versión del catálogo son la
+    /// MISMA unidad de trabajo, así que la versión solo crece cuando la escritura se
+    /// confirma (AC3, AD-26).
+    /// </para>
     /// </summary>
     private sealed class RecordingPackageRepository : IPackageRepository
     {
         public List<PackageDescriptorRow> AddedDescriptors { get; } = [];
 
         public List<SignedManifestRow> AddedManifests { get; } = [];
+
+        public long CatalogVersion { get; private set; }
 
         public Task AddAsync(
             PackageDescriptorRow descriptor,
@@ -608,6 +666,8 @@ public sealed class PackagePublicationDomainTests
             AddedDescriptors.Add(descriptor);
             AddedManifests.Add(manifest);
 
+            CatalogVersion += 1;
+
             return Task.CompletedTask;
         }
 
@@ -616,6 +676,18 @@ public sealed class PackagePublicationDomainTests
 
         public Task<IReadOnlyList<PackageDescriptorRow>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PackageDescriptorRow>>(AddedDescriptors);
+
+        public Task<IReadOnlyList<PublishedPackageRow>> ListPublishedAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PublishedPackageRow>>([]);
+
+        public Task<WithdrawalResult> WithdrawGameAsync(
+            string gameId,
+            string withdrawnAt,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new WithdrawalResult(0, CatalogVersion));
+
+        public Task<long> GetCatalogVersionAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(CatalogVersion);
     }
 
     /// <summary>
