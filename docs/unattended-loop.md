@@ -53,6 +53,11 @@ por defecto (`minimax-coding-plan/MiniMax-M3`) y se cambia con `--model`, porque
 del agente por defecto no refresca su token en este entorno y una ejecución que no puede
 contestar no deja spec detrás.
 
+El presupuesto de pasos del agente está en `opencode.json` (proyecto): el valor por defecto
+del agente son 14 pasos por turno, y una historia completa necesita muchos más. Subirlo deja
+que la historia avance en menos turnos; la continuación de sesión sigue siendo la red de
+seguridad para cuando se agota.
+
 Los logs de cada historia quedan en `.build-loop/logs/<sello>/<epica>-<historia>/`: `driver.log`
 es la traza del propio driver, `skill.log` la transcripción legible del run y `skill.jsonl` sus
 eventos en crudo, `verification/` el resultado de las cinco comprobaciones y `verify-*.log` el
@@ -62,8 +67,10 @@ detalle de cada una.
 
 1. Sincroniza `main` y crea la rama `story/<epica>-<historia>-<slug>` desde ahí.
 2. Lanza `opencode run --format json --dangerously-skip-permissions "bmad-build-auto <intent>"` dentro
-   de la rama. Si el run se queda sin contexto y no deja spec, **continúa la misma sesión** de
-   OpenCode en vez de empezar de cero: hasta `--max-attempts` intentos por historia.
+   de la rama. Si el run se queda sin pasos y el spec no llega a `done`, **continúa la misma sesión**
+   de OpenCode en vez de empezar de cero: hasta `--max-attempts` intentos por historia. La
+   continuación apunta al spec que hay en disco, así que el skill retoma el paso que le toca
+   (`draft` vuelve al paso 02) en lugar de repetir la historia.
 3. Comprueba que `main` no se ha movido durante el run: la historia no toca `main`.
 4. Lee el `status` del frontmatter del spec que ha escrito el skill.
 5. Aplica la puerta de fusión (abajo). Si no pasa, para el bucle.
@@ -116,7 +123,8 @@ vacío) o si `main` se movió durante el run de la historia.
 - La historia no supera una de las cuatro puertas.
 - El skill termina bloqueado, deja el spec en un estado distinto de `done` o falla con un
   código de salida distinto de cero.
-- El skill agota su contexto y no deja spec ni después de los intentos permitidos.
+- El skill agota su contexto o su allotted de pasos y no deja el spec en `done` ni después de los
+  intentos permitidos.
 - `main` se movió durante el run de la historia.
 - Un comando de verificación falla. En ese caso el driver hace push de la rama antes de
   parar, para que el trabajo no se quede solo en el disco.

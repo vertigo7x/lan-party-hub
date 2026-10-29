@@ -589,9 +589,19 @@ def run_verifications(
 
 
 def require_clean_tree() -> None:
-    status = git("status", "--porcelain").stdout.strip()
-    if status:
-        raise DriverError(f"the working tree is not clean:\n{status}")
+    """No tracked file may be modified before the loop starts.
+
+    Untracked files are allowed: they are the work of an interrupted story
+    (a spec that was never committed, the code the implementation subagent
+    wrote before the run died) and they belong to the branch the story resumes
+    on. They are committed with the story, not thrown away.
+    """
+    modified = git("diff", "--name-only").stdout.strip()
+    if modified:
+        raise DriverError(f"the working tree has modified tracked files:\n{modified}")
+    staged = git("diff", "--cached", "--name-only").stdout.strip()
+    if staged:
+        raise DriverError(f"the working tree has staged changes:\n{staged}")
 
 
 def sync_main() -> None:
@@ -722,11 +732,11 @@ def parse_commit_messages(raw: str) -> list[str]:
     return messages
 
 
-def select_commit_message(messages: Sequence[str], skip_prefix: str = "chore(sprint):") -> tuple[str, str]:
+def select_commit_message(messages: Sequence[str], skip_prefix: str = "chore(") -> tuple[str, str]:
     """The subject and body of the squashed commit, from the branch messages.
 
     The oldest commit carries the story, so its subject is the one that lands
-    on `main`. The driver's own sprint status commit is left out: it is part
+    on `main`. The driver's own bookkeeping commits are left out: they are part
     of the story branch but not part of the story.
     """
     story_messages = [message for message in messages if not message.startswith(skip_prefix)]
@@ -776,26 +786,39 @@ def run_skill(
     model: str,
     agent: str = "",
     session_id: str = "",
+    spec_path: Path | None = None,
+    spec_status: str = "",
+    attempt: int = 1,
 ) -> tuple[CommandResult, str]:
     """Run the skill and return its result plus the opencode session id.
 
-    The session id is what makes a story resumable: a run that ends without a
-    spec has usually exhausted its context, and continuing the same session
-    picks the work up where it stopped instead of starting over.
+    The session id is what makes a story resumable: a run that ends before the
+    spec is `done` has usually spent its step allowance, and continuing the
+    same session resets that allowance and picks the work up where it
+    stopped instead of starting over.
     """
     if session_id:
-        prompt = (
-            f"Continua la historia {story.short_id} desde donde la dejaste y termina el workflow "
-            "del skill: spec, implementacion, revision en cuatro capas, verificacion y commit. "
-            "No pidas decisiones a una persona y no esperes aprobaciones."
-        )
+        if spec_path is not None:
+            prompt = (
+                f"Continua la historia {story.short_id} desde donde la dejaste. El spec esta en "
+                f"{spec_path.relative_to(REPO_ROOT).as_posix()} con status `{spec_status or 'draft'}`: "
+                "retomalo desde el paso del skill que le corresponde y termina el workflow "
+                "(implementacion, revision en cuatro capas, verificacion y commit). "
+                "No pidas decisiones a una persona y no esperes aprobaciones."
+            )
+        else:
+            prompt = (
+                f"Continua la historia {story.short_id} desde donde la dejaste y termina el workflow "
+                "del skill: spec, implementacion, revision en cuatro capas, verificacion y commit. "
+                "No pidas decisiones a una persona y no esperes aprobaciones."
+            )
     else:
         prompt = f"bmad-build-auto {build_intent(story)}"
 
     log_dir.mkdir(parents=True, exist_ok=True)
-    json_log = log_dir / "skill.jsonl"
-    text_log = log_dir / "skill.log"
-    _log(f"running the bmad-build-auto skill for story {story.short_id}")
+    json_log = log_dir / f"skill-{attempt}.jsonl"
+    text_log = log_dir / f"skill-{attempt}.log"
+    _log(f"running the bmad-build-auto skill for story {story.short_id} (attempt {attempt})")
     _log(f"log: {text_log}")
 
     argv = ["opencode", "run", "--format", "json", "--dangerously-skip-permissions"]
@@ -810,6 +833,7 @@ def run_skill(
     result = run_command(argv, log_path=json_log, timeout=timeout_minutes * 60)
     discovered, transcript = parse_skill_output(json_log)
     text_log.write_text(transcript, encoding="utf-8")
+    (log_dir / "skill.log").write_text(transcript, encoding="utf-8")
     return result, discovered or session_id
 
 
@@ -951,13 +975,22 @@ def update_and_commit_sprint_status(story: Story) -> None:
 
 
 def spec_belongs_to_story(spec: Path, story: Story) -> bool:
-    """The spec names the story it belongs to and the branch carries it."""
+    """The spec is the one of this story."""
     meta = read_frontmatter(spec)
     key = str(meta.get("story_key", "")).strip()
     if key and not key.startswith(f"{story.label}-"):
         return False
-    committed = git("log", "-1", "--format=%H", f"origin/{BASE_BRANCH}..HEAD", "--", str(spec)).stdout.strip()
-    return bool(committed)
+    return True
+
+
+def ensure_committed(path: Path) -> None:
+    """Commit a file the skill left out of its own commit."""
+    relative = path.relative_to(REPO_ROOT).as_posix()
+    if not git("status", "--porcelain", "--", relative).stdout.strip():
+        return
+    _log(f"committing the file the skill left out: {relative}")
+    git("add", relative)
+    git("commit", "-m", f"chore(spec): record {path.name}")
 
 
 def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> StoryOutcome:
@@ -978,7 +1011,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     if branch_exists(story.branch):
         git("checkout", story.branch)
         spec = find_spec(story)
-        reuse = existing_pr is not None or (spec is not None and spec_belongs_to_story(spec, story))
+        reuse = existing_pr is not None or spec is not None
         if not reuse:
             _log(f"discarding the abandoned branch {story.branch}")
             git("checkout", "-B", story.branch, BASE_BRANCH)
@@ -992,14 +1025,23 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     else:
         session_id = ""
         for attempt in range(1, args.max_attempts + 1):
+            status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
             skill_result, session_id = run_skill(
-                story, log_dir, args.timeout_minutes, args.model, args.agent, session_id
+                story,
+                log_dir,
+                args.timeout_minutes,
+                args.model,
+                args.agent,
+                session_id,
+                spec_path=spec,
+                spec_status=status,
+                attempt=attempt,
             )
             _log(f"the skill finished with exit code {skill_result.code}")
             if not skill_result.ok:
                 raise DriverError(
                     f"the bmad-build-auto run failed with exit code {skill_result.code}; "
-                    f"read {skill_result.log}"
+                    f"read {log_dir / f'skill-{attempt}.log'}"
                 )
             main_after = git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
             if main_after != main_before:
@@ -1007,18 +1049,19 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
                     "main moved while the skill ran: the story must not touch main, so the loop stops"
                 )
             spec = find_spec(story)
-            if spec is not None:
+            status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
+            if status == "done":
                 break
             if attempt < args.max_attempts and session_id:
                 _log(
-                    f"the run left no spec; continuing the session {session_id} "
+                    f"the spec is '{status or 'missing'}': continuing the session {session_id} "
                     f"(attempt {attempt + 1} of {args.max_attempts})"
                 )
                 continue
             raise DriverError(
-                f"the skill wrote no spec for story {story.short_id} after {attempt} attempts; "
-                f"read {log_dir / 'skill.log'} before retrying.\n"
-                f"Last lines of the skill log:\n{log_tail(log_dir / 'skill.log')}"
+                f"the skill left the spec of story {story.short_id} in '{status or 'missing'}' "
+                f"after {attempt} attempts; read {log_dir / f'skill-{attempt}.log'} before retrying.\n"
+                f"Last lines of the skill log:\n{log_tail(log_dir / f'skill-{attempt}.log')}"
             )
 
     meta = read_frontmatter(spec)
@@ -1049,6 +1092,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     # The sprint status changes are part of the story and go in the same pull
     # request, once the verifications have passed.
     update_and_commit_sprint_status(story)
+    ensure_committed(spec)
 
     subject, body = branch_commit_message()
     if not is_conventional_subject(subject):
@@ -1335,6 +1379,11 @@ deferred:
         check(subject == "feat: the subject", "the squash subject is not the oldest commit's subject")
         check("the body." in commit_body, "the squash body loses the story commit body")
         check("chore(sprint)" not in commit_body, "the squash body carries the driver's own chore commit")
+        try:
+            select_commit_message(["chore(spec): record spec-7-3.md"])
+            check(False, "a branch with only bookkeeping commits should not produce a squash subject")
+        except DriverError:
+            check(True, "a branch with only bookkeeping commits should not produce a squash subject")
         check(is_conventional_subject("feat: the subject"), "a conventional subject is rejected")
         check(not is_conventional_subject("wip"), "a non conventional subject is accepted")
         check(not is_conventional_subject("Arreglando cosas"), "a Spanish subject is accepted")
@@ -1459,7 +1508,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-attempts",
         type=int,
-        default=3,
+        default=8,
         help="how many times the skill may run for one story, continuing the same session",
     )
     parser.add_argument(
