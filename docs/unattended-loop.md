@@ -54,13 +54,16 @@ del agente por defecto no refresca su token en este entorno y una ejecución que
 contestar no deja spec detrás.
 
 Los logs de cada historia quedan en `.build-loop/logs/<sello>/<epica>-<historia>/`: `driver.log`
-es la traza del propio driver, `skill.log` la sesión del skill, `verification/` el resultado de
-las cinco comprobaciones y `verify-*.log` el detalle de cada una.
+es la traza del propio driver, `skill.log` la transcripción legible del run y `skill.jsonl` sus
+eventos en crudo, `verification/` el resultado de las cinco comprobaciones y `verify-*.log` el
+detalle de cada una.
 
 ## Qué hace el driver con cada historia
 
 1. Sincroniza `main` y crea la rama `story/<epica>-<historia>-<slug>` desde ahí.
-2. Lanza `opencode run --auto "bmad-build-auto <intent>"` dentro de la rama.
+2. Lanza `opencode run --format json --dangerously-skip-permissions "bmad-build-auto <intent>"` dentro
+   de la rama. Si el run se queda sin contexto y no deja spec, **continúa la misma sesión** de
+   OpenCode en vez de empezar de cero: hasta `--max-attempts` intentos por historia.
 3. Comprueba que `main` no se ha movido durante el run: la historia no toca `main`.
 4. Lee el `status` del frontmatter del spec que ha escrito el skill.
 5. Aplica la puerta de fusión (abajo). Si no pasa, para el bucle.
@@ -113,6 +116,7 @@ vacío) o si `main` se movió durante el run de la historia.
 - La historia no supera una de las cuatro puertas.
 - El skill termina bloqueado, deja el spec en un estado distinto de `done` o falla con un
   código de salida distinto de cero.
+- El skill agota su contexto y no deja spec ni después de los intentos permitidos.
 - `main` se movió durante el run de la historia.
 - Un comando de verificación falla. En ese caso el driver hace push de la rama antes de
   parar, para que el trabajo no se quede solo en el disco.
