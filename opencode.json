@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "agents": {
+  "agent": {
     "terra-orchestrator": {
       "steps": 40
     }
