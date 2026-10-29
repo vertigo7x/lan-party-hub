@@ -1,9 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Persistence;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace LANPartyHub.IntegrationTests;
@@ -23,6 +25,7 @@ namespace LANPartyHub.IntegrationTests;
 /// failure of the persistence.
 /// </para>
 /// </summary>
+[Collection(RealHostCollection.Name)]
 public sealed class GameCatalogTests
 {
     /// <summary>
@@ -582,6 +585,235 @@ public sealed class GameCatalogTests
         Assert.Equal(1, errors.GetProperty(ErrorCatalog.GameLicenseMissingCode).GetInt64());
     }
 
+    [Fact]
+    public async Task A_videogame_without_launch_arguments_is_registered()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        // Un videojuego que se lanza sin argumentos es un caso ordinario: la lista de
+        // argumentos es la única colección de la ficha que puede estar vacía.
+        var request = BuildValidRequest();
+        request.Game = request.Game! with
+        {
+            LaunchConfiguration = new InstallationManifest.LaunchSettings(
+                "bin\\cs2.exe",
+                [],
+                "game\\bin"),
+        };
+
+        using var response = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(request),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var descriptor = await ReadDescriptorAsync(response, TestContext.Current.CancellationToken);
+
+        Assert.Empty(descriptor.LaunchConfiguration.Arguments);
+
+        // La fila persistida guarda la lista vacía, de modo que el contrato y la tabla no
+        // divergen (AD-34).
+        Assert.Equal("[]", ReadLaunchArguments(dataDirectory, descriptor.GameId));
+    }
+
+    [Fact]
+    public async Task A_body_without_the_metadata_of_the_videogame_is_rejected_with_its_own_code()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        // El cuerpo lleva la versión del esquema y nada más: la ausencia de los
+        // metadatos tiene su propio código, distinto del de la versión que falta.
+        var body = new StringContent(
+            JsonSerializer.Serialize(new { schemaVersion = GamesEndpoint.SupportedSchemaVersion }),
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        using var response = await client.PostAsync(
+            GamesEndpoint.Route,
+            body,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        AssertRejected(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            ErrorCatalog.GamePayloadMissingCode);
+
+        Assert.Equal(0, ReadRowCount(dataDirectory));
+    }
+
+    [Fact]
+    public async Task A_body_that_names_the_videogame_only_inside_the_descriptor_modifies_that_videogame()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var created = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(BuildValidRequest()),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var original = await ReadDescriptorAsync(created, TestContext.Current.CancellationToken);
+
+        // El identificador viaja solo dentro del descriptor: el cuerpo sigue siendo una
+        // modificación y no un alta que descarta el identificador (AD-34).
+        var request = BuildValidRequest();
+        request.Game = request.Game! with { GameId = original.GameId, Version = "1.42.0" };
+
+        using var modified = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(request),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, modified.StatusCode);
+
+        var updated = await ReadDescriptorAsync(modified, TestContext.Current.CancellationToken);
+
+        Assert.Equal(original.GameId, updated.GameId);
+        Assert.Equal("1.42.0", updated.Version);
+
+        // La modificación no crea una fila nueva: el catálogo sigue teniendo una sola.
+        Assert.Equal(1, ReadRowCount(dataDirectory));
+    }
+
+    [Fact]
+    public async Task The_catalog_is_read_back_through_the_read_port_of_the_repository()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        // El alta se hace por la superficie de la API, que es el camino de producción.
+        var first = BuildValidRequest();
+        first.Game = first.Game! with { Name = "Zumba" };
+
+        using var firstResponse = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(first),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+        var second = BuildValidRequest();
+        second.Game = second.Game! with { Name = "Anclas" };
+
+        using var secondResponse = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(second),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, secondResponse.StatusCode);
+
+        // La lectura se hace por el puerto del repositorio, contra el SQLite real del
+        // servidor, que es el mismo archivo que la API acaba de escribir.
+        await using var scope = host.Application.Services.CreateAsyncScope();
+
+        var repository = scope.ServiceProvider.GetRequiredService<IGameRepository>();
+
+        var games = await repository.ListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, games.Count);
+
+        // El orden es por nombre y después por identificador (AD-1).
+        Assert.Equal(["Anclas", "Zumba"], games.Select(game => game.Name).ToArray());
+
+        Assert.All(games, game => Assert.Equal(1, game.MinPlayers));
+        Assert.All(games, game => Assert.Equal(7_600_000_000, game.SizeBytes));
+        Assert.All(games, game => Assert.Equal("Propietaria", game.License));
+        Assert.All(games, game => Assert.Equal("Solo para el evento", game.DistributionRestrictions));
+    }
+
+    [Fact]
+    public async Task The_traffic_of_the_administration_feeds_the_published_transfer_rate()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var response = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(BuildValidRequest()),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        using var document = JsonDocument.Parse(
+            await client.GetStringAsync(MetricsEndpoint.Route, TestContext.Current.CancellationToken));
+
+        // Los bytes que la administración escribe cuentan en la tasa de transferencia
+        // publicada, igual que los de la superficie del cliente (AD-15).
+        Assert.True(
+            document.RootElement.GetProperty("transferRateBytesPerSecond").GetInt64() > 0,
+            "The transfer rate of the host is still zero after the administration has been served.");
+    }
+
+    [Theory]
+    [InlineData("tags", "GAME_TAGS_MISSING")]
+    [InlineData("images", "GAME_IMAGES_MISSING")]
+    [InlineData("dependencies", "GAME_DEPENDENCIES_MISSING")]
+    [InlineData("sizeBytes", "GAME_SIZE_BYTES_MISSING")]
+    [InlineData("minPlayers", "GAME_MIN_PLAYERS_MISSING")]
+    [InlineData("maxPlayers", "GAME_MAX_PLAYERS_MISSING")]
+    [InlineData("launchConfiguration", "GAME_LAUNCH_CONFIGURATION_MISSING")]
+    public async Task The_remaining_mandatory_metadata_have_their_own_stable_code(
+        string fieldName,
+        string expectedCode)
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        var request = BuildValidRequest();
+        request.Game = ApplyEmptyField(request.Game!, fieldName);
+
+        using var response = await client.PostAsync(
+            GamesEndpoint.Route,
+            BuildBody(request),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        AssertRejected(body, expectedCode);
+
+        // El código nombra el campo concreto que falta (AD-25).
+        using var document = JsonDocument.Parse(body);
+
+        var code = document.RootElement.GetProperty("code").GetString();
+
+        Assert.NotNull(code);
+        Assert.NotEqual(ErrorCatalog.GameMetadataMissingCode, code);
+
+        foreach (var word in SplitWords(fieldName))
+        {
+            Assert.Contains(word, code!, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // No se escribe ninguna fila (AD-15).
+        Assert.Equal(0, ReadRowCount(dataDirectory));
+    }
+
     /// <summary>
     /// Builds a body of the administration with the eighteen metadata de FR-1.
     /// </summary>
@@ -630,8 +862,44 @@ public sealed class GameCatalogTests
         "installationType" => descriptor with { InstallationType = string.Empty },
         "license" => descriptor with { License = string.Empty },
         "distributionRestrictions" => descriptor with { DistributionRestrictions = string.Empty },
+        "tags" => descriptor with { Tags = [] },
+        "images" => descriptor with { Images = [] },
+        "dependencies" => descriptor with { Dependencies = [] },
+        "sizeBytes" => descriptor with { SizeBytes = 0 },
+        "minPlayers" => descriptor with { MinPlayers = 0 },
+        "maxPlayers" => descriptor with { MaxPlayers = 0 },
+        // La ruta de lanzamiento es obligatoria: solo los argumentos son opcionales.
+        "launchConfiguration" => descriptor with
+        {
+            LaunchConfiguration = new InstallationManifest.LaunchSettings(
+                string.Empty,
+                descriptor.LaunchConfiguration.Arguments,
+                descriptor.LaunchConfiguration.WorkingDirectory),
+        },
         _ => descriptor,
     };
+
+    /// <summary>
+    /// Lee los argumentos de lanzamiento de la fila de un videojuego, que la columna
+    /// guarda como texto JSON (AD-7, AD-34).
+    /// </summary>
+    /// <param name="dataDirectory">Folder of the data of the host.</param>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <returns>The arguments of the launch configuration, as they are stored.</returns>
+    private static string ReadLaunchArguments(string dataDirectory, string gameId)
+    {
+        using var connection = OpenDatabase(dataDirectory);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT launchConfiguration FROM GAME WHERE gameId = $gameId";
+        command.Parameters.AddWithValue("$gameId", gameId);
+
+        var canonical = (string)command.ExecuteScalar()!;
+
+        using var document = JsonDocument.Parse(canonical);
+
+        return document.RootElement.GetProperty("arguments").GetRawText();
+    }
 
     /// <summary>
     /// Splits the name of a field in camelCase into its words, the way the catalog of

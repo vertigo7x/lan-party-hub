@@ -26,6 +26,13 @@ public sealed class ServerCorrelationTests
 
     private const string UnknownClientId = "0000000000000000000000000000ffff";
 
+    /// <summary>
+    /// Category of the log of the use case that registers a videogame. The entry of the
+    /// registration is observed by this category and not by the one of the middleware,
+    /// because both live in the same scope of correlation (AD-15).
+    /// </summary>
+    private const string RegisterGameCategory = "LANPartyHub.Server.Application.Catalog.RegisterGame";
+
     [Fact]
     public async Task A_request_with_the_two_headers_is_correlated_and_its_log_entry_carries_them()
     {
@@ -354,7 +361,9 @@ public sealed class ServerCorrelationTests
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
-        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        // El alta de un videogame responde 201, y no un estado que solo diga que la
+        // petición no fue rechazada por falta de identificador de cliente.
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]
@@ -368,41 +377,37 @@ public sealed class ServerCorrelationTests
 
             using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
             request.Content = BuildValidGameBody();
-            request.Headers.Add(CorrelationMiddleware.OperationIdHeaderName, OperationId);
+            request.Headers.Add(AdminCorrelationMiddleware.OperationIdHeaderName, OperationId);
 
             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
-            Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
             // La operación sigue correlacionada por su identificador, que es lo que AD-15
             // exige para toda operación.
             Assert.Equal(
                 OperationId,
-                response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single());
+                response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single());
         }
 
         // La entrada del log de la operación lleva el identificador de la unidad de
         // trabajo, y no el del cliente, porque la administración no lo tiene (AD-30).
-        // Varias entradas pueden llevar el identificador: la del middleware y la del
-        // caso de uso, y las dos están dentro del mismo scope de correlación.
-        var entries = capture.Entries
-            .Where(candidate => LogEntries.IsProduct(candidate)
+        // La entrada que se observa es la del caso de uso y no la del middleware: las dos
+        // están dentro del mismo scope de correlación, y observar cualquiera de las dos
+        // dejaría la entrada del caso de uso sin comprobar.
+        var entry = Assert.Single(
+            capture.Entries,
+            candidate => LogEntries.HasCategory(candidate, RegisterGameCategory)
                 && LogEntries.Scopes(candidate).Any(scope =>
                     scope.TryGetProperty("OperationId", out var operationId)
-                    && operationId.GetString() == OperationId))
-            .ToArray();
+                    && operationId.GetString() == OperationId));
 
-        Assert.NotEmpty(entries);
+        var scopes = LogEntries.Scopes(entry).ToArray();
 
-        Assert.All(entries, entry =>
-        {
-            var scopes = LogEntries.Scopes(entry).ToArray();
-
-            Assert.Contains(
-                scopes,
-                scope => scope.TryGetProperty("OperationId", out var operationId)
-                    && operationId.GetString() == OperationId);
-        });
+        Assert.Contains(
+            scopes,
+            scope => scope.TryGetProperty("OperationId", out var operationId)
+                && operationId.GetString() == OperationId);
     }
 
     [Fact]
@@ -417,9 +422,11 @@ public sealed class ServerCorrelationTests
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
-        var operationId = response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single();
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        Assert.Equal(CorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
+        var operationId = response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single();
+
+        Assert.Equal(AdminCorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
         Assert.NotEqual(string.Empty, operationId);
     }
 

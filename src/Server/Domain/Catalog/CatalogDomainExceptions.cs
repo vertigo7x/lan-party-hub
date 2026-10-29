@@ -125,3 +125,16 @@ public sealed class GameNotFoundException : CatalogDomainException
     /// <summary>Identifier of the videogame that was not found.</summary>
     public string GameId { get; }
 }
+
+/// <summary>
+/// The body of the mutation does not carry the metadata of the videogame at all
+/// (AD-5).
+/// </summary>
+public sealed class GamePayloadMissingException : CatalogDomainException
+{
+    /// <summary>Creates the exception of a body that does not carry the metadata.</summary>
+    public GamePayloadMissingException()
+        : base("El cuerpo de la petición no lleva los metadatos del videojuego.")
+    {
+    }
+}

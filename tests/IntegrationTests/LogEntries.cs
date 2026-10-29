@@ -18,6 +18,18 @@ internal static class LogEntries
         && name.StartsWith("LANPartyHub", StringComparison.Ordinal);
 
     /// <summary>
+    /// Tells whether the entry was written by the given category of the product. It is the
+    /// way to observe the entry of a component and not the entry of another one that
+    /// happens to be in the same scope of correlation (AD-15).
+    /// </summary>
+    /// <param name="entry">Entry of the log.</param>
+    /// <param name="category">Category of the component, as the log writes it.</param>
+    /// <returns><c>true</c> when the entry belongs to that category.</returns>
+    public static bool HasCategory(JsonElement entry, string category) =>
+        entry.TryGetProperty("Category", out var value)
+        && value.GetString() == category;
+
+    /// <summary>
     /// The scopes of the entry. A scope that is not an object is not a scope of the
     /// product and it is ignored.
     /// </summary>

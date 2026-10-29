@@ -128,11 +128,20 @@ public static class GamesEndpoint
             {
                 var metadata = request.ToDescriptor();
 
-                var isModification = !string.IsNullOrWhiteSpace(request.GameId);
+                // The identifier is read the same way in both places: the one of the
+                // envelope, and, when the envelope does not carry it, the one that the
+                // descriptor carries. A body that names the videogame only inside the
+                // descriptor is a modificación, and its identifier is never discarded
+                // (AD-34).
+                var isModification = request.IsModification();
+
+                var gameId = !string.IsNullOrWhiteSpace(request.GameId)
+                    ? request.GameId.Trim()
+                    : metadata.GameId;
 
                 var descriptor = isModification
                     ? await modifyGame
-                        .ExecuteAsync(request.GameId!, metadata, context.RequestAborted)
+                        .ExecuteAsync(gameId, metadata, context.RequestAborted)
                         .ConfigureAwait(false)
                     : await registerGame
                         .ExecuteAsync(metadata, context.RequestAborted)
@@ -148,14 +157,17 @@ public static class GamesEndpoint
                     .WriteAsync(Serialize(descriptor), context.RequestAborted)
                     .ConfigureAwait(false);
             }
-            catch (GameRequestInvalidException exception)
+            catch (GamePayloadMissingException exception)
             {
+                // The body carries a supported schemaVersion but no metadata at all: the
+                // code of this absence is its own, so the metric of errors per code does
+                // not mix it with the absence of the schemaVersion (AD-15).
                 await WriteErrorAsync(
                     context,
                     metrics,
                     logger,
                     StatusCodes.Status400BadRequest,
-                    ErrorCatalog.Resolve(ErrorCatalog.SchemaVersionMissingCode),
+                    ErrorCatalog.Resolve(ErrorCatalog.GamePayloadMissingCode),
                     exception.Message)
                     .ConfigureAwait(false);
             }

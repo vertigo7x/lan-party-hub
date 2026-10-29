@@ -167,7 +167,10 @@ public sealed class GameRegistration
         _distributionType = RequireText(distributionType, FieldNames.DistributionType);
         _installationType = RequireText(installationType, FieldNames.InstallationType);
         _launchExecutablePath = RequireText(launchExecutablePath, FieldNames.LaunchConfiguration);
-        _launchArguments = RequireItems(launchArguments, FieldNames.LaunchConfiguration);
+        // The launch arguments are optional: a videogame that is launched without
+        // arguments is an ordinary case, and FR-1 demands the launch configuration as a
+        // whole, not a non-empty list of arguments. The list is trimmed all the same.
+        _launchArguments = RequireOptionalItems(launchArguments);
         _launchWorkingDirectory = RequireText(launchWorkingDirectory, FieldNames.LaunchConfiguration);
         _dependencies = RequireItems(dependencies, FieldNames.Dependencies);
         _license = RequireText(license, FieldNames.License);
@@ -337,6 +340,33 @@ public sealed class GameRegistration
             if (string.IsNullOrWhiteSpace(item))
             {
                 throw new GameMetadataMissingException(fieldName);
+            }
+
+            items[index] = item.Trim();
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// Requires an optional collection. A collection that is empty is an ordinary value
+    /// and it is not an absence, but the items that it holds are trimmed the same way the
+    /// mandatory texts are, and an absent item is rejected all the same.
+    /// </summary>
+    /// <param name="values">Values of the field.</param>
+    /// <returns>The trimmed values of the field.</returns>
+    /// <exception cref="GameMetadataMissingException">The collection holds an absent item.</exception>
+    private static string[] RequireOptionalItems(IReadOnlyList<string> values)
+    {
+        var items = new string[values.Count];
+
+        for (var index = 0; index < values.Count; index++)
+        {
+            var item = values[index];
+
+            if (item is null)
+            {
+                throw new GameMetadataMissingException(FieldNames.LaunchConfiguration);
             }
 
             items[index] = item.Trim();

@@ -2,7 +2,7 @@
 title: 'Alta y modificación de videojuegos con metadatos completos'
 type: 'feature'
 created: '2026-10-29'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 1
 followup_review_recommended: false
 baseline_revision: 'b02a123'
@@ -10,7 +10,199 @@ context:
   - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-lan-party-hub-2026-10-26/ARCHITECTURE-SPINE.md'
 warnings:
   - 'oversized'
-deferred: []
+deferred:
+  - summary: >-
+      La comprobación de la forma canónica del identificador que llega podría ser exigible
+      por la AC del identificador único.
+    evidence: |-
+      La AC trata de la unicidad del identificador generado por el servidor, no del formato
+      del identificador de entrada: RequireIdentifier solo comprueba que no sea nulo ni
+      blanco e IsCanonicalIdentifier no se aplica en el camino de escritura. Lo que lo
+      zanjaría es una frase de la AC que alcance al identificador que llega; con la evidencia
+      disponible no puede afirmarse que la comprobación sea un defecto.
+    location: >-
+      src/Server/Domain/Catalog/GameRegistration.cs:286
+    severity: medium (unverified)
+  - summary: >-
+      La guarda de concurrencia en la modificación podría ser exigible por la AC de la
+      modificación que conserva el identificador.
+    evidence: |-
+      La AC trata del identificador conservado y del cambio reflejado, no de la concurrencia
+      de escritura: UpdateAsync sobrescribe todas las columnas de la fila rastreada y
+      GameEntity no declara token de concurrencia. Lo que lo zanjaría es una frase de la AC
+      sobre dos modificaciones simultáneas del mismo videojuego.
+    location: >-
+      src/Server/Infrastructure/Persistence/GameRepository.cs:58
+    severity: medium (unverified)
+  - summary: >-
+      El orden de la lectura del catálogo podría ser un contrato que la historia siguiente
+      necesite reutilizar.
+    evidence: |-
+      GameRepository.ListAsync ordena por nombre y después por identificador, y ese orden
+      es ahora el de la sección de la interfaz. Lo que lo zanjaría es que la historia que
+      expone el snapshot del catálogo declarara heredado ese orden; con la evidencia
+      disponible no puede afirmarse que sea un defecto.
+    location: >-
+      src/Server/Infrastructure/Persistence/GameRepository.cs:62
+    severity: low (unverified)
+  - summary: >-
+      El alcance de "tipo equivalente" de la regla de la épica podría excluir también el
+      sobre de la petición.
+    evidence: |-
+      La regla de la épica prohíbe un tipo con los mismos campos y el sobre no repite ni un
+      nombre: el cuerpo lleva schemaVersion, gameId opcional y el GameDescriptor que trae.
+      Lo que lo zanjaría es el texto del Design Note que ya fija esta lectura; el hecho está
+      verificado y la lectura aplicada está escrita.
+    location: >-
+      src/Server/Host/GameRequest.cs:27
+    severity: low (unverified)
+  - summary: >-
+      La topología de la interfaz y el host HTTP en un mismo proceso podría no ser la forma
+      esperada de arrancar la ventana de la organizadora.
+    evidence: |-
+      El Design Note afirma que la interfaz y el host conviven en el mismo proceso, y
+      Program arranca la ventana en un hilo STA antes de app.RunAsync. Lo que lo zanjaría
+      es una frase del Design Note sobre el orden de arranque; la evidencia disponible no
+      fija ese orden.
+    location: >-
+      src/Server/Program.cs:40
+    severity: low (unverified)
+  - summary: >-
+      La tasa de transferencia podría tener que distinguir la superficie de administración
+      de la de cliente en la clave de métrica.
+    evidence: |-
+      Las dos superficies alimentan la misma métrica de bytes, y AdminCorrelationMiddleware
+      cuenta los de la administración. Lo que lo zanjaría es que la espina distinguiera la
+      tasa por superficie; la espina no la distingue.
+    location: >-
+      src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs:105
+    severity: low (unverified)
+  - summary: >-
+      El nombre del código por campo podría seguir otra convención que la de palabras en
+      mayúsculas.
+    evidence: |-
+      El catálogo de errores usa esa convención en sus siete códigos anteriores y los
+      dieciocho códigos por campo la siguen. Lo que lo zanjaría sería un ejemplo nuevo en
+      el propio catálogo; con la evidencia disponible la convención del repositorio es la
+      que se aplica.
+    location: >-
+      src/Shared/Contracts/ErrorCatalog.cs:77
+    severity: low (unverified)
+  - summary: >-
+      La ausencia de los argumentos de lanzamiento podría necesitar su propio código si
+      se distinguiese de la ruta de lanzamiento ausente.
+    evidence: |-
+      La ruta de lanzamiento sigue siendo obligatoria y comparte el código de la
+      configuración de lanzamiento, y la lista de argumentos vacía se acepta. Lo que lo
+      zanjaría es una AC que separe ambas ausencias; la AC no las separa.
+    location: >-
+      src/Server/Domain/Catalog/GameRegistration.cs:170
+    severity: low (unverified)
+  - summary: >-
+      La ventana podría tener que cerrarse tras un guardado correcto para que la
+      organizadora vea el catálogo actualizado.
+    evidence: |-
+      La ventana refresca la lista tras el guardado y el Design Note no fija que deba
+      cerrarse. Lo que lo zanjaría es una preferencia de la interfaz escrita en una AC; con
+      la evidencia disponible el comportamiento actual es razonable.
+    location: >-
+      src/Server/Presentation/Catalog/CatalogWindow.cs:199
+    severity: low (unverified)
+  - summary: >-
+      El botón "Guardar" podría tener que deshabilitarse mientras la operación está en curso
+      para evitar un doble registro.
+    evidence: |-
+      El dominio rechaza el duplicado por identificador pero no por contenido, de modo que
+      dos clics rápidos podrían registrar dos videojuegos. Lo que lo zanjaría es una AC que
+      prohíba el doble registro; la evidencia disponible no la contiene.
+    location: >-
+      src/Server/Presentation/Catalog/GameFormView.cs:281
+    severity: low (unverified)
+  - summary: >-
+      La prueba de presentación podría necesitar un contexto gráfico simulado para cubrir la
+      costura de la ventana.
+    evidence: |-
+      El repositorio no tiene un banco de pruebas con contexto gráfico, y añadirlo excede
+      el alcance de la historia. Lo que lo zanjaría es que la infraestructura de pruebas
+      gráfica existiera en el repositorio; con la evidencia disponible la costura de la
+      ventana no es verificable aquí.
+    location: >-
+      tests/UnitTests/CatalogPresentationTests.cs:1
+    severity: medium (unverified)
+  - summary: >-
+      La respuesta de un cuerpo sin metadatos podría tener que ser 422 en lugar de 400.
+    evidence: |-
+      La ausencia del bloque completo de metadatos es un cuerpo mal formado y no un
+      metadato ausente, de modo que el 400 es defendible. Lo que lo zanjaría es una frase de
+      la AC que fije el estado de este caso; la AC no lo fija.
+    location: >-
+      src/Server/Host/GamesEndpoint.cs:151
+    severity: low (unverified)
+  - summary: >-
+      El identificador del descriptor podría tener que aceptarse en el camino del alta como
+      una modificación.
+    evidence: |-
+      El identificador es opaco y lo genera el servidor, y aceptarlo en el alta permitiría
+      al cliente fijarlo, lo que el Design Note no contempla. Lo que lo zanjaría es una AC
+      que pida esa lectura; con la evidencia disponible la lectura actual es la fijada.
+    location: >-
+      src/Server/Host/GameRequest.cs:81
+    severity: low (unverified)
+  - summary: >-
+      La carrera latente entre ClientStartupTests y ServerStartupTests sobre la tabla de
+      listeners del proceso podría exigir serialización.
+    evidence: |-
+      Ambas pruebas inspeccionan la tabla de listeners del proceso y se racy entre ellas;
+      esta historia lo evita serializando sus propios hosts en una colección de no
+      paralelización, sin tocar la otra historia. Lo que lo zanjaría es que el guard de las
+      pruebas de arranque se ejecutara en paralelo con más hosts en marcha.
+    location: >-
+      tests/IntegrationTests/ServerStartupTests.cs:1
+    severity: low (unverified)
+  - summary: >-
+      La aserción del log correlacionado podría tener que distinguir la entrada del caso de
+      uso por su mensaje y no por su categoría.
+    evidence: |-
+      La aserción observa la categoría LANPartyHub.Server.Application.Catalog.RegisterGame,
+      que es estable y es la que el log escribe; el texto del mensaje no es un identificador
+      estable. Lo que lo zanjaría es una AC que pida el mensaje; con la evidencia disponible
+      la categoría es el discriminante correcto.
+    location: >-
+      tests/IntegrationTests/ServerCorrelationTests.cs:388
+    severity: low (unverified)
+  - summary: >-
+      El 500 por fallo de persistencia podría tener que distinguir la excepción de EF Core
+      de la genérica.
+    evidence: |-
+      El 500 nunca expone la excepción al mensaje y el código es estable, de modo que la
+      distinción no es observable por la API. Lo que lo zanjaría es una AC que pida un
+      código propio para ese caso; la AC solo pide que el error se cuente por su código
+      estable.
+    location: >-
+      src/Server/Host/GamesEndpoint.cs:218
+    severity: low (unverified)
+  - summary: >-
+      El código genérico GAME_METADATA_MISSING podría tener que eliminarse del catálogo por
+      ser alcanzable solo en el respaldo.
+    evidence: |-
+      Se alcanza por el brazo por defecto del mapeo, que existe precisamente para un
+      campo que el catálogo no conoce, y las pruebas afirman que cada campo conocido
+      resuelve a su código propio. Lo que lo zanjaría es una AC que fije la lista cerrada de
+      códigos; con la evidencia disponible el respaldo es deliberado.
+    location: >-
+      src/Shared/Contracts/ErrorCatalog.cs:45
+    severity: low (unverified)
+  - summary: >-
+      La ventana de la organizadora podría tener que vivir en el proceso del cliente y no en
+      el del servidor.
+    evidence: |-
+      AD-1 fija dos artefactos desplegables y la espina sitúa la interfaz del servidor en el
+      servidor, que es donde vive. Lo que lo zanjaría es una frase de la espina sobre la
+      interfaz del servidor; con la evidencia disponible la decisión actual es la que
+      corresponde.
+    location: >-
+      src/Server/Presentation/ServerApp.cs:20
+    severity: low (unverified)
 ---
 
 <intent-contract>
@@ -270,6 +462,71 @@ Estos detalles vienen de leer el código real; el implementer los usa como plant
   - `[maybe-false]` `[bad_spec]` Los `sizeBytes` negativos o con relleno deben rechazarse en la frontera de la API — el dominio ya rechaza `sizeBytes <= 0`; la exigencia de un rechazo en la frontera no está fijada.
   - `[maybe-false]` `[bad_spec]` La duplicación de `GameMetadata` y `GameRequest` se elimina usando `GameDescriptor` más un sobre de `schemaVersion` — la forma del cuerpo que lleva `schemaVersion` sin duplicar los 18 campos no está fijada por la evidencia disponible.
 
+### 2026-10-29 — Review pass (segunda pasada, sobre el código re-derivado)
+- verdicts: 58 findings — high 5, medium 12, low 6, false 17, maybe-false 18
+- findings:
+  - `[medium]` `[patch]` Los argumentos de lanzamiento pasaron a ser una colección obligatoria no vacía, lo que rechaza con `422 GAME_LAUNCH_CONFIGURATION_MISSING` un videojuego que se lanza sin argumentos — `GameRegistration.cs:170` usaba `RequireItems`, que lanza con `Count == 0` (línea 326); el ciclo 0 lo dejaba como `[.. launchArguments]`. **Parcheado:** la colección pasa por `RequireOptionalItems`, que acepta la lista vacía, recorta los elementos y rechaza el nulo igual que antes.
+  - `[medium]` `[patch]` La lista de la sección «Catálogo» aparecía vacía al abrir la ventana — `RefreshAsync` solo se llamaba desde el botón «Actualizar» (línea 110) y tras un guardado (201, 218), nunca al abrir. **Parcheado:** se añadió `Opened += async (_, _) => await RefreshAsync()` en `CatalogWindow`.
+  - `[medium]` `[patch]` Un cuerpo sin el bloque de metadatos se respondía con el código `SCHEMA_VERSION_MISSING`, que nombra un campo que sí está presente — `GamesEndpoint.cs:158` usaba `ErrorCatalog.SchemaVersionMissingCode`; el `cause` y el `nextStep` de esa entrada contradecían al `message`. **Parcheado:** se añadió el código `GAME_PAYLOAD_MISSING` con su entrada de catálogo en español y el endpoint responde ahora con él.
+  - `[medium]` `[patch]` El discriminante de alta y modificación se calculaba solo desde el identificador del sobre, y el identificador que el descriptor traía se descartaba en silencio — `GamesEndpoint.cs:131` leía `request.GameId`, mientras `GameRequest.ToDescriptor()` conservaba `Game.GameId`; un cuerpo que nombraba el videojuego solo dentro del descriptor se trataba como alta y el servidor generaba otro identificador. **Parcheado:** `GameRequest.IsModification()` lee el identificador del sobre o, si el sobre no lo trae, el del descriptor, y el endpoint usa ese mismo valor para la llamada de modificación.
+  - `[medium]` `[patch]` La aserción de la entrada de log correlacionada se había debilitado hasta ser tautológica — `ServerCorrelationTests.cs:388-395` pasó de `Assert.Single` acotado a la categoría del caso de uso a `Where` + `Assert.NotEmpty` + `Assert.All`, y la entrada propia de `AdminCorrelationMiddleware` cumple el filtro, de modo que la AC «la entrada del log lleva el `operationId`» dejaba de estar fijada. **Parcheado:** se restauró el `Assert.Single` sobre la categoría `LANPartyHub.Server.Application.Catalog.RegisterGame` y se reincorporó `LogEntries.HasCategory`.
+  - `[medium]` `[patch]` La excepción del cuerpo sin metadatos estaba declarada en `Host` como una `Exception` desnuda, contra la convención «Errores» que sitúa las excepciones tipadas en el dominio — `GameRequestInvalidException` en `GameRequest.cs` era del tipo `Exception` y no tenía código propio. **Parcheado:** se sustituyó por `GamePayloadMissingException`, derivada de `CatalogDomainException` en el dominio.
+  - `[medium]` `[patch]` El camino de lectura del catálogo no lo ejercitaba ninguna prueba — la búsqueda por `ListGames`, `RefreshAsync` y `CatalogWindow` en `tests/` no devolvía coincidencias, de modo que un `ListAsync` que devolviera una lista vacía se podía colar con la suite en verde. **Parcheado:** se añadió `The_catalog_is_read_back_through_the_read_port_of_the_repository`, que registra dos videojuegos por HTTP y los lee por el puerto contra la `catalog.sqlite` real, afirmando el orden por nombre.
+  - `[medium]` `[patch]` La contabilidad de bytes de la superficie de administración no la observaba ninguna prueba — la única afirmación sobre la tasa de transferencia se alimentaba de la superficie de cliente, de modo que el middleware de administración podía dejar de contar sin que nada lo notara. **Parcheado:** se añadió `The_traffic_of_the_administration_feeds_the_published_transfer_rate`.
+  - `[medium]` `[patch]` Los brazos de `MetadataMissingCodeFor` de `gameId`, `tags`, `images`, `dependencies`, `sizeBytes`, `minPlayers`, `maxPlayers` y `launchConfiguration` no los ejercitaba ninguna prueba, de modo que un mapeo equivocado en cualquiera de ellos se habría colado. **Parcheado:** se añadió la `[Theory]` `The_remaining_mandatory_metadata_have_their_own_stable_code`, que cubre los siete brazos.
+  - `[medium]` `[patch]` Las aserciones de estado de la superficie de administración se habían debilitado a `Assert.NotEqual(HttpStatusCode.BadRequest, ...)`, de modo que un `404`, un `422` o un `500` pasaban — la prueba ya no probaba que el alta ocurriera. **Parcheado:** se restauraron los tres `Assert.Equal(HttpStatusCode.Created, ...)`.
+  - `[medium]` `[patch]` Las aserciones de cabecera de la ruta de administración se comprobaban contra la constante del middleware de cliente — `ServerCorrelationTests.cs` usaba `CorrelationMiddleware.OperationIdHeaderName` mientras la ruta la sirve `AdminCorrelationMiddleware`; ambas constantes coinciden hoy en el valor, de modo que la prueba quedaba verde atada al componente equivocado. **Parcheado:** las cabeceras de la administración se comprueban contra `AdminCorrelationMiddleware.OperationIdHeaderName` y `AdminCorrelationMiddleware.CanonicalIdentifierLength`.
+  - `[low]` `[patch]` La lista de la ventana «Editar» se resolvía con una búsqueda lineal dentro de un bucle sobre las filas, y cuando la búsqueda fallaba se añadía un botón sin manejador — `CatalogWindow.cs:231` usaba `ViewModel.Games.FirstOrDefault(...)` dentro del bucle de `ViewModel.Rows`, de modo que el coste era cuadrático y el fallo producía un control muerto. **Parcheado en parte:** el coste cuadrático y el botón muerto se resolvieron con la袖 habilitación condicional y la búsqueda por diccionario; el coste es despreciable para el tamaño del catálogo del evento y no seOptimizó más.
+  - `[low]` `[patch]` `ParseInt` conservaba el valor anterior cuando el texto no era un número, de modo que vaciar la caja de jugadores guardaba en silencio el número viejo — `GameFormView.cs` leía los campos con un valor de reserva. **Parcheado:** el valor por defecto es ahora el que el dominio rechaza, de modo que el campo vacío llega al dominio y se rechaza nombrando el campo.
+  - `[low]` `[patch]` `RefreshSizeValue` sobrescribía el tamaño del modelo mientras la organizadora escribía, y el valor derivado que se mostraba no era el que el modelo iba a guardar — `GameFormView.cs` asignaba `ViewModel.SizeBytes` en cada `TextChanged`. **Parcheado:** el modelo se actualiza solo cuando el texto es un número válido.
+  - `[low]` `[reject]` `GAME_ID_MISSING` es inalcanzable — el código, su entrada de catálogo y su mapeo existen, pero el único productor de un identificador ausente es `RequireIdentifier`, y el camino del alta nunca construye una identificación a partir del identificador del cliente. **Rechazado:** el código queda como reserva del mapeo por campo y su alcanzabilidad depende de la forma final del cuerpo; no se elimina un código de un catálogo estable porque hoy no lo alcance una ruta.
+  - `[low]` `[reject]` El documento de `GAME_METADATA_MISSING` afirma que es el respaldo genérico, pero solo se alcanza por el brazo `_ =>` del mapeo, que se dispara para un nombre de campo fuera de los dieciocho — el código está documentado como vivo mientras es muerto. **Rechazado:** el respaldo genérico es exactamente para un campo que el catálogo no conoce, y esa es su razón de ser; la documentación describe su propósito y no su alcanzabilidad actual.
+  - `[low]` `[reject]` La guía de `GAME_ID_MISSING` pide a la organizadora que guarde el videojuego con su identificador, una acción que el producto nunca pide — el servidor genera el identificador en el alta. **Rechazado:** el texto de la entrada nombra el identificador del videogame como el dato que el registro necesita, que es lo que el caso de uso exige; la ambigüedad es de redacción del catálogo y no del comportamiento.
+  - `[low]` `[reject]` El catálogo no declara el orden de la lectura que el adaptador establece — `GameRepository.ListAsync` ordena por nombre y después por identificador, y ese orden es ahora el de la sección sin estar documentado. **Rechazado:** el orden alfabético es el orden natural de una lista de videojuegos para la organizadora y no requiere un contrato; la prueba que lo cubre lo deja fijado de todos modos.
+  - `[low]` `[reject]` `IGameRepository.ListAsync` lee el catálogo entero sin paginación — el catálogo de un evento tiene un número de videojuegos que cabe de sobra en memoria, y la API que lo expondrá pertenece a una historia posterior. **Rechazado:** la paginación no es una preocupación de esta historia y añadirla sería público no pedido.
+  - `[low]` `[reject]` `ModifyGame` sigue leyendo la fila dos veces, una para obtener el identificador y otra para actualizarla — el riesgo real es acotado por el único escritor de SQLite. **Rechazado:** la doble lectura es inocua con un único escritor y la refactorizar es un cambio de riesgo sin beneficio en esta historia.
+  - `[low]` `[reject]` `ModifyGame` tiene un `??` muerto y una guarda inalcanzable en producción — el identificador no puede ser nulo por la firma, y el endpoint solo llama a la modificación cuando el identificador no está en blanco. **Rechazado:** la guarda es defensiva y no causa daño; eliminarla sería tocar una firma por estética.
+  - `[low]` `[reject]` `RequireIdentifier` no aplica la comprobación de forma canónica que existe en la misma clase — `IsCanonicalIdentifier` está disponible y no se usa en el camino de escritura, de modo que un identificador mal formado se resuelve como un `404` en lugar de un rechazo de formato. **Rechazado:** el identificador es opaco y la única fuente de verdad es el servidor; comprobar el formato de entrada convertiría un `404` correcto en un `400` que el producto no define.
+  - `[low]` `[reject]` `MetadataMissingCodeFor` es un `switch` sin guarda en la capa Host — un campo nuevo en `FieldNames` degrada en silencio al código genérico. **Rechazado:** el `switch` es exhaustivo sobre los dieciocho campos y el brazo por defecto existe precisamente para el campo que el catálogo no conoce; la degradación al respaldo genérico es el comportamiento buscado.
+  - `[medium]` `[reject]` La matriz de la especificación describe un cuerpo plano que ya no es el que se implementa — las filas hablan de «cuerpo con `schemaVersion` y los 18 metadatos», y el cuerpo es ahora el sobre `{ schemaVersion, gameId?, game }`. **Rechazado:** la matriz pertenece al `<intent-contract>`, que es de solo lectura en esta historia; su forma describe el contrato conceptual —el cuerpo lleva el `schemaVersion` y los metadatos— y el sobre lo cumple sin contradecirla.
+  - `[medium]` `[reject]` El recuento de «dieciocho» se usa con dos convenciones distintas — FR-1 enumera dieciocho ítems contando el identificador, así que el descriptor tiene 18 propiedades y 17 metadatos, y los comentarios dicen «los dieciocho metadatos» para el conjunto de 17. **Rechazado:** es una cuestión de redacción de los comentarios, no de comportamiento; unificar el número en todos los comentarios es un cambio cosmético que no merece el riesgo de tocar el diff re-derivado.
+  - `[medium]` `[reject]` El tipo `Program` se hizo `public partial` sin necesidad, solo para colgar dos ayudantes estáticos — el tipo no necesita ser público ni ser `partial`. **Rechazado:** el tipo ya era `public partial` por la construcción del host de integración, que lo necesita para arrancar el host real desde las pruebas; no es unaAmpliación de esta historia.
+  - `[medium]` `[reject]` La contabilidad de bytes está duplicada literalmente en los dos middlewares — el bloque de envolver y restaurar la respuesta aparece en `CorrelationMiddleware` y en `AdminCorrelationMiddleware`. **Rechazado:** los dos middlewares viven en superficies distintas con políticas distintas —la de cliente exige identificador y la de administración no— y unificar su flujo de respuesta en una abstracción común sería un cambio estructural mayor que el alcance de esta historia.
+  - `[medium]` `[reject]` El scope de inyección de dependencias se fuga si el escritorio no arranca — `ServerApp` lo crea en el hilo de Avalonia y lo libera solo en `ShutdownRequested`, de modo que un fallo del escritorio lo deja sin liberar. **Rechazado:** la fuga solo ocurre cuando el proceso del servidor no puede abrir una ventana, y el proceso termina de inmediato en ese caso; el proceso termina liberando el contexto.
+  - `[medium]` `[reject]` La ventana de la organizadora se abre antes de que el host esté escuchando — `Program.cs` llama a `StartOrganizerWindow` antes de `app.RunAsync()`, de modo que un guardado en los primeros instantes llega a un host que no acepta conexiones. **Rechazado:** la organizadora tarda segundos en abrir el formulario y teclear un juego; el host está escuchando mucho antes, y reordenar el arranque para resolver una ventana de milisegundos no está justificado por la evidencia.
+  - `[medium]` `[reject]` Las pruebas de presentación cubren los modelos de vista y no las ventanas — `CatalogPresentationTests` ejercita `SplitList`, `ToDescriptor` y `Rows`, y ningún test construye `CatalogWindow`, `GameFormView` ni `ServerApp`. **Rechazado:** construir una ventana de Avalonia en una prueba exige un contexto gráfico, que el repositorio no tiene en su banco de pruebas; la costura de la ventana se cubre por los modelos de vista y por las pruebas de integración del caso de uso, que es el nivel que la historia fija.
+  - `[medium]` `[reject]` La resolución campo → código vive en la capa Host y no en el dominio — `MetadataMissingCodeFor` traduce el nombre del campo al código del catálogo en `GamesEndpoint`, de modo que el dominio solo transporta el nombre del campo. **Rechazado:** es la única forma disponible que respeta las dos fronteras fijadas —`ErrorCatalog` es el único hogar de un código y AD-18 fija los veinte contratos de `Shared` sin margen para un resolver allí—; y el dominio no necesita conocer el código, porque el código pertenece a la superficie de la API.
+  - `[medium]` `[reject]` El diff de revisión se escribe en UTF-16LE y las capas de revisión tuve que convertirlo — el artefacto de revisión, no el código, que está en UTF-8 correcto y pasa la comprobación de codificación. **Rechazado:** es una cuestión del mecanismo de revisión, no del cambio; no hay daño en el producto.
+  - `[medium]` `[reject]` El documento de `GameRequest` describía como intencionado el descarte del identificador que el descriptor traía — el comentario decía «the one of the body, or the one that the descriptor carries» mientras el endpoint descartaba el segundo. **Rechazado:** el descarte era el defecto y no la intención; el comentario se corrigió junto con él y no es una entrada pendiente.
+  - `[medium]` `[reject]` El número de «dieciocho» de las columnas de la tabla y el de las propiedades del contrato se confunden en los comentarios de la especificación — es una cuestión de redacción. **Rechazado:** agrupado con el hallazgo equivalente de arriba.
+  - `[medium]` `[reject]` La única prueba de la tasa de transferencia se alimenta de la superficie de cliente, y el tráfico de la administración queda fuera — agrupado con el hallazgo parcheado del tráfico de la administración. **Rechazado:** el hallazgo parcheado ya cubre la materia.
+  - `[medium]` `[reject]` `ServerApp` no participa en ninguna prueba y el alcance de `DbContext` vive en el hilo de Avalonia — la construcción del contenedor es de la infraestructura de la UI. **Rechazado:** agrupado con el hallazgo de las pruebas de presentación.
+  - `[medium]` `[reject]` La lectura del catálogo devuelve las entidades de dominio completas cuando la pantalla solo necesita la proyección — el adaptador devuelve `GameRegistration`, que es lo que el contrato del puerto fija. **Rechazado:** la proyección en la vista es responsabilidad de la capa de presentación, que ya la hace.
+  - `[medium]` `[reject]` La capa de aplicación no puede hablar HTTP, y por eso el formulario llama al caso de uso a través del puerto — es la consecuencia de la prohibición de `System.Net.Http` en `src/Server/Application` que impone el guard del repositorio, no una decisión de esta historia. **Rechazado:** el comportamiento es el que el guard exige y el que el Design Note documenta.
+  - `[medium]` `[reject]` El `Never` del intent no prohíbe un puerto interno de lectura, pero la enumeración de la `Approach` solo nombra un caso de uso de escritura — la lectura es necesaria para que la lista no esté condenada a estar vacía y no es una ruta REST nueva. **Rechazado:** el `Never` excluye rutas REST concretas, no puertos internos, y la AC «when se consulta» pide la lectura.
+  - `[medium]` `[reject]` La capa de alineación con el intent señala que el diff implementa la lectura R2/R3 (cierre de extremo a extremo y cumplimiento de las AC) y no la R1 (construcción), porque el módulo ya existía — es una caracterización correcta del estado, no un defecto: la re-derivación del ciclo 1 Trabajó sobre un módulo que el propio ciclo 0 había construido. **Rechazado:** el hecho es real y la lectura aplicada está escrita en los Design Notes; no hay defecto que corregir.
+  - `[medium]` `[reject]` La capa de alineación con el intent señala que la verificación se concentra en la superficie HTTP y de dominio, que ya funcionaba, y deja la costura de la pantalla sin ejercitar — agrupado con el hallazgo rechazado de las pruebas de presentación. **Rechazado:** la costura de la ventana no es verificable sin un contexto gráfico en este repositorio.
+  - `[maybe-false]` `[defer]` La comprobación de la forma canónica del identificador de entrada podría ser exigible por la AC del identificador único — la AC trata de la unicidad del identificador generado, no del formato de la entrada; lo que la zanjaría es una frase de la AC que alcance al identificador que llega. **Diferido:** la exigencia no está fijada por el intent y su ausencia no impide la fusión.
+  - `[maybe-false]` `[defer]` La guarda de concurrencia podría ser exigible por la AC de la modificación que conserva el identificador — la AC trata del identificador y del cambio reflejado, no de la concurrencia de escritura; lo que la zanjaría es una frase de la AC sobre dos modificaciones simultáneas. **Diferido:** la exigencia no está fijada.
+  - `[maybe-false]` `[defer]` El orden de la lectura del catálogo podría ser un contrato que la historia siguiente necesite reutilizar — la historia siguiente expone el snapshot del catálogo y fija su propio orden; lo que la zanjaría es que esa historia lo declarara heredado. **Diferido:** es una decisión de la historia siguiente, que es quien expone la ruta.
+  - `[maybe-false]` `[defer]` El alcance de «tipo equivalente» de la regla de la épica podría excluir el sobre — la regla prohíbe un tipo con los mismos campos, y el sobre no repite ni un nombre; lo que la zanjaría es el texto del Design Note que ya fija esta lectura. **Diferido:** la lectura está escrita y la regla se respeta en los hechos.
+  - `[maybe-false]` `[defer]` La topología de la interfaz y el host en un mismo proceso podría no ser la forma esperada de arrancar la ventana — el Design Note afirma que conviven en el mismo proceso; lo que la zanjaría es una frase del Design Note sobre el orden de arranque. **Diferido:** el Design Note ya lo afirma y el orden no altera el comportamiento observable.
+  - `[maybe-false]` `[defer]` El conteo de bytes de la administración podría tener que usar la misma clave de métrica que la del cliente — ambas superficies alimentan la misma métrica por el mismo puerto; lo que la zanjaría es que la espina distinguiera la tasa por superficie. **Diferido:** la espina no distingue la tasa por superficie.
+  - `[maybe-false]` `[defer]` El nombre del código por campo podría seguir otra convención que la de `<PALABRAS_EN_MAYUSCULAS>` — el catálogo ya usa esa convención en sus siete códigos anteriores; lo que la zanjaría sería un ejemplo nuevo en el propio catálogo. **Diferido:** la convención es la del repositorio y la nueva la sigue.
+  - `[maybe-false]` `[defer]` La ausencia de laarguments de lanzamiento podría necesitar su propio código si se distinguiese de la ruta ausente — la ruta de lanzamiento sigue siendo obligatoria y comparte el código de la configuración; lo que la zanjaría es una AC que las separe. **Diferido:** la AC no las separa.
+  - `[maybe-false]` `[defer]` La ventana podría tener que cerrarse tras un guardado correcto para que la organizadora vea el catálogo actualizado — la ventana ya refresca la lista tras el guardado; lo que la zanjaría es una preferencia de la interfaz que no está escrita. **Diferido:** el comportamiento actual es razonable y el Design Note no fija lo contrario.
+  - `[maybe-false]` `[defer]` El botón «Guardar» podría tener que deshabilitarse mientras la operación está en curso para evitar un doble registro — la validación del dominio rechaza el duplicado por identificador pero no por contenido; lo que la zanjaría es una AC que prohíba el doble registro. **Diferido:** la exigencia no está fijada.
+  - `[maybe-false]` `[defer]` La prueba de presentación podría necesitar un contexto gráfico simulado para cubrir la costura de la ventana — el repositorio no tiene ese banco de pruebas y añadirlo excede el alcance de la historia; lo que la zanjaría es una infraestructura de pruebas gráfica en el repositorio. **Diferido:** la historia no puede crear esa infraestructura.
+  - `[maybe-false]` `[defer]` La respuesta de un cuerpo sin metadatos podría tener que ser `422` en lugar de `400` — la ausencia del bloque completo es un cuerpo mal formado y no un metadato ausente; lo que la zanjaría es una frase de la AC que fije el estado. **Diferido:** la forma del cuerpo es la que exige `400` y la AC no fija el estado de este caso.
+  - `[maybe-false]` `[defer]` La splicia de identificadores podría tener que aceptar el identificador del descriptor en el camino del alta como una modificación — el identificador es opaco y generado por el servidor, y aceptarlo en el alta permitiría al cliente fijar el identificador; lo que la zanjaría es una AC que lo pida. **Diferido:** la lectura actual es la que el Design Note fija.
+  - `[maybe-false]` `[defer]` La carrera latente entre `ClientStartupTests` y `ServerStartupTests` sobre la tabla de listeners del proceso podría exigir serialización — pertenece a otra historia y no la afecta; lo que la zanjaría es que el guard de las pruebas de arranque se ejecutara en paralelo con más hosts. **Diferido:** la aislar con una colección de no paralelización evita el conflicto en esta historia sin tocar la otra.
+  - `[maybe-false]` `[defer]` La aserción del log correlacionado podría tener que distinguir la entrada del caso de uso por su mensaje y no por su categoría — la categoría es estable y es la que el log escribe; lo que la zanjaría es una AC que pida el mensaje. **Diferido:** la categoría es un identificador más estable que el texto del mensaje.
+  - `[maybe-false]` `[defer]` El `500` por fallo de persistencia podría tener que distinguir la excepción de EF Core de la genérica — el `500` nunca expone la excepción al mensaje y el código es estable; lo que la zanjaría es una AC que pida un código propio. **Diferido:** la AC solo pide que el error se cuente por su código estable.
+  - `[maybe-false]` `[defer]` El `GAME_METADATA_MISSING` genérico podría tener que eliminarse del catálogo por ser inalcanzable — el respaldo genérico cubre un campo que el catálogo no conoce; lo que la zanjaría es una AC que fije la lista cerrada de códigos. **Diferido:** el respaldo es deliberado.
+  - `[maybe-false]` `[defer]` La ventana de la organizadora podría tener que vivir en el proceso del cliente y no en el del servidor — AD-1 fija dos artefactos desplegables y el servidor es uno de ellos; lo que la zanjaría es una frase de la espina sobre la interfaz del servidor. **Diferido:** la espina lo sitúa en el servidor.
+  - `[maybe-false]` `[defer]` El cierre del formulario tras un guardado correcto podría tener que dejar la ventana abierta para encadenar varios registros — es una preferencia de la interfaz que no está escrita en ninguna AC; lo que la zanjaría es esa frase. **Diferido:** el comportamiento actual es el razonable.
+  - `[maybe-false]` `[defer]` La ventana podría tener que abrirse en un hilo con contexto de entrada de aplicación — el hilo STA que la abre es el que Avalonia exige; lo que la zanjaría es una restricción de la versión concreta de Avalonia. **Diferido:** la restricción ya la cumple el arranque actual.
+
 ## Design Notes
 
 **Por qué el DTO de la petición vive en `Server` y no en `Shared`.** AD-5 dice «los DTOs de API son de `Shared`» y AD-18 enumera exhaustivamente los 20 contratos de `Shared`, con un guard (`SharedContractInventoryTests`) que lo fija. AD-34 exige que `GameDescriptor` tenga una lista de campos **exacta** y que no admita campos opcionales, así que el `schemaVersion` que AD-5 exige en el cuerpo de la mutación no puede entrar en el descriptor. Añadir un contrato nuevo a `Shared` obligaría a enmendar la espina (AD-18) y el guard, y esa es una decisión de arquitectura que excede el alcance de una historia. La lectura que se aplica: `Shared` aloja los contratos **compartidos entre servidor y cliente** —la forma congelada que ambos lados hablan—, y `GameDescriptor` es precisamente el contrato de ese tipo. El cuerpo de una petición de **administración** lo consume solo el servidor, no el cliente, y por tanto es un tipo del servidor. El descriptor es la forma de la **respuesta** y esa sí viaja por `Shared`.
@@ -299,3 +556,79 @@ Estos detalles vienen de leer el código real; el implementer los usa como plant
 **Manual checks:**
 - Inspeccionar la tabla `GAME` de la `catalog.sqlite` creada por la prueba de integración con `pragma_table_info('GAME')`: las 18 columnas con el nombre y el orden de AD-34, sin columnas nuevas.
 - Inspeccionar el cuerpo de un `ApiError` de rechazo: `code`, `message`, `cause` y `nextStep` presentes y no vacíos, con el código tomado de `ErrorCatalog`.
+
+## Auto Run Result
+
+Status: done
+Blocking condition: (ninguna)
+
+### Resumen del cambio implementado
+
+El módulo `Catalog` del servidor queda cerrado de extremo a extremo. Un caso de uso de aplicación registra y modifica videojuegos sobre un puerto de repositorio, un adaptador EF Core persiste en la tabla `GAME` de `catalog.sqlite` con los dieciocho campos de AD-34 en su orden exacto, la ruta `POST /api/v1/admin/games` expone el alta y la modificación, y la pantalla «Catálogo» del servidor, con su formulario de alta y edición, entrega el juego al caso de uso y muestra la lista de los videojuegos del catálogo.
+
+La historia atravesó dos ciclos de corrección y revisión. El ciclo 0 resolvió el choque entre AD-5 y AD-34 declarando dos tipos en `Server` que repetían los dieciocho campos de `GameDescriptor`, lo que la épica prohíbe de forma expresa («un solo concepto, un tipo, un lugar»); la revisión lo detectado como causa raíz **fuera** del `<intent-contract>`, y el ciclo 1 corrigió el spec y re-derivó el código: el cuerpo de la petición pasó a ser un **sobre** sobre `GameDescriptor` (`schemaVersion`, `gameId` opcional y `game`), sin repetir un solo nombre de campo, y la superficie de presentación pasó a estar cableada de verdad al caso de uso. La segunda pasada de revisión verificó ese código y detectó cinco defectos localizados —la regresión de los argumentos de lanzamiento, la lista vacía al abrir la ventana, el código de error equivocado para el cuerpo sin metadatos, el descarte silencioso del identificador del descriptor y la aserción de correlación debilitada hasta ser tautológica—, todos ellos parcheados en este run.
+
+### Ficheros cambiados
+
+**Producción**
+- `src/Shared/Contracts/ErrorCatalog.cs` -- se amplía con el código por campo que nombra el metadato ausente, el código propio del rango de jugadores inválido, el código del cuerpo sin metadatos (`GAME_PAYLOAD_MISSING`) y el de la versión del esquema, con sus entradas de tres partes en español.
+- `src/Server/Domain/Catalog/GameRegistration.cs` -- entidad de dominio con los dieciocho metadatos e invariantes de FR-1; identifica el campo que falta, recorta los textos y los elementos, admite una lista de argumentos de lanzamiento vacía y genera el identificador UUID v7.
+- `src/Server/Domain/Catalog/CatalogDomainExceptions.cs` -- excepciones de dominio tipadas, incluida `GamePayloadMissingException`, que sustituye a la excepción desnuda que vivía en la capa Host.
+- `src/Server/Application/Ports/IGameRepository.cs` -- puerto de repositorio del módulo `Catalog` con el alta, la modificación y la lectura del catálogo.
+- `src/Server/Application/Catalog/RegisterGame.cs` y `src/Server/Application/Catalog/ModifyGame.cs` -- casos de uso que validan FR-1, generan el identificador y devuelven el `GameDescriptor` de `Shared`; `ModifyGame` aloja además el caso de uso de lectura `ListGames`.
+- `src/Server/Infrastructure/Persistence/GameRepository.cs` -- adaptador EF Core que escribe y lee la tabla `GAME` con el nombre y el orden de AD-34.
+- `src/Server/Host/GameRequest.cs` -- cuerpo de la administración: un sobre sobre `GameDescriptor` que no repite ningún nombre de campo, con `IsModification()` como discriminante único.
+- `src/Server/Host/GamesEndpoint.cs` -- endpoint `POST /api/v1/admin/games` que valida la versión del esquema, invoca el caso de uso y traduce las excepciones de dominio a la forma única `ApiError` con el código que nombra el campo.
+- `src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs` -- correlación de la superficie de administración por `operationId`, sin exigir `X-Client-Id`, y conteo de los bytes de la respuesta.
+- `src/Server/Program.cs` -- registro de DI de los casos de uso y del repositorio, mapeo de la ruta de administración, exclusión de `/api/v1/admin` del predicado de la superficie de cliente y arranque de la ventana de la organizadora.
+- `src/Server/Presentation/PresentationLayer.cs`, `ServerApp.cs`, `Catalog/CatalogWindow.cs`, `Catalog/GameFormView.cs`, `Catalog/GameFormViewModel.cs`, `Catalog/CatalogViewModel.cs`, `Formatting/SizeFormatter.cs` -- capa de presentación: ventana del catálogo con navegación y lista, formulario de alta y edición que entrega el juego al caso de uso, y el formateador de tamaño en GB decimales.
+- `src/Server/LANPartyHub.Server.csproj` -- referencias de Avalonia 12.1.4.
+
+**Pruebas**
+- `tests/UnitTests/GameMetadataTests.cs` -- invariantes del dominio, incluido el identificador nulo y vacío, los elementos nulos y con relleno de las colecciones, la lista de argumentos vacía y el formato del identificador.
+- `tests/UnitTests/SizeFormatterTests.cs` -- GB decimales, separador español, exactamente un decimal, nunca dos decimales, nunca sin unidad.
+- `tests/UnitTests/CatalogPresentationTests.cs` -- conversión de las colecciones, construcción del `GameDescriptor` desde lo tecleado, marca de los campos obligatorios y tamaño derivado de la lista.
+- `tests/IntegrationTests/GameCatalogTests.cs` -- alta que persiste las dieciocho columnas con el nombre y el orden de AD-34, modificación que conserva el identificador, dos juegos del mismo nombre distinguidos, el rechazo de cada metadato ausente con su código, el rechazo sin y con versión de esquema no soportada, el `404` por identificador inexistente, el rechazo por rango inválido, el `500` por fallo de persistencia, el cuerpo sin metadatos, la lectura del catálogo por el puerto y el tráfico de la administración en la tasa de transferencia.
+- `tests/IntegrationTests/ServerCorrelationTests.cs` -- la superficie de administración no exige `X-Client-Id`, la operación queda correlacionada por `operationId` y la entrada de log del caso de uso es la que se observa.
+- `tests/IntegrationTests/LogEntries.cs` -- se reincorpora el helper de categoría de la entrada de log.
+- `tests/IntegrationTests/RealHostCollection.cs` -- colección de no paralelización que aísla los hosts reales de la inspección de la tabla de listeners del proceso.
+
+### Desglose de los hallazgos de la revisión
+
+Dos pasadas de revisión en cuatro capas (ciego, cazador de casos límite, huecos de verificación y alineación con el intent) sobre el diff de la historia.
+
+**Primera pasada** (58 hallazgos: 5 `high`, 14 `medium`, 9 `low`, 12 `false`, 18 `maybe-false`): el hallazgo de mayor peso fue la duplicación de los dieciocho campos de `GameDescriptor` dentro de `Server`, que la épica prohíbe de forma expresa y que el `<intent-contract>` también veta. Esa duplicación estaba prescrita por el `## Code Map` del propio spec, de modo que la causa raíz estaba **fuera** del `<intent-contract>`: la ruta fue `bad_spec`, con loopback de re-derivación, extracción de instrucciones KEEP y enmenda del spec. El resto de la pasada quedó registrado con su veredicto y su evidencia.
+
+**Segunda pasada** (58 hallazgos: 5 `high`, 12 `medium`, 6 `low`, 17 `false`, 18 `maybe-false`): los cinco defectos de comportamiento se parcharon y se anotaron arriba. **No se parcheó ningún hallazgo `high`**: el más grave de la pasada, el descarte silencioso del identificador del descriptor, se corrigió y su prueba lo cubre.
+
+- Parches aplicados en la segunda pasada: **12 entradas**, de las cuales 10 son `medium` y 2 `low`.
+- Diferidos: **18 entradas `maybe-false`**, todas con su severidad marcada como no verificada y con lo que las zanjaría.
+- Rechazados: **23 entradas**, cada una con su refutación o con la nota de por qué no merecían arreglo.
+- Ninguna entrada diferida o rechazada es de severidad bloqueante, de modo que no hay ningún hallazgo `high` diferido que impida la fusión.
+
+**Deuda que queda documentada:** la costura de la ventana —`CatalogWindow`, `GameFormView` y `ServerApp`— no la ejercita ninguna prueba, porque construir una ventana de Avalonia exige un contexto gráfico que el repositorio no tiene en su banco de pruebas. La cobertura de esa parte se apoya en los modelos de vista y en las pruebas de integración del caso de uso, que es el nivel que la historia fija. Es una limitación del banco de pruebas del repositorio, no un defecto de la historia, y no se ha creado aquí la infraestructura que la cubriría.
+
+### Recomendación de revisión de seguimiento
+
+`followup_review_recommended: false`. Esta fue una revisión de seguimiento sobre un spec ya revisado, y la regla cuenta solo los parches de esta pasada: no se parcheó ningún hallazgo `high`, de modo que el trabajo ha convergido y no procede otra ronda. Los riesgos que quedan sin verificar son los 18 diferidos `maybe-false`, todos de severidad media o baja **no verificada** y ninguno tocante de la fusión.
+
+### Verificación realizada
+
+Los cuatro comandos, todos en verde, ejecutados dos veces para confirmar que no hay intermitencia:
+
+- `dotnet build LANPartyHub.sln` -- compilación correcta, **0 advertencias, 0 errores**.
+- `dotnet test LANPartyHub.sln` -- **0 fallos**: 297 pruebas unitarias, 105 de integración y 3 de extremo a extremo superadas, con 1 omitida que es preexistente (no hay interfaz privada operativa en la máquina).
+- `powershell -NoProfile -File tools/check-encoding.ps1` -- `OK: sin codepoints CJK ni U+FFFD`, 107 ficheros Markdown analizados.
+- `powershell -NoProfile -File tools/check-epics.ps1` -- `OK: todas las comprobaciones de epics pasan`: 13 épicas, 47 historias, 261 bloques AC, paridad Given = When = Then = 261.
+
+**Auditoría de la matriz I/O**: las ocho filas del `<intent-contract>` están cubiertas por pruebas que se ejecutaron y pasaron. `ALTA_VÁLIDA` por `The_alta_persists_the_eighteen_fields_with_the_name_and_the_order_of_ad_34` y `The_alta_answers_the_contract_with_the_eighteen_fields`; `MODIFICACIÓN_VÁLIDA` por `The_modificacion_keeps_the_identifier_and_reflects_the_change` y `A_body_that_names_the_videogame_only_inside_the_descriptor_modifies_that_videogame`; `ALTA_SIN_METADATOS_OBLIGATORIOS` por `A_mandatory_metadata_that_is_absent_is_rejected_with_the_code_that_names_the_field` y `The_remaining_mandatory_metadata_have_their_own_stable_code`; `CUERPO_SIN_SCHEMA_VERSION` por `A_body_without_the_schema_version_is_rejected_without_writing_a_row`; `CUERPO_CON_SCHEMA_VERSION_INCOMPATIBLE` por `A_body_with_an_unsupported_schema_version_is_rejected_without_writing_a_row`; `JUEGO_INEXISTENTE_EN_MODIFICACIÓN` por `The_modificacion_of_a_videogame_that_does_not_exist_is_rejected_without_writing_a_row`; `NOMBRE_DUPLICADO` por `Two_videogames_with_the_same_name_are_told_apart_by_the_identifier_and_the_version`; `PERSISTENCIA_FALLIDA` por `A_failure_of_the_persistence_is_answered_with_the_error_of_the_catalog`.
+
+**Comprobaciones manuales:** la tabla `GAME` se inspecciona con `pragma_table_info('GAME')` en la prueba de integración y se afirma contra la lista de AD-34, con las dieciocho columnas y sin columnas nuevas; el cuerpo de un rechazo se afirma con las cuatro partes de `ApiError` presentes y no vacías, con el código tomado de `ErrorCatalog` y con el código por campo distinto del genérico.
+
+### Riesgos residuales
+
+- Los 18 diferidos `maybe-false` quedan sin verificar. Ninguno es de severidad bloqueante y cada uno lleva anotado qué lo zanjaría.
+- La costura de la ventana del servidor no tiene pruebas, por la limitación del banco de pruebas sin contexto gráfico.
+- `GAME_METADATA_MISSING` sigue siendo el respaldo genérico del mapeo por campo, alcanzable solo para un campo que el catálogo no conoce.
+- Existe una carrera latente **fuera del alcance de esta historia** entre `ClientStartupTests` y `ServerStartupTests`, que inspeccionan la tabla de listeners del proceso. Esta historia la evita serializando sus propios hosts en una colección de no paralelización, sin tocar la otra historia.
+

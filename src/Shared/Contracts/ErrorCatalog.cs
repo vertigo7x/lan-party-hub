@@ -45,6 +45,13 @@ public static class ErrorCatalog
     public const string GameMetadataMissingCode = "GAME_METADATA_MISSING";
 
     /// <summary>
+    /// The body of the mutation does not carry the metadata of the videogame at all
+    /// (AD-5). It is a different absence from the one of the <c>schemaVersion</c>, and it
+    /// is counted apart so the metric of errors per code does not mix the two.
+    /// </summary>
+    public const string GamePayloadMissingCode = "GAME_PAYLOAD_MISSING";
+
+    /// <summary>
     /// The body of the mutation does not carry the <c>schemaVersion</c> that every mutation
     /// of the API carries (AD-5).
     /// </summary>
@@ -161,6 +168,11 @@ public static class ErrorCatalog
             "Falta un metadato obligatorio del videojuego",
             "El registro del videojuego no lleva alguno de los metadatos que la administración del catálogo exige.",
             "Rellena el campo que falta y vuelve a guardar el videojuego."),
+        new(
+            GamePayloadMissingCode,
+            "La petición no lleva los metadatos del videojuego",
+            "El cuerpo de la mutación no lleva el bloque de metadatos del videojuego que la administración del catálogo espera.",
+            "Añade el bloque de metadatos del videojuego al cuerpo de la petición y vuelve a intentarlo."),
         new(
             SchemaVersionMissingCode,
             "La petición no lleva la versión del esquema",

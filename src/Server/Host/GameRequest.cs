@@ -1,3 +1,4 @@
+using LANPartyHub.Server.Domain.Catalog;
 using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Server.Host;
@@ -47,19 +48,19 @@ public sealed class GameRequest
 
     /// <summary>
     /// Projects the body of the request onto the contract that the use cases of the
-    /// catalog receive. The identifier of the videogame is the one of the body, or the
-    /// one that the descriptor carries when the body does not name it.
+    /// catalog receive. The identifier of the videogame is the one of the body, and when
+    /// the body does not name it, the one that the descriptor carries is the one that
+    /// tells a modificación from an alta.
     /// </summary>
     /// <returns>The contract of the videogame.</returns>
-    /// <exception cref="GameRequestInvalidException">
+    /// <exception cref="GamePayloadMissingException">
     /// The body does not carry the metadata of the videogame.
     /// </exception>
     public GameDescriptor ToDescriptor()
     {
         if (Game is null)
         {
-            throw new GameRequestInvalidException(
-                "El cuerpo de la petición no lleva los metadatos del videojuego.");
+            throw new GamePayloadMissingException();
         }
 
         if (string.IsNullOrWhiteSpace(GameId))
@@ -69,18 +70,16 @@ public sealed class GameRequest
 
         return Game with { GameId = GameId.Trim() };
     }
-}
 
-/// <summary>
-/// The body of the administration does not carry the metadata of the videogame (AD-5,
-/// AD-34).
-/// </summary>
-public sealed class GameRequestInvalidException : Exception
-{
-    /// <summary>Creates the exception of a body that does not carry the metadata.</summary>
-    /// <param name="message">Message that tells what is missing in the body.</param>
-    public GameRequestInvalidException(string message)
-        : base(message)
-    {
-    }
+    /// <summary>
+    /// Tells whether the body asks for a modificación or for an alta. The identifier of
+    /// the body is the one that decides it, and when the body does not carry it, the one
+    /// that the descriptor carries is the one that decides it: the two are read the same
+    /// way, so a body that names the videogame only inside the descriptor is a
+    /// modificación and not an alta that discards the identifier (AD-34).
+    /// </summary>
+    /// <returns><c>true</c> when the body asks for a modificación.</returns>
+    public bool IsModification() =>
+        !string.IsNullOrWhiteSpace(GameId)
+        || (Game is not null && !string.IsNullOrWhiteSpace(Game.GameId));
 }

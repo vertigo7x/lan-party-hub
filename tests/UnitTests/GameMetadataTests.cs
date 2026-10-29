@@ -203,6 +203,16 @@ public sealed class GameMetadataTests
     }
 
     [Fact]
+    public void An_empty_list_of_launch_arguments_is_accepted()
+    {
+        // Un videojuego que se lanza sin argumentos es un caso ordinario: la lista de
+        // argumentos es la única colección de la ficha que puede estar vacía (AD-34).
+        var game = Create(launchArguments: []);
+
+        Assert.Empty(game.LaunchArguments);
+    }
+
+    [Fact]
     public void The_launch_arguments_are_trimmed_like_the_rest_of_the_mandatory_collections()
     {
         var game = Create(launchArguments: [" -novid ", "-fullscreen"]);

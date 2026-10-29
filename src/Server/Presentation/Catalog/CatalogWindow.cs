@@ -156,6 +156,11 @@ public sealed class CatalogWindow : Window
 
         Grid.SetColumn(navigation, 0);
         Grid.SetColumn(main, 1);
+
+        // The list is read when the window opens, so the section never shows an empty
+        // catalog while the database holds videogames. The organizer can still refresh it
+        // with the button.
+        Opened += async (_, _) => await RefreshAsync().ConfigureAwait(true);
     }
 
     /// <summary>View model of the section.</summary>
