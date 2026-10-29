@@ -36,6 +36,18 @@
   </ItemGroup>
 
   <!--
+    AD-1: the server is a single deployable, so its interface lives inside src/Server and
+    not in a project of its own: the binary of the server carries the host HTTP and the
+    window of the organizer in the same process, and the solution keeps exactly six
+    projects. The version is the one that the spine fixes, the same as the client.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+  </ItemGroup>
+
+  <!--
     AD-17: the configuration file that sits next to the binary is optional and carries the
     lowest priority of the three configuration sources (flags > env > file). It is copied to
     the output by the web SDK default, which already includes appsettings.json as Content
