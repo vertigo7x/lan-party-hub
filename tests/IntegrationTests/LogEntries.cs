@@ -18,6 +18,15 @@ internal static class LogEntries
         && name.StartsWith("LANPartyHub", StringComparison.Ordinal);
 
     /// <summary>
+    /// Tells whether the entry was written by the given category of the product.
+    /// </summary>
+    /// <param name="entry">Entry of the log.</param>
+    /// <param name="category">Category of the logger that wrote the entry.</param>
+    public static bool HasCategory(JsonElement entry, string category) =>
+        entry.TryGetProperty("Category", out var entryCategory)
+        && entryCategory.GetString() == category;
+
+    /// <summary>
     /// The scopes of the entry. A scope that is not an object is not a scope of the
     /// product and it is ignored.
     /// </summary>
@@ -112,6 +121,27 @@ internal static class LogEntries
                 return scope.TryGetProperty("OperationId", out _);
             }
 
+            if (scope.TryGetProperty("OperationId", out var scopeOperationId)
+                && scopeOperationId.GetString() == operationId)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Tells whether the entry carries a correlation scope with the given identifier of
+    /// the unit of work. It does not ask for the identifier of the client, because the
+    /// surface of the administration does not carry one (AD-30).
+    /// </summary>
+    /// <param name="entry">Entry of the log.</param>
+    /// <param name="operationId">Identifier of the unit of work.</param>
+    public static bool HasOperationScope(JsonElement entry, string operationId)
+    {
+        foreach (var scope in Scopes(entry))
+        {
             if (scope.TryGetProperty("OperationId", out var scopeOperationId)
                 && scopeOperationId.GetString() == operationId)
             {

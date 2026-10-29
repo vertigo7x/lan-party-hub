@@ -1,3 +1,4 @@
+using LANPartyHub.Server.Application.Catalog;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
@@ -6,6 +7,7 @@ using LANPartyHub.Server.Infrastructure.Networking;
 using LANPartyHub.Server.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -59,6 +61,14 @@ public partial class Program
     /// the identifier of the client and opens the correlation scope of its unit of work.
     /// </summary>
     public const string ClientSurfacePrefix = "/api/v1";
+
+    /// <summary>
+    /// Prefix of the surface of the administration (AD-30). The organizer is not a client
+    /// of the LAN and does not carry the identifier of a client, so the surface of the
+    /// administration is not covered by the middleware of the client. It is correlated all
+    /// the same, by the identifier of the unit of work (AD-15).
+    /// </summary>
+    public const string AdminSurfacePrefix = "/api/v1/admin";
 
     /// <summary>
     /// Builds the host of the event server.
@@ -173,6 +183,12 @@ public partial class Program
             connectionString,
             sqlite => sqlite.MigrationsAssembly(typeof(CatalogDbContext).Assembly.GetName().Name)));
 
+        // AD-1, AD-22: the module of the catalog of the server. The use cases depend on
+        // the port of the repository and never on the adapter that implements it.
+        builder.Services.AddScoped<IGameRepository, GameRepository>();
+        builder.Services.AddScoped<RegisterGame>();
+        builder.Services.AddScoped<ModifyGame>();
+
         var app = builder.Build();
 
         // AD-15: the effective configuration is published, because it is the surface the
@@ -204,13 +220,40 @@ public partial class Program
         // reaches /api/v1 opens the scope of its unit of work and has to carry the
         // identifier of the client. The surface of the host, /metrics, is not the surface
         // of the client: the diagnosis of the server never depends on a client.
+        //
+        // AD-30: the surface of the administration is not the surface of the client. The
+        // organizer is not a client of the LAN, so the predicate leaves /api/v1/admin
+        // out of the branch of the client: every other route of /api/v1 keeps requiring
+        // the identifier of the client, and the administration keeps its correlation by the
+        // identifier of the unit of work.
         app.UseWhen(
-            context => context.Request.Path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase),
+            context => IsClientSurface(context.Request.Path),
             branch => branch.UseMiddleware<CorrelationMiddleware>());
+
+        // AD-15: the surface of the administration is correlated by the identifier of the
+        // unit of work. It does not ask for the identifier of the client, because the
+        // organizer is not a client (AD-30).
+        app.UseWhen(
+            context => context.Request.Path.StartsWithSegments(AdminSurfacePrefix, StringComparison.OrdinalIgnoreCase),
+            branch => branch.UseMiddleware<AdminCorrelationMiddleware>());
 
         // AD-15: the metrics are published locally, on the same HTTP port.
         MetricsEndpoint.Map(app, app.Services.GetRequiredService<HostMetrics>());
 
+        // AD-5, AD-34: the administration of the videogames of the catalog.
+        GamesEndpoint.Map(app);
+
         return app;
     }
+
+    /// <summary>
+    /// Tells whether a path belongs to the surface of the client. The surface of the
+    /// administration is excluded, because the organizer is not a client of the LAN and
+    /// does not carry the identifier of a client (AD-30).
+    /// </summary>
+    /// <param name="path">Path of the request.</param>
+    /// <returns><c>true</c> when the path belongs to the surface of the client.</returns>
+    private static bool IsClientSurface(PathString path) =>
+        path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase)
+        && !path.StartsWithSegments(AdminSurfacePrefix, StringComparison.OrdinalIgnoreCase);
 }
