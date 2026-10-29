@@ -244,7 +244,7 @@ def run_command(
             stdin=subprocess.DEVNULL,
         )
         try:
-            process.wait(timeout=timeout)
+            code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             _kill_process_tree(process)
             try:
@@ -1255,6 +1255,31 @@ deferred:
                 str(updated.get("epic-7", "")).lower() == "in-progress",
                 "an epic with pending stories should stay in progress",
             )
+
+        # The command runner, with and without a log file.
+        with tempfile.TemporaryDirectory() as temporary:
+            logs = Path(temporary)
+            quiet = run_command((sys.executable, "-c", "print('hello')"))
+            check(quiet.ok, "run_command does not report a successful command")
+            check("hello" in quiet.stdout, "run_command does not capture the output")
+
+            logged = run_command((sys.executable, "-c", "print('logged')"), log_path=logs / "out.log")
+            check(logged.ok, "run_command does not report a successful command with a log")
+            check(logged.log is not None and logged.log.exists(), "run_command does not write the log file")
+            check(
+                logged.log is not None and "logged" in logged.log.read_text(encoding="utf-8"),
+                "run_command does not stream the output to the log file",
+            )
+
+            failed = run_command((sys.executable, "-c", "raise SystemExit(3)"), log_path=logs / "fail.log")
+            check(not failed.ok and failed.code == 3, "run_command does not report the exit code")
+
+            timed_out = run_command(
+                (sys.executable, "-c", "import time; time.sleep(30)"),
+                log_path=logs / "slow.log",
+                timeout=1,
+            )
+            check(not timed_out.ok and timed_out.code == 124, "run_command does not time out")
 
         # The real repository, for the checks that need real artefacts.
         try:
