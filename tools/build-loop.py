@@ -75,9 +75,13 @@ BLOCKING_SEVERITIES = {"s0", "s1", "high", "critical", "blocker", "alta", "bloqu
 DEFAULT_COMMAND_TIMEOUT = 600.0
 DEFAULT_VERIFICATION_TIMEOUT_MINUTES = 60.0
 
-# A run that stops producing output for this long is not working, it is
+# A run that stops making progress for this long is not working, it is
 # waiting for a provider request that will never come back.
-DEFAULT_STALL_TIMEOUT_MINUTES = 12.0
+DEFAULT_STALL_TIMEOUT_MINUTES = 8.0
+
+# The ceiling of a single attempt. A story that needs more than this is not
+# going to get it by waiting.
+DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 120.0
 
 # The model the unattended runs use. The default agent's own model fails to
 # refresh its token in this environment, and a run that cannot answer leaves no
@@ -266,6 +270,39 @@ def run_command(
     return CommandResult(argv=argv, code=code, log=log_path, seconds=time.time() - started)
 
 
+OPENCODE_LOG_DIR = Path.home() / ".local" / "share" / "opencode" / "log"
+
+
+def progress_signature(log_path: Path) -> tuple:
+    """A fingerprint of the activity of the run, children included.
+
+    The parent session goes silent while its review subagents work: the
+    children write to their own sessions, so the parent's event stream alone
+    is not a signal of life. The opencode log carries the activity of every
+    session of the process, so it is part of the fingerprint.
+    """
+    try:
+        size = log_path.stat().st_size
+    except OSError:
+        size = 0
+    newest_mtime = 0.0
+    newest_size = 0
+    if OPENCODE_LOG_DIR.is_dir():
+        try:
+            candidates = list(OPENCODE_LOG_DIR.glob("*.log"))
+        except OSError:
+            candidates = []
+        for candidate in candidates:
+            try:
+                stat = candidate.stat()
+            except OSError:
+                continue
+            if stat.st_mtime > newest_mtime:
+                newest_mtime = stat.st_mtime
+                newest_size = stat.st_size
+    return (size, round(newest_mtime, 3), newest_size)
+
+
 def run_command_watched(
     argv: Sequence[str],
     log_path: Path,
@@ -273,12 +310,12 @@ def run_command_watched(
     stall_timeout: float | None = None,
     cwd: Path = REPO_ROOT,
 ) -> CommandResult:
-    """Run a command and kill it when its output stops growing.
+    """Run a command and kill it when the whole run stops making progress.
 
     A provider request that never answers looks exactly like a long run: the
-    process is alive and the log does not move. The stall timeout tells the
-    two apart, and the loop continues the session instead of waiting for a
-    request that will never come back.
+    process is alive and nothing moves. The stall timeout tells the two apart,
+    and the loop continues the session instead of waiting for a request that
+    will never come back.
     """
     started = time.time()
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -293,7 +330,7 @@ def run_command_watched(
             stdin=subprocess.DEVNULL,
         )
         code = 0
-        last_size = -1
+        signature = progress_signature(log_path)
         last_change = time.time()
         while True:
             try:
@@ -309,15 +346,12 @@ def run_command_watched(
                     pass
                 code = 124
                 break
-            try:
-                size = log_path.stat().st_size
-            except OSError:
-                size = -1
-            if size != last_size:
-                last_size = size
+            current = progress_signature(log_path)
+            if current != signature:
+                signature = current
                 last_change = time.time()
             elif stall_timeout is not None and time.time() - last_change > stall_timeout:
-                _log(f"the command stopped producing output for {stall_timeout / 60:.0f} minutes")
+                _log(f"the run stopped making progress for {stall_timeout / 60:.0f} minutes")
                 _kill_process_tree(process)
                 try:
                     process.wait(timeout=30)
@@ -1679,8 +1713,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--timeout-minutes",
         type=float,
-        default=240.0,
-        help="how long the skill may run for one story",
+        default=DEFAULT_ATTEMPT_TIMEOUT_MINUTES,
+        help="how long the skill may run for one story, per attempt",
     )
     parser.add_argument(
         "--verification-timeout-minutes",
