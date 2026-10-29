@@ -83,6 +83,15 @@ def story_paths(story) -> tuple[Path, Path, Path]:
     return plan, result, LOG_ROOT / story.label
 
 
+def is_complete_plan(plan: Path) -> bool:
+    """A planner may finish its file before its CLI session reaches the timeout."""
+    try:
+        content = plan.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return len(content.strip()) >= 300 and all(section in content for section in ("# Story", "## Alcance", "## Ficheros"))
+
+
 def changed_paths(base: str) -> list[str]:
     output = legacy.git("diff", "--name-only", f"{base}..HEAD", check=False).stdout
     return [line.strip() for line in output.splitlines() if line.strip()]
@@ -259,8 +268,13 @@ def process_story(story, args: argparse.Namespace) -> None:
         base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
 
     if not plan.exists():
-        run_phase("plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=10)
-    if not plan.exists() or not plan.read_text(encoding="utf-8", errors="replace").strip():
+        try:
+            run_phase("plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1)
+        except legacy.DriverError:
+            if not is_complete_plan(plan):
+                raise
+            log("planner timed out after writing a complete plan; continuing without a second attempt")
+    if not is_complete_plan(plan):
         raise legacy.DriverError(f"planner did not create {relative(plan)}")
 
     run_phase("implementation", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir, timeout_minutes=30)
@@ -353,6 +367,12 @@ def self_test() -> int:
         failures.append("a merged squash commit was not parsed")
     if merged_commit_from_pr('{"state":"OPEN","mergeCommit":{"oid":"abc"}}'):
         failures.append("an open pull request was parsed as merged")
+    self_test_plan = PLAN_ROOT / "self-test-plan.md"
+    self_test_plan.parent.mkdir(parents=True, exist_ok=True)
+    self_test_plan.write_text("# Story 0.0\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
+    if not is_complete_plan(self_test_plan):
+        failures.append("a complete plan was rejected")
+    self_test_plan.unlink(missing_ok=True)
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")
