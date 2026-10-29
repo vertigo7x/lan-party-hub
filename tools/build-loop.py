@@ -1335,11 +1335,12 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     merge_pull_request(pr_number, subject, body)
     _log(f"merged pull request #{pr_number} into {BASE_BRANCH}")
 
+    # The working tree stays where it is: `main` may be checked out in another
+    # worktree, and the next story branches from `origin/main` anyway.
     git("fetch", "origin", BASE_BRANCH)
-    git("checkout", BASE_BRANCH)
-    git("reset", "--hard", f"origin/{BASE_BRANCH}")
     delete_remote_branch(story.branch)
-    if branch_exists(story.branch):
+    current = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch_exists(story.branch) and current != story.branch:
         git("branch", "-D", story.branch)
 
     # The merge has to be in `origin/main` and the story has to read as done,
