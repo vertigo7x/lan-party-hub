@@ -174,12 +174,25 @@ public sealed class GameFormViewModel
     /// <summary>
     /// The label of a field with the mark of the obligation, the way the form shows it
     /// when FR-1 demands it.
+    ///
+    /// <para>
+    /// The mark is added only when the label does not already carry it: the form writes
+    /// the visible labels with the mark and passes that same text here, so the label of
+    /// the tooltip would show the mark twice.
+    /// </para>
     /// </summary>
     /// <param name="label">Label of the field.</param>
     /// <param name="fieldName">Name of the field, as the domain names it.</param>
     /// <returns>The label with the mark of the obligation, when the field is obligatory.</returns>
-    public static string LabelFor(string label, string fieldName) =>
-        RequiredFieldNames.Contains(fieldName, StringComparer.Ordinal) ? $"{label} *" : label;
+    public static string LabelFor(string label, string fieldName)
+    {
+        if (!RequiredFieldNames.Contains(fieldName, StringComparer.Ordinal))
+        {
+            return label;
+        }
+
+        return label.Contains('*', StringComparison.Ordinal) ? label : $"{label} *";
+    }
 
     /// <summary>
     /// Splits a list of the form into the values that it holds, discarding the empty ones.

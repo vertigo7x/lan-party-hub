@@ -340,6 +340,133 @@ public sealed class ServerCorrelationTests
         Assert.Empty(newConnections);
     }
 
+    [Fact]
+    public async Task The_administration_surface_does_not_ask_for_the_identifier_of_the_client()
+    {
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        // El organizador no es un cliente de la LAN, así que la superficie de la
+        // administración no exige la cabecera X-Client-Id (AD-30).
+        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+        request.Content = BuildValidGameBody();
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_administration_surface_is_still_correlated_by_the_identifier_of_the_operation()
+    {
+        await using var capture = await ConsoleLogCapture.StartAsync();
+
+        await using (var host = await TestServer.StartAsync(TestContext.Current.CancellationToken))
+        {
+            using var client = host.CreateClient();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+            request.Content = BuildValidGameBody();
+            request.Headers.Add(CorrelationMiddleware.OperationIdHeaderName, OperationId);
+
+            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+
+            // La operación sigue correlacionada por su identificador, que es lo que AD-15
+            // exige para toda operación.
+            Assert.Equal(
+                OperationId,
+                response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single());
+        }
+
+        // La entrada del log de la operación lleva el identificador de la unidad de
+        // trabajo, y no el del cliente, porque la administración no lo tiene (AD-30).
+        // Varias entradas pueden llevar el identificador: la del middleware y la del
+        // caso de uso, y las dos están dentro del mismo scope de correlación.
+        var entries = capture.Entries
+            .Where(candidate => LogEntries.IsProduct(candidate)
+                && LogEntries.Scopes(candidate).Any(scope =>
+                    scope.TryGetProperty("OperationId", out var operationId)
+                    && operationId.GetString() == OperationId))
+            .ToArray();
+
+        Assert.NotEmpty(entries);
+
+        Assert.All(entries, entry =>
+        {
+            var scopes = LogEntries.Scopes(entry).ToArray();
+
+            Assert.Contains(
+                scopes,
+                scope => scope.TryGetProperty("OperationId", out var operationId)
+                    && operationId.GetString() == OperationId);
+        });
+    }
+
+    [Fact]
+    public async Task The_administration_surface_gets_an_identifier_of_the_operation_when_the_request_does_not_carry_one()
+    {
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+        request.Content = BuildValidGameBody();
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        var operationId = response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single();
+
+        Assert.Equal(CorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
+        Assert.NotEqual(string.Empty, operationId);
+    }
+
+    /// <summary>
+    /// Builds a body of the administration of the catalog with the eighteen metadata de
+    /// FR-1 (AD-34).
+    /// </summary>
+    /// <returns>The content of the request.</returns>
+    private static StringContent BuildValidGameBody()
+    {
+        var body = new
+        {
+            schemaVersion = GamesEndpoint.SupportedSchemaVersion,
+            game = new
+            {
+                gameId = string.Empty,
+                name = "Counter-Strike 2",
+                description = "Disparadores en primera persona.",
+                categories = new[] { "Shooter" },
+                tags = new[] { "fps" },
+                coverImage = "cover.png",
+                images = new[] { "captura-1.png" },
+                version = "1.41.3",
+                sizeBytes = 7_600_000_000,
+                minPlayers = 1,
+                maxPlayers = 10,
+                operatingSystem = "Windows",
+                distributionType = "Servidor",
+                installationType = "Portable",
+                launchConfiguration = new
+                {
+                    executablePath = "bin\\cs2.exe",
+                    arguments = new[] { "-novid" },
+                    workingDirectory = "game\\bin",
+                },
+                dependencies = new[] { "DirectX 12" },
+                license = "Propietaria",
+                distributionRestrictions = "Solo para el evento",
+            },
+        };
+
+        return new StringContent(
+            JsonSerializer.Serialize(body),
+            System.Text.Encoding.UTF8,
+            "application/json");
+    }
+
     /// <summary>
     /// Asserts that the body of a rejection is the single shape of error of the system,
     /// taken from the catalog.

@@ -82,7 +82,7 @@ public sealed class SizeFormatterTests
         var value = SizeFormatter.FormatValue(sizeBytes);
 
         Assert.Equal(1, value.Count(character => character == ','));
-        Assert.DoesNotContain('.', value, StringComparison.Ordinal);
+        Assert.DoesNotContain(".", value, StringComparison.Ordinal);
     }
 
     [Theory]
