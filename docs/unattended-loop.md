@@ -43,8 +43,15 @@ uv run tools/build-loop.py --no-merge             # abre el PR y se para antes d
 uv run tools/build-loop.py --self-test            # comprueba el driver y sale
 uv run tools/build-loop.py --timeout-minutes 360  # techo de tiempo del skill por historia
 uv run tools/build-loop.py --verification-timeout-minutes 30
+uv run tools/build-loop.py --model minimax-coding-plan/MiniMax-M3
 uv run tools/build-loop.py --log-dir .build-loop/logs
 ```
+
+El driver lanza el skill con `opencode run --dangerously-skip-permissions`: sin esa bandera el
+agente se detiene en cada permiso y el bucle no puede desatenderse. El modelo viene fijado
+por defecto (`minimax-coding-plan/MiniMax-M3`) y se cambia con `--model`, porque el modelo
+del agente por defecto no refresca su token en este entorno y una ejecución que no puede
+contestar no deja spec detrás.
 
 Los logs de cada historia quedan en `.build-loop/logs/<sello>/<epica>-<historia>/`: `driver.log`
 es la traza del propio driver, `skill.log` la sesión del skill, `verification/` el resultado de

@@ -73,6 +73,11 @@ BLOCKING_SEVERITIES = {"s0", "s1", "high", "critical", "blocker", "alta", "bloqu
 DEFAULT_COMMAND_TIMEOUT = 600.0
 DEFAULT_VERIFICATION_TIMEOUT_MINUTES = 60.0
 
+# The model the unattended runs use. The default agent's own model fails to
+# refresh its token in this environment, and a run that cannot answer leaves no
+# spec behind, so the model is pinned and can be changed with --model.
+DEFAULT_MODEL = "minimax-coding-plan/MiniMax-M3"
+
 STORY_KEY_PATTERN = re.compile(r"^(\d+)-(\d+)-(.+)$")
 SPEC_FILE_PATTERN = re.compile(r"^spec-(\d+)[.-](\d+)-.+\.md$")
 
@@ -764,17 +769,29 @@ def build_intent(story: Story) -> str:
     )
 
 
-def run_skill(story: Story, log_dir: Path, timeout_minutes: float) -> CommandResult:
+def run_skill(
+    story: Story, log_dir: Path, timeout_minutes: float, model: str, agent: str = ""
+) -> CommandResult:
     intent = build_intent(story)
     prompt = f"bmad-build-auto {intent}"
     log_path = log_dir / "skill.log"
     _log(f"running the bmad-build-auto skill for story {story.short_id}")
     _log(f"log: {log_path}")
-    return run_command(
-        ("opencode", "run", "--auto", prompt),
-        log_path=log_path,
-        timeout=timeout_minutes * 60,
-    )
+    argv = ["opencode", "run", "--dangerously-skip-permissions"]
+    if model:
+        argv.extend(["--model", model])
+    if agent:
+        argv.extend(["--agent", agent])
+    argv.append(prompt)
+    return run_command(argv, log_path=log_path, timeout=timeout_minutes * 60)
+
+
+def log_tail(path: Path | None, lines: int = 15) -> str:
+    """The last lines of a log, for an error message that has to stand alone."""
+    if path is None or not path.exists():
+        return ""
+    content = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(content[-lines:])
 
 
 def build_pull_request_body(
@@ -914,7 +931,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
         _log(f"resuming: pull request #{existing_pr[0]} is already open and the spec is done")
     else:
-        skill_result = run_skill(story, log_dir, args.timeout_minutes)
+        skill_result = run_skill(story, log_dir, args.timeout_minutes, args.model, args.agent)
         _log(f"the skill finished with exit code {skill_result.code}")
         if not skill_result.ok:
             raise DriverError(
@@ -930,7 +947,8 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         if spec is None:
             raise DriverError(
                 f"the skill wrote no spec for story {story.short_id}; "
-                f"read {log_dir / 'skill.log'} before retrying"
+                f"read {log_dir / 'skill.log'} before retrying.\n"
+                f"Last lines of the skill log:\n{log_tail(skill_result.log)}"
             )
 
     meta = read_frontmatter(spec)
@@ -1026,7 +1044,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
 # ---------------------------------------------------------------------------
 
 
-def preflight() -> None:
+def preflight(args: argparse.Namespace) -> None:
     required = {"git", "gh", "opencode", "dotnet", "powershell", "uv"}
     required.update(command.argv[0] for command in VERIFICATION_COMMANDS)
     for tool in sorted(required):
@@ -1040,6 +1058,13 @@ def preflight() -> None:
         raise DriverError("the repository has no 'origin' remote")
     if (REPO_ROOT / ".git/rebase-merge").exists() or (REPO_ROOT / ".git/rebase-apply").exists():
         raise DriverError("the repository is in the middle of a rebase")
+    if args.model:
+        models = run_command(("opencode", "models"), timeout=120)
+        if args.model not in models.stdout:
+            raise DriverError(
+                f"the model '{args.model}' is not available to opencode; pick another one with "
+                "--model"
+            )
     require_clean_tree()
 
 
@@ -1338,6 +1363,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="how long each verification command may run",
     )
     parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help="the model the skill runs on; the default one has to be reachable without a refresh",
+    )
+    parser.add_argument("--agent", default="", help="the opencode agent the skill runs on")
+    parser.add_argument(
         "--no-merge",
         action="store_true",
         help="open the pull request but stop before merging it",
@@ -1398,7 +1429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
 
     try:
-        preflight()
+        preflight(args)
     except DriverError as error:
         _log(f"STOP: {error}")
         return 2
