@@ -3,6 +3,12 @@
   "agent": {
     "terra-orchestrator": {
       "steps": 40
+    },
+    "general": {
+      "steps": 40
+    },
+    "openai-reviewer": {
+      "steps": 30
     }
   }
 }

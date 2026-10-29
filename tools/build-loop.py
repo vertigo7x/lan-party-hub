@@ -73,6 +73,10 @@ BLOCKING_SEVERITIES = {"s0", "s1", "high", "critical", "blocker", "alta", "bloqu
 DEFAULT_COMMAND_TIMEOUT = 600.0
 DEFAULT_VERIFICATION_TIMEOUT_MINUTES = 60.0
 
+# A run that stops producing output for this long is not working, it is
+# waiting for a provider request that will never come back.
+DEFAULT_STALL_TIMEOUT_MINUTES = 12.0
+
 # The model the unattended runs use. The default agent's own model fails to
 # refresh its token in this environment, and a run that cannot answer leaves no
 # spec behind, so the model is pinned and can be changed with --model.
@@ -257,6 +261,68 @@ def run_command(
             except subprocess.TimeoutExpired:
                 pass
             code = 124
+    return CommandResult(argv=argv, code=code, log=log_path, seconds=time.time() - started)
+
+
+def run_command_watched(
+    argv: Sequence[str],
+    log_path: Path,
+    timeout: float | None = DEFAULT_COMMAND_TIMEOUT,
+    stall_timeout: float | None = None,
+    cwd: Path = REPO_ROOT,
+) -> CommandResult:
+    """Run a command and kill it when its output stops growing.
+
+    A provider request that never answers looks exactly like a long run: the
+    process is alive and the log does not move. The stall timeout tells the
+    two apart, and the loop continues the session instead of waiting for a
+    request that will never come back.
+    """
+    started = time.time()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8", errors="replace") as handle:
+        handle.write(f"$ {' '.join(argv)}\n\n")
+        handle.flush()
+        process = subprocess.Popen(
+            list(argv),
+            cwd=str(cwd),
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
+        code = 0
+        last_size = -1
+        last_change = time.time()
+        while True:
+            try:
+                code = process.wait(timeout=15)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if timeout is not None and time.time() - started > timeout:
+                _kill_process_tree(process)
+                try:
+                    process.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    pass
+                code = 124
+                break
+            try:
+                size = log_path.stat().st_size
+            except OSError:
+                size = -1
+            if size != last_size:
+                last_size = size
+                last_change = time.time()
+            elif stall_timeout is not None and time.time() - last_change > stall_timeout:
+                _log(f"the command stopped producing output for {stall_timeout / 60:.0f} minutes")
+                _kill_process_tree(process)
+                try:
+                    process.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    pass
+                code = 125
+                break
     return CommandResult(argv=argv, code=code, log=log_path, seconds=time.time() - started)
 
 
@@ -604,10 +670,14 @@ def require_clean_tree() -> None:
         raise DriverError(f"the working tree has staged changes:\n{staged}")
 
 
-def sync_main() -> None:
+def fetch_origin() -> None:
+    """Refresh the remote references without touching the working tree.
+
+    The driver never checks `main` out while a story has work in progress: a
+    checkout carries the staged files along and the story's branch stops being
+    the only place where they live.
+    """
     git("fetch", "origin", "--prune")
-    git("checkout", BASE_BRANCH)
-    git("pull", "--ff-only", "origin", BASE_BRANCH)
 
 
 def branch_exists(branch: str) -> bool:
@@ -631,12 +701,33 @@ def is_base_ancestor() -> bool:
 
 
 def rebase_onto_main() -> None:
+    """Rebase the story branch onto the current main, keeping the work.
+
+    The work of an interrupted story is usually uncommitted, and a rebase
+    refuses a dirty tree. It is stashed, the branch is rebased and the work
+    comes back staged, so the story's own commit stays the first one and its
+    subject is the one that lands on `main`.
+    """
     _log("main moved while the story ran: rebasing the branch onto it")
+    dirty = git("status", "--porcelain").stdout.strip()
+    stashed = False
+    if dirty:
+        git("stash", "push", "--include-untracked", "-m", "build-loop rebase")
+        stashed = True
     try:
         git("rebase", f"origin/{BASE_BRANCH}")
     except DriverError:
         git("rebase", "--abort", check=False)
+        if stashed:
+            git("stash", "pop", "--index", check=False)
         raise DriverError("the rebase onto main conflicted; the branch was left untouched")
+    if stashed:
+        try:
+            git("stash", "pop", "--index")
+        except DriverError as error:
+            raise DriverError(
+                f"the rebase onto main worked but the work of the story could not be restored: {error}"
+            )
 
 
 def push_branch(branch: str) -> None:
@@ -789,6 +880,7 @@ def run_skill(
     spec_path: Path | None = None,
     spec_status: str = "",
     attempt: int = 1,
+    stall_timeout_minutes: float = DEFAULT_STALL_TIMEOUT_MINUTES,
 ) -> tuple[CommandResult, str]:
     """Run the skill and return its result plus the opencode session id.
 
@@ -836,7 +928,12 @@ def run_skill(
         argv.extend(["--session", session_id])
     argv.append(prompt)
 
-    result = run_command(argv, log_path=json_log, timeout=timeout_minutes * 60)
+    result = run_command_watched(
+        argv,
+        log_path=json_log,
+        timeout=timeout_minutes * 60,
+        stall_timeout=stall_timeout_minutes * 60,
+    )
     discovered, transcript = parse_skill_output(json_log)
     text_log.write_text(transcript, encoding="utf-8")
     (log_dir / "skill.log").write_text(transcript, encoding="utf-8")
@@ -1005,7 +1102,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     _log(f"branch: {story.branch}")
     _log("=" * 72)
 
-    sync_main()
+    fetch_origin()
     existing_pr = find_open_pull_request(story.branch)
     main_before = git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
 
@@ -1020,11 +1117,11 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         reuse = existing_pr is not None or spec is not None
         if not reuse:
             _log(f"discarding the abandoned branch {story.branch}")
-            git("checkout", "-B", story.branch, BASE_BRANCH)
+            git("checkout", "-B", story.branch, f"origin/{BASE_BRANCH}")
             discard_untracked_specs(story)
             spec = None
     else:
-        git("checkout", "-b", story.branch, BASE_BRANCH)
+        git("checkout", "-b", story.branch, f"origin/{BASE_BRANCH}")
         spec = find_spec(story)
 
     if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
@@ -1043,8 +1140,20 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
                 spec_path=spec,
                 spec_status=status,
                 attempt=attempt,
+                stall_timeout_minutes=args.stall_timeout_minutes,
             )
             _log(f"the skill finished with exit code {skill_result.code}")
+            if skill_result.code == 125:
+                _log(
+                    f"the run stalled; continuing the session {session_id} "
+                    f"(attempt {attempt + 1} of {args.max_attempts})"
+                )
+                if attempt < args.max_attempts and session_id:
+                    continue
+                raise DriverError(
+                    f"the skill run stalled and could not be continued; "
+                    f"read {log_dir / f'skill-{attempt}.log'}"
+                )
             if not skill_result.ok:
                 raise DriverError(
                     f"the bmad-build-auto run failed with exit code {skill_result.code}; "
@@ -1455,6 +1564,17 @@ deferred:
             )
             check(not timed_out.ok and timed_out.code == 124, "run_command does not time out")
 
+            stalled = run_command_watched(
+                (sys.executable, "-c", "import time; time.sleep(60)"),
+                log_path=logs / "stalled.log",
+                timeout=120,
+                stall_timeout=1,
+            )
+            check(
+                not stalled.ok and stalled.code == 125,
+                "run_command_watched does not kill a command that stops producing output",
+            )
+
         # The real repository, for the checks that need real artefacts.
         try:
             status = read_sprint_status()
@@ -1524,6 +1644,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="how many times the skill may run for one story, continuing the same session",
     )
     parser.add_argument(
+        "--stall-timeout-minutes",
+        type=float,
+        default=DEFAULT_STALL_TIMEOUT_MINUTES,
+        help="how long a run may go without producing output before it is killed",
+    )
+    parser.add_argument(
         "--no-merge",
         action="store_true",
         help="open the pull request but stop before merging it",
@@ -1541,6 +1667,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--verification-timeout-minutes must be greater than zero")
     if args.max_attempts < 1:
         parser.error("--max-attempts must be at least one")
+    if args.stall_timeout_minutes <= 0:
+        parser.error("--stall-timeout-minutes must be greater than zero")
     if args.story and not re.fullmatch(r"\d+\.\d+", args.story):
         parser.error("--story must be given as N.M")
     return args

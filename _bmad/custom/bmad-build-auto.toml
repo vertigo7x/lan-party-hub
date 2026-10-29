@@ -43,3 +43,83 @@ activation_steps_append = [
 
 # Instruction run by HALT after writing the terminal result.
 on_complete = "Publica en el chat el hash del commit, la rama, el story key y el resultado de los cuatro comandos de verificacion, y detente. No hagas push, no abras PR y no fusiones: el driver externo `tools/build-loop.py` se encarga del push, del PR y del merge. La historia siguiente no se planifica hasta que el PR de esta historia este fusionado en `main`: ese es el punto de control del bucle, y ahora lo ejecuta el driver en vez de una persona."
+
+# Las capas de revision se redefinen aqui para dos motivos que el repo ha
+# suffered: el diff de una historia grande llega a 400 kB, y la ruta del
+# fichero temporal puede venir en forma corta 8.3, en cuyo caso el revisor
+# acababa listando el directorio temporal entero y la peticion se colgaba.
+
+[[workflow.review_layers]]
+id = "blind-hunter"
+name = "Blind Hunter"
+instruction = """
+Launch a context-free subagent with this prompt:
+
+Conduct a review of CONTENT.
+Look for what's missing, not only what's wrong.
+Compute your finding floor N from the diff file's size: N = min(floor(sqrt(kB) + 1), 10), where kB is the file's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.
+Output a Markdown list of findings only — no severity, priority, or ranking.
+If the content is empty, stop and say so.
+If you have zero findings, re-check and keep thinking; do not stop with an empty list.
+
+CONTENT: the unified diff at `{diff_file}`. Read that file — it is the content under review.
+
+READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
+
+"""
+
+[[workflow.review_layers]]
+id = "edge-case-hunter"
+name = "Edge Case Hunter"
+instruction = """
+Launch a context-free subagent with this prompt:
+
+Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions.
+
+claims_file (leave unread until your instructions call for it): {claims_file}
+
+Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
+
+READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
+
+"""
+
+[[workflow.review_layers]]
+id = "verification-gap"
+name = "Verification Gap Reviewer"
+instruction = """
+Launch a context-free subagent with this prompt:
+
+Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it as your review instructions.
+
+Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
+
+READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
+
+"""
+
+[[workflow.review_layers]]
+id = "intent-alignment"
+name = "Intent Alignment Auditor"
+instruction = """
+Launch a subagent with this prompt:
+
+You are an intent-alignment auditor. You have no other context about how this change was produced. Here is the verbatim intent this work started from:
+
+{verbatim_intent}
+
+The diff is the unified diff at `{diff_file}`. Read that file — it is the change under review.
+
+READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+
+Your task is strictly descriptive — do not prescribe additional work. Report: (1) the defensible readings of the intent, enumerated; (2) which reading this diff implements; (3) where the readings and the diff diverge — specifically, which surface the intent's expectations live at versus which surface the diff's changes and its tests exercise.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
+
+"""
