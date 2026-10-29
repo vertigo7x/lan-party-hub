@@ -1181,6 +1181,11 @@ def preflight(args: argparse.Namespace) -> None:
         raise DriverError("the repository is in the middle of a rebase")
     if args.model:
         models = run_command(("opencode", "models"), timeout=120)
+        if not models.ok:
+            raise DriverError(
+                "opencode cannot start in this project:\n"
+                + (models.stdout.strip() or models.stderr.strip() or "no output")
+            )
         if args.model not in models.stdout:
             raise DriverError(
                 f"the model '{args.model}' is not available to opencode; pick another one with "
