@@ -36,30 +36,6 @@ public static class ErrorCatalog
     /// </summary>
     public const string ClientIdInvalidCode = "CLIENT_ID_INVALID";
 
-    /// <summary>
-    /// The registration of a videogame carries a mandatory metadata of FR-1 that is empty
-    /// or absent (AD-1, AD-25). The code names the field that is missing.
-    /// </summary>
-    public const string GameMetadataMissingCode = "GAME_METADATA_MISSING";
-
-    /// <summary>
-    /// The body of the registration of a videogame does not carry the <c>schemaVersion</c>
-    /// that every mutation of the API carries (AD-5).
-    /// </summary>
-    public const string SchemaVersionMissingCode = "SCHEMA_VERSION_MISSING";
-
-    /// <summary>
-    /// The body of the registration of a videogame carries a <c>schemaVersion</c> that the
-    /// server does not support (AD-5, AD-8).
-    /// </summary>
-    public const string SchemaVersionNotSupportedCode = "SCHEMA_VERSION_NOT_SUPPORTED";
-
-    /// <summary>
-    /// The modification of a videogame carries a <c>gameId</c> that is not in the catalog
-    /// (AD-22).
-    /// </summary>
-    public const string GameNotFoundCode = "GAME_NOT_FOUND";
-
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -92,26 +68,6 @@ public static class ErrorCatalog
             "El identificador del cliente no es válido",
             "La cabecera X-Client-Id no lleva los 32 dígitos hexadecimales en minúsculas del identificador del equipo.",
             "Envía el identificador del equipo en su forma canónica y vuelve a intentarlo."),
-        new(
-            GameMetadataMissingCode,
-            "Falta un metadato obligatorio del videojuego",
-            "El registro del videojuego no lleva alguno de los metadatos que la administración del catálogo exige.",
-            "Rellena el campo que falta y vuelve a guardar el videojuego."),
-        new(
-            SchemaVersionMissingCode,
-            "La petición no lleva la versión del esquema",
-            "El cuerpo de la mutación no lleva el campo schemaVersion que la API exige en toda mutación.",
-            "Añade schemaVersion al cuerpo de la petición y vuelve a intentarlo."),
-        new(
-            SchemaVersionNotSupportedCode,
-            "La versión del esquema no está soportada",
-            "El campo schemaVersion del cuerpo lleva un valor que este servidor no entiende.",
-            "Usa una versión del esquema que el servidor soporte y vuelve a intentarlo."),
-        new(
-            GameNotFoundCode,
-            "El videojuego no está en el catálogo",
-            "El identificador de la modificación no corresponde a ningún videojuego registrado.",
-            "Revisa el identificador del videojuego y vuelve a intentarlo."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

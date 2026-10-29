@@ -26,12 +26,6 @@ public sealed class ServerCorrelationTests
 
     private const string UnknownClientId = "0000000000000000000000000000ffff";
 
-    /// <summary>
-    /// Category of the logger of the use case that registers a videogame. The entry that
-    /// writes it is the one that tells the operator that the videogame is in the catalog.
-    /// </summary>
-    private const string RegisterGameCategory = "LANPartyHub.Server.Application.Catalog.RegisterGame";
-
     [Fact]
     public async Task A_request_with_the_two_headers_is_correlated_and_its_log_entry_carries_them()
     {
@@ -344,114 +338,6 @@ public sealed class ServerCorrelationTests
 
         // The server only opens listeners: it never reaches out to any service (NFR-10).
         Assert.Empty(newConnections);
-    }
-
-    [Fact]
-    public async Task The_admin_surface_does_not_require_the_identifier_of_the_client()
-    {
-        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
-
-        using var client = host.CreateClient();
-
-        // The organizer is not a client of the LAN, so the surface of the administration
-        // does not ask for the identifier of a client (AD-30).
-        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
-        {
-            Content = new StringContent(
-                "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
-                + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
-                + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
-                + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
-                + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
-                + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
-                + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
-                + "\"distributionRestrictions\":\"Solo para el evento\"}",
-                System.Text.Encoding.UTF8,
-                "application/json"),
-        };
-
-        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task The_admin_surface_is_correlated_by_the_identifier_of_the_operation()
-    {
-        await using var capture = await ConsoleLogCapture.StartAsync();
-
-        await using (var host = await TestServer.StartAsync(TestContext.Current.CancellationToken))
-        {
-            using var client = host.CreateClient();
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
-            {
-                Content = new StringContent(
-                    "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
-                    + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
-                    + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
-                    + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
-                    + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
-                    + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
-                    + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
-                    + "\"distributionRestrictions\":\"Solo para el evento\"}",
-                    System.Text.Encoding.UTF8,
-                    "application/json"),
-            };
-
-            request.Headers.Add(AdminCorrelationMiddleware.OperationIdHeaderName, OperationId);
-
-            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-
-            // The effective identifier of the operation travels back to the organizer.
-            Assert.Equal(
-                OperationId,
-                response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single());
-        }
-
-        // The entry of the registration carries the identifier of the unit of work in its
-        // scope, so the log of the server and the log of the organizer can be joined
-        // (AD-15). The operation writes one registration entry, so the assertion stays
-        // strict: exactly one entry of the use case carries the identifier.
-        Assert.Single(
-            capture.Entries,
-            candidate => LogEntries.HasCategory(candidate, RegisterGameCategory)
-                && LogEntries.HasOperationScope(candidate, OperationId));
-    }
-
-    [Fact]
-    public async Task The_admin_surface_gets_an_identifier_of_the_operation_when_the_organizer_does_not_send_one()
-    {
-        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
-
-        using var client = host.CreateClient();
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
-        {
-            Content = new StringContent(
-                "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
-                + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
-                + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
-                + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
-                + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
-                + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
-                + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
-                + "\"distributionRestrictions\":\"Solo para el evento\"}",
-                System.Text.Encoding.UTF8,
-                "application/json"),
-        };
-
-        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-
-        var operationId = response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single();
-
-        Assert.False(string.IsNullOrWhiteSpace(operationId));
-        Assert.Equal(AdminCorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
     }
 
     /// <summary>
