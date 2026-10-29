@@ -734,19 +734,23 @@ def preserve_pending_work(story: Story) -> None:
 
 
 def require_clean_tree() -> None:
-    """No tracked file may be modified before the loop starts.
+    """The tree may only be dirty on a story branch.
 
-    Untracked files are allowed: they are the work of an interrupted story
-    (a spec that was never committed, the code the implementation subagent
-    wrote before the run died) and they belong to the branch the story resumes
-    on. They are committed with the story, not thrown away.
+    On a story branch the dirty files are that story's work: a spec that was
+    never committed, the code the implementation subagent wrote before the run
+    died or the loop was killed. They are committed with the story, not thrown
+    away. Anywhere else a dirty tree means somebody's work is in the way, and
+    the loop stops.
     """
-    modified = git("diff", "--name-only").stdout.strip()
-    if modified:
-        raise DriverError(f"the working tree has modified tracked files:\n{modified}")
-    staged = git("diff", "--cached", "--name-only").stdout.strip()
-    if staged:
-        raise DriverError(f"the working tree has staged changes:\n{staged}")
+    conflicts = git("diff", "--name-only", "--diff-filter=U").stdout.strip()
+    if conflicts:
+        raise DriverError(f"the working tree has unresolved conflicts:\n{conflicts}")
+    branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch.startswith(f"{BRANCH_PREFIX}/"):
+        return
+    status = git("status", "--porcelain").stdout.strip()
+    if status:
+        raise DriverError(f"the working tree is not clean on '{branch}':\n{status}")
 
 
 def fetch_origin() -> None:
@@ -1222,6 +1226,9 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     reuse = False
     if branch_exists(story.branch):
         git("checkout", story.branch)
+        # Work left by a killed run is committed before anything else, so the
+        # story starts from a known state.
+        preserve_pending_work(story)
         spec = find_spec(story)
         reuse = existing_pr is not None or spec is not None
         if not reuse:
