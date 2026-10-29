@@ -32,4 +32,26 @@ public sealed class PackageDescriptorEntity
 
     /// <summary>Reference to the signed installation manifest.</summary>
     public string ManifestRef { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Instant of the withdrawal of the package, in UTC ISO-8601, or <c>null</c> when the
+    /// package is still in the catalog.
+    ///
+    /// <para>
+    /// The withdrawal MARKS and never deletes: the row of the package survives the
+    /// withdrawal, so the installation that a client already made is not invalidated and
+    /// the package can be published again with a new version (AC2, AD-26). The mark lives
+    /// here and not in the table of the videogame, because the table of the videogame
+    /// persists exactly the eighteen fields of the contract of <c>Shared</c> (AD-34).
+    /// </para>
+    /// </summary>
+    public string? WithdrawnAt { get; set; }
+
+    /// <summary>
+    /// The videogame that owns the package. The navigation property is what turns the
+    /// listing into a join with the table of the videogames, so the organizer sees the
+    /// name, the license and the restrictions of distribution of the game together with
+    /// its package (AC1, FR-1, NFR-8).
+    /// </summary>
+    public GameEntity Game { get; set; } = null!;
 }

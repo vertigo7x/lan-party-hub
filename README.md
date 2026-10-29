@@ -80,9 +80,15 @@ La carpeta de datos se crea en el arranque y **sobrevive al reemplazo del binari
 ```
 
 El esquema de `catalog.sqlite` se materializa con **migraciones versionadas de EF Core** que
-se aplican automáticamente al arrancar (AD-11). Las siete tablas del servidor son `GAME`,
+se aplican automáticamente al arrancar (AD-11). Las ocho tablas del servidor son `GAME`,
 `PACKAGE_DESCRIPTOR`, `INSTALLATION_MANIFEST`, `CLIENT_REGISTRATION`,
-`CLIENT_INSTALLATION_VIEW`, `DOWNLOAD_INTENT` y `CLIENT_ERROR`.
+`CLIENT_INSTALLATION_VIEW`, `DOWNLOAD_INTENT`, `CLIENT_ERROR` y `CATALOG_VERSION`.
+
+`CATALOG_VERSION` tiene **una sola fila**: su columna `catalogVersion` es la versión
+monótona creciente del catálogo, y crece **en la misma transacción** que la publicación del
+paquete o la retirada del juego que la provocan (AD-26). La retirada de un juego
+**marca** sus paquetes con `PACKAGE_DESCRIPTOR.withdrawnAt` y **no borra** ninguna fila
+(AD-26, AD-34).
 
 Cada historia que necesite más columnas añade su migración; la herramienta tiene que coincidir
 con la versión de los paquetes de EF Core:

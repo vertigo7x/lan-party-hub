@@ -209,6 +209,7 @@ public partial class Program
         builder.Services.AddSingleton<IManifestSigner, Ed25519ManifestSigner>();
         builder.Services.AddScoped<PublishPackage>();
         builder.Services.AddScoped<ListPackages>();
+        builder.Services.AddScoped<WithdrawGame>();
 
         var app = builder.Build();
 

@@ -1,16 +1,21 @@
 using LANPartyHub.Server.Application.Ports;
-using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace LANPartyHub.Server.Application.Packages;
 
 /// <summary>
-/// Use case that reads the published packages of the event (AD-1, AD-5, AD-7).
+/// Use case that reads the published packages of the event (AD-1, AD-5, AD-7, AC1).
 ///
 /// <para>
 /// The use case reads the packages through the port of the repository and returns the
-/// contract of <c>Shared</c> that the API and the interface publish. It is not a route of
-/// the API: the routes that expose the catalog belong to the stories that follow (AD-5).
+/// enriched row of the server, the one that carries the videogame, the exact size, the
+/// license, the restrictions of distribution and the state of the withdrawal (AC1). It is
+/// NOT a contract of <c>Shared</c>: the twenty contracts of <c>Shared</c> are fixed and
+/// the server does not redeclare any of them (AD-18).
+/// </para>
+/// <para>
+/// The use case is not a route of the API: the routes that expose the catalog belong to
+/// the stories that follow (AD-5).
 /// </para>
 /// </summary>
 public sealed class ListPackages
@@ -31,27 +36,19 @@ public sealed class ListPackages
     }
 
     /// <summary>
-    /// Reads every published package of the event.
+    /// Reads every published package of the event, enriched with the metadata of the
+    /// videogame that owns it.
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>The descriptors of the published packages.</returns>
-    public async Task<IReadOnlyList<PackageDescriptor>> ExecuteAsync(CancellationToken cancellationToken)
+    /// <returns>The enriched rows of the published packages.</returns>
+    public async Task<IReadOnlyList<PublishedPackageRow>> ExecuteAsync(CancellationToken cancellationToken)
     {
-        var rows = await _repository.ListAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await _repository.ListPublishedAsync(cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Se han leído {Count} paquetes publicados del catálogo.",
             rows.Count);
 
-        return rows
-            .Select(row => new PackageDescriptor(
-                row.PackageId,
-                row.GameId,
-                row.Version,
-                row.SizeBytes,
-                row.ChunkSizeBytes ?? 0,
-                row.Sha256,
-                row.ManifestRef))
-            .ToArray();
+        return rows;
     }
 }

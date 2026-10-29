@@ -57,6 +57,7 @@ public sealed class ServerApp : Avalonia.Application
             var listGames = scope.ServiceProvider.GetRequiredService<ListGames>();
             var publishPackage = scope.ServiceProvider.GetRequiredService<PublishPackage>();
             var listPackages = scope.ServiceProvider.GetRequiredService<ListPackages>();
+            var withdrawGame = scope.ServiceProvider.GetRequiredService<WithdrawGame>();
 
             var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames);
 
@@ -70,7 +71,8 @@ public sealed class ServerApp : Avalonia.Application
                 var packages = new PackagesWindow(
                     new PackagesViewModel(),
                     publishPackage,
-                    listPackages);
+                    listPackages,
+                    withdrawGame);
 
                 await packages.ShowDialog(window).ConfigureAwait(true);
             };

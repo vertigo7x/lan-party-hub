@@ -8,7 +8,7 @@ using LANPartyHub.Shared.Contracts;
 namespace LANPartyHub.Server.Presentation.Packages;
 
 /// <summary>
-/// Window of the section of the packages of the event (AD-1, AC1).
+/// Window of the section of the packages of the event (AD-1, AC1, AC2).
 ///
 /// <para>
 /// The window has the shape that the design fixes for the server: a left column of
@@ -23,6 +23,12 @@ namespace LANPartyHub.Server.Presentation.Packages;
 /// The list is filled with the packages that the read port of the repository returns, and
 /// the button of the publication opens the form, which hands the package to the use case:
 /// the server and its interface live in the same process (AD-1).
+/// </para>
+/// <para>
+/// Every row carries the action «Retirar del catálogo», which hands the videogame of the
+/// row to the use case of the withdrawal. The action is a button, so it is visible and
+/// reachable with the keyboard (UX-DR-24, UX-DR-25). The withdrawal MARKS and never
+/// deletes: the row survives and shows the state of the withdrawal (AC2, AD-26).
 /// </para>
 /// </summary>
 public sealed class PackagesWindow : Window
@@ -40,6 +46,7 @@ public sealed class PackagesWindow : Window
 
     private readonly PublishPackage _publishPackage;
     private readonly ListPackages _listPackages;
+    private readonly WithdrawGame _withdrawGame;
     private readonly StackPanel _rows;
     private readonly TextBlock _summary;
     private readonly TextBlock _status;
@@ -50,14 +57,17 @@ public sealed class PackagesWindow : Window
     /// <param name="viewModel">View model of the section.</param>
     /// <param name="publishPackage">Use case of the publication of a package.</param>
     /// <param name="listPackages">Use case that reads the published packages.</param>
+    /// <param name="withdrawGame">Use case of the withdrawal of a videogame.</param>
     public PackagesWindow(
         PackagesViewModel viewModel,
         PublishPackage publishPackage,
-        ListPackages listPackages)
+        ListPackages listPackages,
+        WithdrawGame withdrawGame)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         ArgumentNullException.ThrowIfNull(publishPackage);
         ArgumentNullException.ThrowIfNull(listPackages);
+        ArgumentNullException.ThrowIfNull(withdrawGame);
 
         Title = "Paquetes";
         Width = 960;
@@ -67,6 +77,7 @@ public sealed class PackagesWindow : Window
 
         _publishPackage = publishPackage;
         _listPackages = listPackages;
+        _withdrawGame = withdrawGame;
 
         var navigation = new StackPanel
         {
@@ -210,7 +221,41 @@ public sealed class PackagesWindow : Window
 
         foreach (var row in ViewModel.Rows)
         {
-            _rows.Children.Add(BuildRow(row));
+            var withdraw = new Button { Content = "Retirar del catálogo" };
+
+            // La acción retira el VIDEOJUEGO de la fila, no solo el paquete: el catálogo
+            // retira juegos, y todos los paquetes publicados del juego quedan marcados
+            // (AC2, AD-26).
+            var captured = row;
+
+            withdraw.Click += async (_, _) => await WithdrawAsync(captured.GameId).ConfigureAwait(true);
+
+            _rows.Children.Add(BuildRow(row, withdraw));
+        }
+    }
+
+    /// <summary>
+    /// Withdraws a videogame from the catalog and refreshes the list, so the organizer
+    /// sees the state of the withdrawal of its packages (AC2, AD-26).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame to withdraw.</param>
+    /// <returns>A task that completes when the withdrawal has been applied.</returns>
+    private async Task WithdrawAsync(string gameId)
+    {
+        try
+        {
+            var outcome = await _withdrawGame.ExecuteAsync(gameId, CancellationToken.None).ConfigureAwait(true);
+
+            _status.Text = $"Se han retirado {outcome.WithdrawnPackages} paquetes del videogame. "
+                + $"La versión del catálogo es {outcome.CatalogVersion}.";
+
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            // The exception never reaches the interface as a stack trace: the organizer
+            // sees a line and the operator finds the detail in the log (AD-15).
+            _status.Text = $"No se pudo retirar el videogame: {exception.Message}";
         }
     }
 
@@ -220,8 +265,9 @@ public sealed class PackagesWindow : Window
     /// size carries the numeric value and the unit apart (AC4).
     /// </summary>
     /// <param name="row">Row of the package.</param>
+    /// <param name="withdraw">Button that withdraws the videogame of the row.</param>
     /// <returns>The control of the row.</returns>
-    private static Border BuildRow(PackageRow row)
+    private static Border BuildRow(PackageRow row, Button withdraw)
     {
         var size = new StackPanel
         {
@@ -249,6 +295,7 @@ public sealed class PackagesWindow : Window
             Spacing = 4,
             Children =
             {
+                new TextBlock { Text = row.GameName },
                 new TextBlock { Text = row.Version },
                 new TextBlock
                 {
@@ -259,12 +306,39 @@ public sealed class PackagesWindow : Window
                 size,
                 new TextBlock
                 {
-                    Text = row.Sha256,
-                    FontFamily = MonospaceFontFamily,
+                    // Los bytes exactos son el valor que el modelo sostiene, y los
+                    // gigabytes decimales son solo su presentación (AD-7).
+                    Text = $"{row.SizeBytes} bytes",
+                    FontFamily = MetaFontFamily,
                     FontSize = PackageFormView.MetaFontSize,
                 },
+                new TextBlock
+                {
+                    Text = $"Licencia: {row.License}",
+                    FontFamily = MetaFontFamily,
+                    FontSize = PackageFormView.MetaFontSize,
+                },
+                new TextBlock
+                {
+                    Text = $"Restricciones: {row.DistributionRestrictions}",
+                    FontFamily = MetaFontFamily,
+                    FontSize = PackageFormView.MetaFontSize,
+                },
+                withdraw,
             },
         };
+
+        if (row.WithdrawalText is not null)
+        {
+            // El texto del estado de la retirada sale de la tabla única de microcopia
+            // del sistema, y la vista no escribe un texto propio (AD-10, AD-25, AD-33).
+            content.Children.Add(new TextBlock
+            {
+                Text = row.WithdrawalText,
+                FontFamily = MetaFontFamily,
+                FontSize = PackageFormView.MetaFontSize,
+            });
+        }
 
         return new Border
         {

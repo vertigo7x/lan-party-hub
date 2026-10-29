@@ -13,7 +13,7 @@ namespace LANPartyHub.Server.Infrastructure.Persistence;
 /// The database of the event server (AD-11, AD-22).
 ///
 /// The server owns exactly one SQLite file, <c>catalog.sqlite</c>, and its schema is the one
-/// of the ERD of the spine: seven tables with the exact name and the exact order of their
+/// of the ERD of the spine: eight tables with the exact name and the exact order of their
 /// columns. The mapping is explicit for every entity, so the schema is not the result of a
 /// convention that could change with the version of EF Core.
 ///
@@ -67,6 +67,9 @@ public sealed class CatalogDbContext : DbContext
     /// <summary>Rows of the <c>CLIENT_ERROR</c> table.</summary>
     public DbSet<ClientErrorEntity> ClientErrors => Set<ClientErrorEntity>();
 
+    /// <summary>Rows of the <c>CATALOG_VERSION</c> table.</summary>
+    public DbSet<CatalogVersionEntity> CatalogVersions => Set<CatalogVersionEntity>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,8 +112,12 @@ public sealed class CatalogDbContext : DbContext
             entity.Property(e => e.ChunkSizeBytes).HasColumnName("chunkSizeBytes");
             entity.Property(e => e.Sha256).HasColumnName("sha256").IsRequired();
             entity.Property(e => e.ManifestRef).HasColumnName("manifestRef").IsRequired();
+            entity.Property(e => e.WithdrawnAt).HasColumnName("withdrawnAt");
 
-            entity.HasOne<GameEntity>()
+            // The relationship with the videogame is declared ONCE, with its navigation
+            // property, so the listing joins the videogame WITHOUT adding a second
+            // foreign key column to the table (AD-1, AD-34).
+            entity.HasOne(e => e.Game)
                 .WithMany()
                 .HasForeignKey(e => e.GameId)
                 .OnDelete(DeleteBehavior.Restrict);
@@ -203,6 +210,15 @@ public sealed class CatalogDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ClientId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CatalogVersionEntity>(entity =>
+        {
+            entity.ToTable("CATALOG_VERSION");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("id").IsRequired();
+            entity.Property(e => e.CatalogVersion).HasColumnName("catalogVersion").IsRequired();
         });
     }
 

@@ -31,11 +31,13 @@ namespace LANPartyHub.IntegrationTests;
 public sealed class PackagePublicationTests
 {
     /// <summary>
-    /// The seven columns of the table <c>PACKAGE_DESCRIPTOR</c>, with the name and the
-    /// order of AD-7. The table and the contract cannot diverge (AD-7, AD-22).
+    /// The eight columns of the table <c>PACKAGE_DESCRIPTOR</c>, with the name and the
+    /// order of AD-7. The table and the contract cannot diverge (AD-7, AD-22). The last
+    /// one is the mark of the withdrawal, which lives here and not in the table of the
+    /// videogame (AD-34).
     /// </summary>
     private const string ExpectedDescriptorColumns =
-        "packageId,gameId,version,sizeBytes,chunkSizeBytes,sha256,manifestRef";
+        "packageId,gameId,version,sizeBytes,chunkSizeBytes,sha256,manifestRef,withdrawnAt";
 
     /// <summary>
     /// The six columns of the table <c>INSTALLATION_MANIFEST</c>, with the name and the
@@ -62,6 +64,7 @@ public sealed class PackagePublicationTests
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<PublishPackage>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ListPackages>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<WithdrawGame>());
     }
 
     [Fact]
@@ -86,8 +89,9 @@ public sealed class PackagePublicationTests
 
         var descriptor = await ReadDescriptorAsync(response, TestContext.Current.CancellationToken);
 
-        // The seven columns of the table are the seven fields of the descriptor, with the
-        // same name and in the same order (AD-7, AD-22).
+        // The eight columns of the table are the seven fields of the descriptor plus the
+        // mark of the withdrawal, with the same name and in the same order (AD-7, AD-22,
+        // AD-34).
         Assert.Equal(
             ExpectedDescriptorColumns.Split(','),
             ReadColumnNames(dataDirectory, "SELECT name FROM pragma_table_info('PACKAGE_DESCRIPTOR')"));

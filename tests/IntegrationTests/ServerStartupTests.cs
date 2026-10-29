@@ -28,6 +28,7 @@ public sealed class ServerStartupTests
 
     private static readonly string[] ExpectedTables =
     [
+        "CATALOG_VERSION",
         "CLIENT_ERROR",
         "CLIENT_INSTALLATION_VIEW",
         "CLIENT_REGISTRATION",
@@ -49,7 +50,7 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
-    public async Task The_startup_creates_the_seven_tables_of_the_erd_and_the_history_of_the_migrations()
+    public async Task The_startup_creates_the_eight_tables_of_the_erd_and_the_history_of_the_migrations()
     {
         var dataDirectory = CreateTemporaryDataDirectory();
 
@@ -78,7 +79,10 @@ public sealed class ServerStartupTests
         + "operatingSystem,distributionType,installationType,launchConfiguration,dependencies,license,distributionRestrictions")]
     [InlineData(
         "PACKAGE_DESCRIPTOR",
-        "packageId,gameId,version,sizeBytes,chunkSizeBytes,sha256,manifestRef")]
+        "packageId,gameId,version,sizeBytes,chunkSizeBytes,sha256,manifestRef,withdrawnAt")]
+    [InlineData(
+        "CATALOG_VERSION",
+        "id,catalogVersion")]
     [InlineData(
         "INSTALLATION_MANIFEST",
         "manifestId,packageId,schemaVersion,signature,keyId,canonicalManifest")]
@@ -125,7 +129,11 @@ public sealed class ServerStartupTests
 
         var appliedMigrations = ReadNames(connection, "SELECT MigrationId FROM __EFMigrationsHistory");
 
-        Assert.Single(appliedMigrations);
+        // La migración inicial y la de la versión del catálogo y la retirada: el arranque
+        // es idempotente y no aplica ninguna de las dos dos veces (AD-11).
+        Assert.Equal(2, appliedMigrations.Count);
+        Assert.Contains(appliedMigrations, migration => migration.Contains("InitialCatalogSchema", StringComparison.Ordinal));
+        Assert.Contains(appliedMigrations, migration => migration.Contains("CatalogVersionAndWithdrawal", StringComparison.Ordinal));
     }
 
     [Fact]

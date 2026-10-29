@@ -287,7 +287,8 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
   | Entidad | Dueño | Contenido | Nota |
   | --- | --- | --- | --- |
   | `Game` | **servidor** | Ficha del videojuego | Catálogo, `Server/Catalog` |
-  | `PackageDescriptor` | **servidor** | Metadatos inmutables del paquete | `Server/PackageDistribution` |
+  | `PackageDescriptor` | **servidor** | Metadatos inmutables del paquete | `Server/PackageDistribution`. Lleva además la **marca** de la retirada (`withdrawnAt`), que **no** describe el paquete en sí sino su estado de publicación (AD-26, AD-34) |
+  | `CatalogVersion` | **servidor** | `catalogVersion`: versión monótona creciente del catálogo | **Una sola fila.** Crece **en la misma transacción** que la escritura que la provoca: la publicación de un paquete y la retirada de un juego (AD-26) |
   | `InstallationManifest` (+ sobre firmado) | **servidor** | Manifiesto canónico y firma | Servido como artefacto aparte (AD-2, AD-20) |
   | `DownloadOperation` (servidor) | **servidor** | Intención de descarga registrada por el cliente | Solo reflejo de la intención; **no** es el estado de la operación (AD-10) |
   | `ClientRegistration` | **servidor** | `clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt` | Vista de organización (FR-10). La **clave** es `clientId`; `machineName` es la **etiqueta humana, única y validada por el servidor** (AD-30) |
@@ -335,14 +336,16 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-26 — Consistencia del catálogo frente a operaciones en curso
 
-- **Binds:** FR-2, FR-5, FR-8, FR-11, NFR-9, AD-5, AD-10, AD-11, AD-33
-- **Prevents:** que un cliente cancele una descarga en curso porque el catálogo retiró el paquete y otro la deje terminar; que una resincronización del catálogo destruya una instalación existente; que el servidor y el cliente discrepen sobre el resultado de una operación retirada.
+- **Binds:** FR-2, FR-5, FR-8, FR-11, NFR-9, AD-5, AD-10, AD-11, AD-33, AD-34
+- **Prevents:** que un cliente cancele una descarga en curso porque el catálogo retiró el paquete y otro la deje terminar; que una resincronización del catálogo destruya una instalación existente; que el servidor y el cliente discrepen sobre el resultado de una operación retirada; que la retirada borre una fila del catálogo o de la proyección de las instalaciones; que el contador de la versión del catálogo crezca aparte de la escritura que lo provoca.
 - **Rule:** El catálogo se sincroniza por **snapshot completo** (`GET /api/v1/catalog` con `catalogVersion`); el delta queda en `Deferred`. La aplicación de un snapshot nuevo sigue reglas fijas:
   - **Un snapshot nuevo NO cancela operaciones en curso.** Una descarga o instalación en curso **termina**; no se aborta por un cambio de catálogo.
   - Una operación en curso cuyo paquete o juego **ha sido retirado** del catálogo **no falla por ello**: completa su curso y su resultado se marca explícitamente como **`Paquete retirado del catálogo`**, que es el valor `PackageWithdrawn` de `OperationOutcome` (AD-33). Ese resultado es **distinto del fallo** y no invalida la instalación ejecutada: **no** es un error, **no** se persiste como `ClientError` y **no** añade ningún estado nuevo a las enumeraciones de máquina. La prevalencia es del catálogo, salvo que el propio paquete sea inválido, en cuyo caso manda la validación de integridad (AD-2, AD-8).
   - **Una instalación existente no se borra** porque el juego se retiró del catálogo. El cliente la conserva, la sigue mostrando en su biblioteca y la marca con el estado de vista correspondiente (`instalado con versión desactualizada` u otro derivado de AD-10); la retirada del catálogo no altera la validez de lo ya instalado.
-  - **El servidor tampoco borra** la `ClientInstallationView` de un cliente cuyo juego se retiró del catálogo: la proyección refleja lo que el cliente réellement tiene instalado, no lo que el catálogo publica.
+  - **El servidor tampoco borra** la `ClientInstallationView` de un cliente cuyo juego se retiró del catálogo: la proyección refleja lo que el client réellement tiene instalado, no lo que el catálogo publica.
   - El `catalogVersion` del servidor es **monótono creciente**; el cliente solo aplica un snapshot con versión **mayor** que la que tiene, y descarta uno igual o anterior.
+  - **La retirada del catálogo MARCA y nunca borra.** La fila del paquete sobrevive a la retirada: solo se escribe la **marca** `withdrawnAt` en `PACKAGE_DESCRIPTOR`, y no se borra ninguna fila de `PACKAGE_DESCRIPTOR`, de `GAME`, de `INSTALLATION_MANIFEST` ni de `CLIENT_INSTALLATION_VIEW`. La marca vive en `PACKAGE_DESCRIPTOR` y **no** en `GAME`, porque `GAME` persiste exactamente los dieciocho campos del DTO `GameDescriptor` y no puede crecer sin romper el contrato (AD-34). Un juego retirado vuelve al catálogo **publicando una versión nueva** de su paquete, nunca resucitando la anterior.
+  - **La versión del catálogo crece en la MISMA transacción que la escritura que la provoca.** La publicación de un paquete y la retirada de un juego **incrementan** `catalogVersion` dentro de la transacción que escribe el paquete o la marca de la retirada, y SQLite escribe de uno en uno: un contador que creciera aparte anunciaría al cliente un cambio que todavía no está escrito, y el cliente descartaría un snapshot válido por el.version equivocada. La versión **nunca decrece** y **nunca se reinicia**.
 
 ### AD-27 — Bootstrap de la confianza: el ancla se fija out-of-band y el rechazo precede a persistir
 
@@ -493,12 +496,13 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 
 ### AD-34 — Contrato de metadatos de videojuego: `GameDescriptor`
 
-- **Binds:** FR-1, FR-2, FR-8, FR-11, NFR-3, NFR-8, AD-7, AD-18, AD-22
-- **Prevents:** que dos unidades construyan el DTO de videojuego con campos distintos o en distinto orden; que el formulario del catálogo, la API y el ERD persistan metadatos que no coinciden; que el metadato viva en el servidor y en el cliente con dos formas; que el contrato de la ficha de videojuego quede por definir.
+- **Binds:** FR-1, FR-2, FR-8, FR-11, NFR-3, NFR-8, AD-7, AD-18, AD-22, AD-26
+- **Prevents:** que dos unidades construyan el DTO de videojuego con campos distintos o en distinto orden; que el formulario del catálogo, la API y el ERD persistan metadatos que no coinciden; que el metadato viva en el servidor y en el cliente con dos formas; que el contrato de la ficha de videojuego quede por definir; que la marca de la retirada se cuele en la tabla del videogame y rompa el contrato que esta decisión fija.
 - **Rule:** `Shared` incorpora el DTO **`GameDescriptor`** con **exactamente** estos campos, en **este orden**: `gameId`, `name`, `description`, `categories[]`, `tags[]`, `coverImage`, `images[]`, `version`, `sizeBytes`, `minPlayers`, `maxPlayers`, `operatingSystem`, `distributionType`, `installationType`, `launchConfiguration`, `dependencies[]`, `license`, `distributionRestrictions`. El orden es **fijo** y la lista es **exacta**: no hay campos opcionales ni campos condicionales.
   - **El ERD `GAME` se extiende para coincidir con esos mismos campos.** La entidad `GAME` del esquema del servidor (`catalog.sqlite`) persiste **exactamente** los mismos campos, con el **mismo** nombre y en el **mismo** orden, de modo que el DTO y la tabla no puedan divergir. `sizeBytes` se almacena en bytes exactos (AD-7) y `launchConfiguration` recoge la configuración de lanzamiento (ruta, argumentos y directorio de trabajo) que el manifiesto firmado materializa (AD-2, AD-7).
+  - **`GAME` NO crece con la retirada: la marca vive en `PACKAGE_DESCRIPTOR`.** La tabla del videogame persiste **exactamente** los dieciocho campos del DTO, y `withdrawnAt` **no** está entre ellos: la marca de la retirada es una columna **anulable** de `PACKAGE_DESCRIPTOR` (un instante en UTC ISO-8601, o nulo cuando el paquete sigue en el catálogo). La razón es que el DTO y la tabla **no pueden divergir** (regla anterior): añadir una columna a `GAME` obligaría a añadirla también al `GameDescriptor`, y esa columna **no** describe el videogame, sino el **estado de la publicación** de uno de sus paquetes (AD-26). La retirada **marca y no borra**, así que la fila del paquete sobrevive y el juego puede volver al catálogo publicando una versión nueva (AD-26).
   - **Un solo concepto, un tipo, un lugar.** `GameDescriptor` es el **único** contrato de metadatos de videojuego del sistema: lo consumen el catálogo, la ficha del videojuego y el alta y la modificación en el servidor. Ningún tipo equivalente puede declararse también en `Server` o `Client` (AD-18).
-  - **Alcance.** Esta decisión **no amplía el MVP**: no añade endpoints ni requisitos nuevos; **materializa el contrato que la historia 2.1 necesita** (FR-1) y da a la ficha del videojuego una forma de datos única en lugar de un «contenido mínimo».
+  - **Alcance.** Esta decisión **no amplía el MVP**: no añade endpoints ni requisitos nuevos; **materializa el contrato que la historia 2.1 necesita** (FR-1) y da a la ficha del videojuego una forma de datos única en lugar de un «contenido mínimo». La aclaración sobre `withdrawnAt` **tampoco** amplía el MVP: solo fija **dónde** vive la marca de la retirada, sin añadir ningún campo al DTO ni a la tabla del videogame.
 
 ## Consistency Conventions
 
@@ -691,6 +695,7 @@ erDiagram
     CLIENT_REGISTRATION ||--o{ DOWNLOAD_INTENT : "registra intencion"
     CLIENT_REGISTRATION ||--o{ CLIENT_ERROR : "reporta"
     PACKAGE_DESCRIPTOR ||--o{ DOWNLOAD_INTENT : "objeto de"
+    CATALOG_VERSION ||--|| GAME : "version del catalogo"
 
     GAME {
         string gameId PK
@@ -720,6 +725,7 @@ erDiagram
         int64 chunkSizeBytes optional
         string sha256
         string manifestRef
+        string withdrawnAt optional
     }
     INSTALLATION_MANIFEST {
         string manifestId PK
@@ -728,12 +734,18 @@ erDiagram
         string signature
         string keyId
     }
+    CATALOG_VERSION {
+        int id PK
+        int64 catalogVersion
+    }
 ```
 
 **Archivo del servidor — `catalog.sqlite`:** dueño del catálogo y de la vista de organización. `CLIENT_INSTALLATION_VIEW` es una **proyección de solo lectura**; su `validationStateText` es una **cadena de presentación**, nunca el enum de `Shared` (AD-22).
 
 - `GAME` persiste **exactamente** los mismos campos del DTO `GameDescriptor`, con el **mismo** nombre y en el **mismo** orden: `gameId`, `name`, `description`, `categories[]`, `tags[]`, `coverImage`, `images[]`, `version`, `sizeBytes`, `minPlayers`, `maxPlayers`, `operatingSystem`, `distributionType`, `installationType`, `launchConfiguration`, `dependencies[]`, `license`, `distributionRestrictions`. La tabla y el DTO **no pueden divergir** (AD-34). `sizeBytes` se almacena en bytes exactos (AD-7).
 - `PACKAGE_DESCRIPTOR.chunkSizeBytes` es **opcional e informativo** en el MVP: el camino HTTP no lo usa para calcular rangos (AD-20, AD-24). Es el **único** campo del modelo del MVP que nombra un concepto de troceado, y existe **solo** porque el camino BitTorrent lo necesita si S-3 lo valida; el cliente **no** lo lee en el MVP.
+- `PACKAGE_DESCRIPTOR.withdrawnAt` es la **marca de la retirada**: un instante en UTC ISO-8601, o nulo cuando el paquete sigue en el catálogo. La retirada **marca y no borra**, y la marca vive **aquí** y no en `GAME`, porque `GAME` persiste exactamente los dieciocho campos del DTO `GameDescriptor` y no puede crecer sin romper el contrato (AD-26, AD-34).
+- `CATALOG_VERSION` tiene **una sola fila**: su columna `catalogVersion` es la versión monótona creciente del catálogo, y crece **en la misma transacción** que la escritura que la provoca, de modo que un cliente que lee la versión ve el cambio que la versión anuncia (AD-26).
 
 ```mermaid
 erDiagram
