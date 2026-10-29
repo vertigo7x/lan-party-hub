@@ -1,11 +1,15 @@
+using Avalonia;
+using LANPartyHub.Server.Application.Catalog;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
 using LANPartyHub.Server.Infrastructure.Logging;
 using LANPartyHub.Server.Infrastructure.Networking;
 using LANPartyHub.Server.Infrastructure.Persistence;
+using LANPartyHub.Server.Presentation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +32,12 @@ using Microsoft.Extensions.Logging;
 try
 {
     var app = await Program.BuildServerAsync(args);
+
+    // AD-1: the server is a single deployable, so the window of the organizer opens in
+    // the same process as the host HTTP. The window lives in its own thread, and the
+    // failure of the desktop never takes the host down: the server keeps serving the
+    // clients of the LAN even when there is no graphical session to draw the window on.
+    Program.StartOrganizerWindow(app.Services);
 
     await app.RunAsync();
 
@@ -59,6 +69,14 @@ public partial class Program
     /// the identifier of the client and opens the correlation scope of its unit of work.
     /// </summary>
     public const string ClientSurfacePrefix = "/api/v1";
+
+    /// <summary>
+    /// Prefix of the surface of the administration (AD-30). The organizer is not a client
+    /// of the LAN and does not carry the identifier of a client, so the surface of the
+    /// administration is not covered by the middleware of the client. It is correlated all
+    /// the same, by the identifier of the unit of work (AD-15).
+    /// </summary>
+    public const string AdminSurfacePrefix = "/api/v1/admin";
 
     /// <summary>
     /// Builds the host of the event server.
@@ -173,6 +191,13 @@ public partial class Program
             connectionString,
             sqlite => sqlite.MigrationsAssembly(typeof(CatalogDbContext).Assembly.GetName().Name)));
 
+        // AD-1, AD-22: the module of the catalog of the server. The use cases depend on
+        // the port of the repository and never on the adapter that implements it.
+        builder.Services.AddScoped<IGameRepository, GameRepository>();
+        builder.Services.AddScoped<RegisterGame>();
+        builder.Services.AddScoped<ModifyGame>();
+        builder.Services.AddScoped<ListGames>();
+
         var app = builder.Build();
 
         // AD-15: the effective configuration is published, because it is the surface the
@@ -204,13 +229,98 @@ public partial class Program
         // reaches /api/v1 opens the scope of its unit of work and has to carry the
         // identifier of the client. The surface of the host, /metrics, is not the surface
         // of the client: the diagnosis of the server never depends on a client.
+        //
+        // AD-30: the surface of the administration is not the surface of the client. The
+        // organizer is not a client of the LAN, so the predicate leaves /api/v1/admin
+        // out of the branch of the client: every other route of /api/v1 keeps requiring
+        // the identifier of the client, and the administration keeps its correlation by the
+        // identifier of the unit of work.
         app.UseWhen(
-            context => context.Request.Path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase),
+            context => IsClientSurface(context.Request.Path),
             branch => branch.UseMiddleware<CorrelationMiddleware>());
+
+        // AD-15: the surface of the administration is correlated by the identifier of the
+        // unit of work. It does not ask for the identifier of the client, because the
+        // organizer is not a client (AD-30).
+        app.UseWhen(
+            context => context.Request.Path.StartsWithSegments(AdminSurfacePrefix, StringComparison.OrdinalIgnoreCase),
+            branch => branch.UseMiddleware<AdminCorrelationMiddleware>());
 
         // AD-15: the metrics are published locally, on the same HTTP port.
         MetricsEndpoint.Map(app, app.Services.GetRequiredService<HostMetrics>());
 
+        // AD-5, AD-34: the administration of the videogames of the catalog.
+        GamesEndpoint.Map(app);
+
         return app;
+    }
+
+    /// <summary>
+    /// Tells whether a path belongs to the surface of the client. The surface of the
+    /// administration is excluded, because the organizer is not a client of the LAN and
+    /// does not carry the identifier of a client (AD-30).
+    /// </summary>
+    /// <param name="path">Path of the request.</param>
+    /// <returns><c>true</c> when the path belongs to the surface of the client.</returns>
+    private static bool IsClientSurface(PathString path) =>
+        path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase)
+        && !path.StartsWithSegments(AdminSurfacePrefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Builds the Avalonia application builder of the server.
+    /// </summary>
+    /// <param name="services">Container of the host, with the use cases of the catalog.</param>
+    /// <returns>The builder of the application of the organizer.</returns>
+    public static AppBuilder BuildAvaloniaApp(IServiceProvider services) =>
+        AppBuilder.Configure(() => new ServerApp(services)).UsePlatformDetect();
+
+    /// <summary>
+    /// Opens the window of the organizer in a thread of its own, so the host HTTP keeps
+    /// serving the clients of the LAN while the interface is open (AD-1).
+    ///
+    /// <para>
+    /// The failure of the desktop never takes the host down: a server that runs without a
+    /// graphical session still serves the surface of la API, y la organizadora puede
+    /// Catch it con las herramientas de la línea de órdenes.
+    /// </para>
+    /// </summary>
+    /// <param name="services">Container of the host, with the use cases of the catalog.</param>
+    public static void StartOrganizerWindow(IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                BuildAvaloniaApp(services).StartWithClassicDesktopLifetime([]);
+            }
+            catch (Exception exception)
+            {
+                // La interfaz del organizador es un complemento del host, no su motivo de
+                // vida: si el escritorio no está disponible, el servidor sigue sirviendo
+                // la API y el fallo queda escrito en el log (AD-15).
+                services
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("LANPartyHub.Server.Startup")
+                    .LogWarning(
+                        exception,
+                        "No se pudo abrir la ventana del organizador: el servidor sigue sirviendo la API.");
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "LANPartyHub.Server.Organizer",
+        };
+
+        // El hilo de la interfaz necesita un apartamento de un solo hilo en Windows, que
+        // es la plataforma del despliegue del MVP (AD-17). En el resto de plataformas el
+        // modelo del hilo es el de por defecto y la llamada no existe (CA1416).
+        if (OperatingSystem.IsWindows())
+        {
+            thread.SetApartmentState(ApartmentState.STA);
+        }
+
+        thread.Start();
     }
 }

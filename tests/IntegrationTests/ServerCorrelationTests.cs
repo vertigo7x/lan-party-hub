@@ -26,6 +26,13 @@ public sealed class ServerCorrelationTests
 
     private const string UnknownClientId = "0000000000000000000000000000ffff";
 
+    /// <summary>
+    /// Category of the log of the use case that registers a videogame. The entry of the
+    /// registration is observed by this category and not by the one of the middleware,
+    /// because both live in the same scope of correlation (AD-15).
+    /// </summary>
+    private const string RegisterGameCategory = "LANPartyHub.Server.Application.Catalog.RegisterGame";
+
     [Fact]
     public async Task A_request_with_the_two_headers_is_correlated_and_its_log_entry_carries_them()
     {
@@ -338,6 +345,133 @@ public sealed class ServerCorrelationTests
 
         // The server only opens listeners: it never reaches out to any service (NFR-10).
         Assert.Empty(newConnections);
+    }
+
+    [Fact]
+    public async Task The_administration_surface_does_not_ask_for_the_identifier_of_the_client()
+    {
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        // El organizador no es un cliente de la LAN, así que la superficie de la
+        // administración no exige la cabecera X-Client-Id (AD-30).
+        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+        request.Content = BuildValidGameBody();
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        // El alta de un videogame responde 201, y no un estado que solo diga que la
+        // petición no fue rechazada por falta de identificador de cliente.
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_administration_surface_is_still_correlated_by_the_identifier_of_the_operation()
+    {
+        await using var capture = await ConsoleLogCapture.StartAsync();
+
+        await using (var host = await TestServer.StartAsync(TestContext.Current.CancellationToken))
+        {
+            using var client = host.CreateClient();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+            request.Content = BuildValidGameBody();
+            request.Headers.Add(AdminCorrelationMiddleware.OperationIdHeaderName, OperationId);
+
+            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+            // La operación sigue correlacionada por su identificador, que es lo que AD-15
+            // exige para toda operación.
+            Assert.Equal(
+                OperationId,
+                response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single());
+        }
+
+        // La entrada del log de la operación lleva el identificador de la unidad de
+        // trabajo, y no el del cliente, porque la administración no lo tiene (AD-30).
+        // La entrada que se observa es la del caso de uso y no la del middleware: las dos
+        // están dentro del mismo scope de correlación, y observar cualquiera de las dos
+        // dejaría la entrada del caso de uso sin comprobar.
+        var entry = Assert.Single(
+            capture.Entries,
+            candidate => LogEntries.HasCategory(candidate, RegisterGameCategory)
+                && LogEntries.Scopes(candidate).Any(scope =>
+                    scope.TryGetProperty("OperationId", out var operationId)
+                    && operationId.GetString() == OperationId));
+
+        var scopes = LogEntries.Scopes(entry).ToArray();
+
+        Assert.Contains(
+            scopes,
+            scope => scope.TryGetProperty("OperationId", out var operationId)
+                && operationId.GetString() == OperationId);
+    }
+
+    [Fact]
+    public async Task The_administration_surface_gets_an_identifier_of_the_operation_when_the_request_does_not_carry_one()
+    {
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
+        request.Content = BuildValidGameBody();
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var operationId = response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single();
+
+        Assert.Equal(AdminCorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
+        Assert.NotEqual(string.Empty, operationId);
+    }
+
+    /// <summary>
+    /// Builds a body of the administration of the catalog with the eighteen metadata de
+    /// FR-1 (AD-34).
+    /// </summary>
+    /// <returns>The content of the request.</returns>
+    private static StringContent BuildValidGameBody()
+    {
+        var body = new
+        {
+            schemaVersion = GamesEndpoint.SupportedSchemaVersion,
+            game = new
+            {
+                gameId = string.Empty,
+                name = "Counter-Strike 2",
+                description = "Disparadores en primera persona.",
+                categories = new[] { "Shooter" },
+                tags = new[] { "fps" },
+                coverImage = "cover.png",
+                images = new[] { "captura-1.png" },
+                version = "1.41.3",
+                sizeBytes = 7_600_000_000,
+                minPlayers = 1,
+                maxPlayers = 10,
+                operatingSystem = "Windows",
+                distributionType = "Servidor",
+                installationType = "Portable",
+                launchConfiguration = new
+                {
+                    executablePath = "bin\\cs2.exe",
+                    arguments = new[] { "-novid" },
+                    workingDirectory = "game\\bin",
+                },
+                dependencies = new[] { "DirectX 12" },
+                license = "Propietaria",
+                distributionRestrictions = "Solo para el evento",
+            },
+        };
+
+        return new StringContent(
+            JsonSerializer.Serialize(body),
+            System.Text.Encoding.UTF8,
+            "application/json");
     }
 
     /// <summary>

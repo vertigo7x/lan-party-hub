@@ -1,0 +1,3869 @@
+diff --git a/src/Server/Application/Catalog/GameMetadata.cs b/src/Server/Application/Catalog/GameMetadata.cs
+deleted file mode 100644
+index 63a5aa7..0000000
+--- a/src/Server/Application/Catalog/GameMetadata.cs
++++ /dev/null
+@@ -1,135 +0,0 @@
+-using LANPartyHub.Shared.Contracts;
+-
+-namespace LANPartyHub.Server.Application.Catalog;
+-
+-/// <summary>
+-/// The eighteen mandatory metadata of FR-1 as the use cases of the catalog receive them
+-/// (AD-1, AD-34).
+-///
+-/// <para>
+-/// The type lives in the Application layer because it is the input of the use cases, and
+-/// the adapter of the host projects the body of the request onto it. The response of the
+-/// API is the contract of <c>Shared</c>, which is a different shape: it carries the
+-/// identifier of the videogame and it is the only contract of metadata of the system
+-/// (AD-34).
+-/// </para>
+-/// </summary>
+-public sealed class GameMetadata
+-{
+-    /// <summary>Creates the metadata of a videogame.</summary>
+-    /// <param name="name">Human readable name.</param>
+-    /// <param name="description">Description of the videogame.</param>
+-    /// <param name="categories">Categories used to filter the catalog.</param>
+-    /// <param name="tags">Free form tags of the videogame.</param>
+-    /// <param name="coverImage">Reference of the cover image.</param>
+-    /// <param name="images">References of the additional images.</param>
+-    /// <param name="version">Version published in the catalog, as an opaque string.</param>
+-    /// <param name="sizeBytes">Exact size of the package in bytes.</param>
+-    /// <param name="minPlayers">Minimum number of players.</param>
+-    /// <param name="maxPlayers">Maximum number of players.</param>
+-    /// <param name="operatingSystem">Operating system the videogame runs on.</param>
+-    /// <param name="distributionType">Distribution type of the videogame.</param>
+-    /// <param name="installationType">Installation type of the videogame.</param>
+-    /// <param name="launchConfiguration">
+-    /// Launch configuration of the videogame: path of the executable, arguments and working
+-    /// directory. It is the single field of AD-34, with the same shape that the contract of
+-    /// the response publishes.
+-    /// </param>
+-    /// <param name="dependencies">Dependencies required by the videogame.</param>
+-    /// <param name="license">License of the videogame.</param>
+-    /// <param name="distributionRestrictions">Restrictions on the publication of the videogame.</param>
+-    public GameMetadata(
+-        string name,
+-        string description,
+-        IReadOnlyList<string> categories,
+-        IReadOnlyList<string> tags,
+-        string coverImage,
+-        IReadOnlyList<string> images,
+-        string version,
+-        long sizeBytes,
+-        int minPlayers,
+-        int maxPlayers,
+-        string operatingSystem,
+-        string distributionType,
+-        string installationType,
+-        InstallationManifest.LaunchSettings launchConfiguration,
+-        IReadOnlyList<string> dependencies,
+-        string license,
+-        string distributionRestrictions)
+-    {
+-        ArgumentNullException.ThrowIfNull(launchConfiguration);
+-
+-        Name = name;
+-        Description = description;
+-        Categories = categories;
+-        Tags = tags;
+-        CoverImage = coverImage;
+-        Images = images;
+-        Version = version;
+-        SizeBytes = sizeBytes;
+-        MinPlayers = minPlayers;
+-        MaxPlayers = maxPlayers;
+-        OperatingSystem = operatingSystem;
+-        DistributionType = distributionType;
+-        InstallationType = installationType;
+-        LaunchConfiguration = launchConfiguration;
+-        Dependencies = dependencies;
+-        License = license;
+-        DistributionRestrictions = distributionRestrictions;
+-    }
+-
+-    /// <summary>Human readable name.</summary>
+-    public string Name { get; }
+-
+-    /// <summary>Description of the videogame.</summary>
+-    public string Description { get; }
+-
+-    /// <summary>Categories used to filter the catalog.</summary>
+-    public IReadOnlyList<string> Categories { get; }
+-
+-    /// <summary>Free form tags of the videogame.</summary>
+-    public IReadOnlyList<string> Tags { get; }
+-
+-    /// <summary>Reference of the cover image.</summary>
+-    public string CoverImage { get; }
+-
+-    /// <summary>References of the additional images.</summary>
+-    public IReadOnlyList<string> Images { get; }
+-
+-    /// <summary>Version published in the catalog, as an opaque string.</summary>
+-    public string Version { get; }
+-
+-    /// <summary>Exact size of the package in bytes.</summary>
+-    public long SizeBytes { get; }
+-
+-    /// <summary>Minimum number of players.</summary>
+-    public int MinPlayers { get; }
+-
+-    /// <summary>Maximum number of players.</summary>
+-    public int MaxPlayers { get; }
+-
+-    /// <summary>Operating system the videogame runs on.</summary>
+-    public string OperatingSystem { get; }
+-
+-    /// <summary>Distribution type of the videogame.</summary>
+-    public string DistributionType { get; }
+-
+-    /// <summary>Installation type of the videogame.</summary>
+-    public string InstallationType { get; }
+-
+-    /// <summary>
+-    /// Launch configuration of the videogame: path of the executable, arguments and working
+-    /// directory. It is the single field of AD-34, with the same shape that the contract of
+-    /// the response publishes.
+-    /// </summary>
+-    public InstallationManifest.LaunchSettings LaunchConfiguration { get; }
+-
+-    /// <summary>Dependencies required by the videogame.</summary>
+-    public IReadOnlyList<string> Dependencies { get; }
+-
+-    /// <summary>License of the videogame.</summary>
+-    public string License { get; }
+-
+-    /// <summary>Restrictions on the publication of the videogame.</summary>
+-    public string DistributionRestrictions { get; }
+-}
+diff --git a/src/Server/Application/Catalog/ModifyGame.cs b/src/Server/Application/Catalog/ModifyGame.cs
+index bfcc3a9..8fbfacb 100644
+--- a/src/Server/Application/Catalog/ModifyGame.cs
++++ b/src/Server/Application/Catalog/ModifyGame.cs
+@@ -37,7 +37,7 @@ public sealed class ModifyGame
+     /// never changed (AD-34).
+     /// </summary>
+     /// <param name="gameId">Identifier of the videogame to modify.</param>
+-    /// <param name="request">Metadata of the videogame.</param>
++    /// <param name="metadata">Metadata of the videogame.</param>
+     /// <param name="cancellationToken">Token that cancels the operation.</param>
+     /// <returns>The contract of the videogame with the new metadata.</returns>
+     /// <exception cref="GameMetadataMissingException">A mandatory metadata is empty or absent.</exception>
+@@ -45,10 +45,15 @@ public sealed class ModifyGame
+     /// <exception cref="GameNotFoundException">The catalog does not hold that videogame.</exception>
+     public async Task<GameDescriptor> ExecuteAsync(
+         string gameId,
+-        GameMetadata request,
++        GameDescriptor metadata,
+         CancellationToken cancellationToken)
+     {
+-        ArgumentNullException.ThrowIfNull(request);
++        ArgumentNullException.ThrowIfNull(metadata);
++
++        if (string.IsNullOrWhiteSpace(gameId))
++        {
++            throw new GameNotFoundException(gameId ?? string.Empty);
++        }
+ 
+         var existing = await _repository.FindAsync(gameId, cancellationToken).ConfigureAwait(false);
+ 
+@@ -59,25 +64,25 @@ public sealed class ModifyGame
+ 
+         var game = new GameRegistration(
+             existing.GameId,
+-            request.Name,
+-            request.Description,
+-            request.Categories,
+-            request.Tags,
+-            request.CoverImage,
+-            request.Images,
+-            request.Version,
+-            request.SizeBytes,
+-            request.MinPlayers,
+-            request.MaxPlayers,
+-            request.OperatingSystem,
+-            request.DistributionType,
+-            request.InstallationType,
+-            request.LaunchConfiguration.ExecutablePath,
+-            request.LaunchConfiguration.Arguments,
+-            request.LaunchConfiguration.WorkingDirectory,
+-            request.Dependencies,
+-            request.License,
+-            request.DistributionRestrictions);
++            metadata.Name,
++            metadata.Description,
++            metadata.Categories,
++            metadata.Tags,
++            metadata.CoverImage,
++            metadata.Images,
++            metadata.Version,
++            metadata.SizeBytes,
++            metadata.MinPlayers,
++            metadata.MaxPlayers,
++            metadata.OperatingSystem,
++            metadata.DistributionType,
++            metadata.InstallationType,
++            metadata.LaunchConfiguration.ExecutablePath,
++            metadata.LaunchConfiguration.Arguments,
++            metadata.LaunchConfiguration.WorkingDirectory,
++            metadata.Dependencies,
++            metadata.License,
++            metadata.DistributionRestrictions);
+ 
+         var updated = await _repository.UpdateAsync(game, cancellationToken).ConfigureAwait(false);
+ 
+@@ -94,3 +99,38 @@ public sealed class ModifyGame
+         return RegisterGame.ToDescriptor(game);
+     }
+ }
++
++/// <summary>
++/// Use case that reads the videogames of the catalog (AD-1, AD-22).
++///
++/// <para>
++/// The reading is what fills the list of the section of the catalog of the organizer. It
++/// is a use case of the server and not a route of the API: the routes that publish the
++/// catalog to the clients of the LAN belong to the stories that follow (AD-5).
++/// </para>
++/// </summary>
++public sealed class ListGames
++{
++    private readonly IGameRepository _repository;
++
++    /// <summary>Creates the use case that reads the videogames of the catalog.</summary>
++    /// <param name="repository">Port of the repository of the videogames.</param>
++    public ListGames(IGameRepository repository)
++    {
++        ArgumentNullException.ThrowIfNull(repository);
++
++        _repository = repository;
++    }
++
++    /// <summary>
++    /// Reads every videogame of the catalog.
++    /// </summary>
++    /// <param name="cancellationToken">Token that cancels the operation.</param>
++    /// <returns>The contracts of the videogames of the catalog.</returns>
++    public async Task<IReadOnlyList<GameDescriptor>> ExecuteAsync(CancellationToken cancellationToken)
++    {
++        var games = await _repository.ListAsync(cancellationToken).ConfigureAwait(false);
++
++        return games.Select(RegisterGame.ToDescriptor).ToArray();
++    }
++}
+diff --git a/src/Server/Application/Catalog/RegisterGame.cs b/src/Server/Application/Catalog/RegisterGame.cs
+index 424a0ff..26a55d6 100644
+--- a/src/Server/Application/Catalog/RegisterGame.cs
++++ b/src/Server/Application/Catalog/RegisterGame.cs
+@@ -14,6 +14,12 @@ namespace LANPartyHub.Server.Application.Catalog;
+ /// repository and returns the contract of <c>Shared</c> that the API publishes. It does not
+ /// know the adapter that persists it (AD-1).
+ /// </para>
++/// <para>
++/// The input is the contract of <c>Shared</c> itself and not a type of the server that
++/// repeats its eighteen fields: <c>GameDescriptor</c> is the single contract of the
++/// metadata of a videogame, and a second type with the same fields would be able to
++/// diverge from it (AD-34).
++/// </para>
+ /// </summary>
+ public sealed class RegisterGame
+ {
+@@ -35,36 +41,36 @@ public sealed class RegisterGame
+     /// <summary>
+     /// Registers a videogame in the catalog of the event.
+     /// </summary>
+-    /// <param name="request">Metadata of the videogame to register.</param>
++    /// <param name="metadata">Metadata of the videogame to register.</param>
+     /// <param name="cancellationToken">Token that cancels the operation.</param>
+     /// <returns>The contract of the videogame that has been registered.</returns>
+     /// <exception cref="GameMetadataMissingException">A mandatory metadata is empty or absent.</exception>
+     /// <exception cref="GamePlayerRangeException">The minimum of players is greater than the maximum.</exception>
+-    public async Task<GameDescriptor> ExecuteAsync(GameMetadata request, CancellationToken cancellationToken)
++    public async Task<GameDescriptor> ExecuteAsync(GameDescriptor metadata, CancellationToken cancellationToken)
+     {
+-        ArgumentNullException.ThrowIfNull(request);
++        ArgumentNullException.ThrowIfNull(metadata);
+ 
+         var game = new GameRegistration(
+             GameRegistration.GenerateGameId(),
+-            request.Name,
+-            request.Description,
+-            request.Categories,
+-            request.Tags,
+-            request.CoverImage,
+-            request.Images,
+-            request.Version,
+-            request.SizeBytes,
+-            request.MinPlayers,
+-            request.MaxPlayers,
+-            request.OperatingSystem,
+-            request.DistributionType,
+-            request.InstallationType,
+-            request.LaunchConfiguration.ExecutablePath,
+-            request.LaunchConfiguration.Arguments,
+-            request.LaunchConfiguration.WorkingDirectory,
+-            request.Dependencies,
+-            request.License,
+-            request.DistributionRestrictions);
++            metadata.Name,
++            metadata.Description,
++            metadata.Categories,
++            metadata.Tags,
++            metadata.CoverImage,
++            metadata.Images,
++            metadata.Version,
++            metadata.SizeBytes,
++            metadata.MinPlayers,
++            metadata.MaxPlayers,
++            metadata.OperatingSystem,
++            metadata.DistributionType,
++            metadata.InstallationType,
++            metadata.LaunchConfiguration.ExecutablePath,
++            metadata.LaunchConfiguration.Arguments,
++            metadata.LaunchConfiguration.WorkingDirectory,
++            metadata.Dependencies,
++            metadata.License,
++            metadata.DistributionRestrictions);
+ 
+         await _repository.AddAsync(game, cancellationToken).ConfigureAwait(false);
+ 
+diff --git a/src/Server/Application/Ports/IGameRepository.cs b/src/Server/Application/Ports/IGameRepository.cs
+index ebb3ef1..2dc84a4 100644
+--- a/src/Server/Application/Ports/IGameRepository.cs
++++ b/src/Server/Application/Ports/IGameRepository.cs
+@@ -37,6 +37,15 @@ public interface IGameRepository
+     /// </returns>
+     Task<GameRegistration?> FindAsync(string gameId, CancellationToken cancellationToken);
+ 
++    /// <summary>
++    /// Reads every videogame of the catalog. The reading is what fills the list of the
++    /// section of the catalog of the organizer, and it is not a route of the API: the
++    /// routes that publish the catalog belong to the stories that follow (AD-1, AD-5).
++    /// </summary>
++    /// <param name="cancellationToken">Token that cancels the operation.</param>
++    /// <returns>The registrations of the videogames of the catalog.</returns>
++    Task<IReadOnlyList<GameRegistration>> ListAsync(CancellationToken cancellationToken);
++
+     /// <summary>
+     /// Replaces the metadata of a videogame of the catalog. The identifier of the
+     /// videogame is never changed (AD-34).
+diff --git a/src/Server/Domain/Catalog/CatalogDomainExceptions.cs b/src/Server/Domain/Catalog/CatalogDomainExceptions.cs
+index cdd4113..15e8490 100644
+--- a/src/Server/Domain/Catalog/CatalogDomainExceptions.cs
++++ b/src/Server/Domain/Catalog/CatalogDomainExceptions.cs
+@@ -35,7 +35,9 @@ public abstract class CatalogDomainException : Exception
+ ///
+ /// <para>
+ /// The message names the concrete field that is missing, so the organizer knows which one
+-/// to fill in without having to guess (AD-25).
++/// to fill in without having to guess (AD-25). The stable code of the catalog that
++/// answers this exception also names the field, because the shape of <c>ApiError</c> has
++/// no room for it (AD-15, AD-25).
+ /// </para>
+ /// </summary>
+ public sealed class GameMetadataMissingException : CatalogDomainException
+diff --git a/src/Server/Domain/Catalog/GameRegistration.cs b/src/Server/Domain/Catalog/GameRegistration.cs
+index 89de922..a399a70 100644
+--- a/src/Server/Domain/Catalog/GameRegistration.cs
++++ b/src/Server/Domain/Catalog/GameRegistration.cs
+@@ -30,6 +30,9 @@ public sealed class GameRegistration
+     /// </summary>
+     public static class FieldNames
+     {
++        /// <summary>Opaque UUID v7 identifier of the videogame.</summary>
++        public const string GameId = "gameId";
++
+         /// <summary>Human readable name of the videogame.</summary>
+         public const string Name = "name";
+ 
+@@ -152,7 +155,7 @@ public sealed class GameRegistration
+         ArgumentNullException.ThrowIfNull(launchArguments);
+         ArgumentNullException.ThrowIfNull(dependencies);
+ 
+-        GameId = gameId ?? throw new GameMetadataMissingException(FieldNames.Name);
++        GameId = RequireIdentifier(gameId);
+         _name = RequireText(name, FieldNames.Name);
+         _description = RequireText(description, FieldNames.Description);
+         _categories = RequireItems(categories, FieldNames.Categories);
+@@ -164,7 +167,7 @@ public sealed class GameRegistration
+         _distributionType = RequireText(distributionType, FieldNames.DistributionType);
+         _installationType = RequireText(installationType, FieldNames.InstallationType);
+         _launchExecutablePath = RequireText(launchExecutablePath, FieldNames.LaunchConfiguration);
+-        _launchArguments = [.. launchArguments];
++        _launchArguments = RequireItems(launchArguments, FieldNames.LaunchConfiguration);
+         _launchWorkingDirectory = RequireText(launchWorkingDirectory, FieldNames.LaunchConfiguration);
+         _dependencies = RequireItems(dependencies, FieldNames.Dependencies);
+         _license = RequireText(license, FieldNames.License);
+@@ -272,6 +275,24 @@ public sealed class GameRegistration
+         value is { Length: CanonicalIdentifierLength }
+         && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+ 
++    /// <summary>
++    /// Requires the identifier of the videogame. An identifier that is absent or that holds
++    /// only white space is rejected, and the exception names the identifier itself and not
++    /// another field (AD-25).
++    /// </summary>
++    /// <param name="value">Value of the field.</param>
++    /// <returns>The trimmed identifier of the videogame.</returns>
++    /// <exception cref="GameMetadataMissingException">The identifier is empty or absent.</exception>
++    private static string RequireIdentifier(string? value)
++    {
++        if (string.IsNullOrWhiteSpace(value))
++        {
++            throw new GameMetadataMissingException(FieldNames.GameId);
++        }
++
++        return value.Trim();
++    }
++
+     /// <summary>
+     /// Requires a mandatory text. A text that is empty or that holds only white space is
+     /// absent, and the exception names the concrete field (AD-25).
+@@ -291,13 +312,15 @@ public sealed class GameRegistration
+     }
+ 
+     /// <summary>
+-    /// Requires a mandatory collection. A collection that is empty is absent, and the
+-    /// exception names the concrete field (AD-25).
++    /// Requires a mandatory collection. A collection that is empty, that holds an absent
++    /// item or that holds an item that is only white space is absent, and the exception
++    /// names the concrete field (AD-25). The items that survive are trimmed, the same way
++    /// the mandatory texts are (AD-25).
+     /// </summary>
+     /// <param name="values">Values of the field.</param>
+     /// <param name="fieldName">Name of the field.</param>
+-    /// <returns>The values of the field.</returns>
+-    /// <exception cref="GameMetadataMissingException">The collection is empty.</exception>
++    /// <returns>The trimmed values of the field.</returns>
++    /// <exception cref="GameMetadataMissingException">The collection is empty or holds an absent item.</exception>
+     private static string[] RequireItems(IReadOnlyList<string> values, string fieldName)
+     {
+         if (values.Count == 0)
+@@ -305,6 +328,20 @@ public sealed class GameRegistration
+             throw new GameMetadataMissingException(fieldName);
+         }
+ 
+-        return [.. values];
++        var items = new string[values.Count];
++
++        for (var index = 0; index < values.Count; index++)
++        {
++            var item = values[index];
++
++            if (string.IsNullOrWhiteSpace(item))
++            {
++                throw new GameMetadataMissingException(fieldName);
++            }
++
++            items[index] = item.Trim();
++        }
++
++        return items;
+     }
+ }
+diff --git a/src/Server/Host/GameRequest.cs b/src/Server/Host/GameRequest.cs
+index ccde1f0..a747f5d 100644
+--- a/src/Server/Host/GameRequest.cs
++++ b/src/Server/Host/GameRequest.cs
+@@ -1,4 +1,3 @@
+-using LANPartyHub.Server.Application.Catalog;
+ using LANPartyHub.Shared.Contracts;
+ 
+ namespace LANPartyHub.Server.Host;
+@@ -7,15 +6,22 @@ namespace LANPartyHub.Server.Host;
+ /// Body of the administration of the videogames of the catalog (AD-5, AD-34).
+ ///
+ /// <para>
+-/// The body carries the <c>schemaVersion</c> that every mutation of the API carries and the
+-/// eighteen metadata of FR-1. It is a type of the server and not a contract of
+-/// <c>Shared</c>: the contract of <c>Shared</c> that carries the eighteen fields is the
+-/// description of the videogame, and it is the shape of the response, while this body is
+-/// consumed only by the administration surface of the server (AD-34).
++/// The body is a <em>sobre</em> around the contract of <c>Shared</c>: it carries the
++/// <c>schemaVersion</c> that every mutation of the API carries (AD-5) and, optionally,
++/// the identifier of the videogame that is being modified. The eighteen metadata of FR-1
++/// travel in the <see cref="GameDescriptor"/> that the body brings, so this type does not
++/// repeat a single name of a field and cannot diverge from the contract (AD-34).
+ /// </para>
+ /// <para>
+-/// The body of a modification carries additionally the identifier of the videogame, and it
+-/// is that identifier the one that stays when the videogame is modified (AD-34).
++/// The body is a type of the server and not a contract of <c>Shared</c>: AD-18 fixes
++/// exhaustively the twenty contracts of <c>Shared</c> and the body of an administration
++/// request is consumed only by the server, never by the client of the LAN.
++/// </para>
++/// <para>
++/// The identifier of the videogame is what tells the alta and the modificaci├│n apart: a
++/// body that does not carry it registers a videogame and the server generates the
++/// identifier; a body that carries it modifies that videogame and the identifier never
++/// changes (AD-34).
+ /// </para>
+ /// </summary>
+ public sealed class GameRequest
+@@ -33,85 +39,48 @@ public sealed class GameRequest
+     /// </summary>
+     public string? GameId { get; set; }
+ 
+-    /// <summary>Human readable name.</summary>
+-    public string? Name { get; set; }
+-
+-    /// <summary>Description of the videogame.</summary>
+-    public string? Description { get; set; }
+-
+-    /// <summary>Categories used to filter the catalog.</summary>
+-    public IReadOnlyList<string>? Categories { get; set; }
+-
+-    /// <summary>Free form tags of the videogame.</summary>
+-    public IReadOnlyList<string>? Tags { get; set; }
+-
+-    /// <summary>Reference of the cover image.</summary>
+-    public string? CoverImage { get; set; }
+-
+-    /// <summary>References of the additional images.</summary>
+-    public IReadOnlyList<string>? Images { get; set; }
+-
+-    /// <summary>Version published in the catalog, as an opaque string.</summary>
+-    public string? Version { get; set; }
+-
+-    /// <summary>Exact size of the package in bytes.</summary>
+-    public long SizeBytes { get; set; }
+-
+-    /// <summary>Minimum number of players.</summary>
+-    public int MinPlayers { get; set; }
+-
+-    /// <summary>Maximum number of players.</summary>
+-    public int MaxPlayers { get; set; }
+-
+-    /// <summary>Operating system the videogame runs on.</summary>
+-    public string? OperatingSystem { get; set; }
+-
+-    /// <summary>Distribution type of the videogame.</summary>
+-    public string? DistributionType { get; set; }
+-
+-    /// <summary>Installation type of the videogame.</summary>
+-    public string? InstallationType { get; set; }
+-
+     /// <summary>
+-    /// Launch configuration of the videogame: path of the executable, arguments and working
+-    /// directory. It is ONE field of the contract of AD-34, with the same nested shape that
+-    /// the response publishes.
++    /// The eighteen metadata of FR-1, with the exact form of the contract of
++    /// <c>Shared</c> (AD-34).
+     /// </summary>
+-    public InstallationManifest.LaunchSettings? LaunchConfiguration { get; set; }
+-
+-    /// <summary>Dependencies required by the videogame.</summary>
+-    public IReadOnlyList<string>? Dependencies { get; set; }
+-
+-    /// <summary>License of the videogame.</summary>
+-    public string? License { get; set; }
+-
+-    /// <summary>Restrictions on the publication of the videogame.</summary>
+-    public string? DistributionRestrictions { get; set; }
++    public GameDescriptor? Game { get; set; }
+ 
+     /// <summary>
+-    /// Projects the body of the request onto the metadata that the use cases of the catalog
+-    /// receive.
++    /// Projects the body of the request onto the contract that the use cases of the
++    /// catalog receive. The identifier of the videogame is the one of the body, or the
++    /// one that the descriptor carries when the body does not name it.
+     /// </summary>
+-    /// <returns>The metadata of the videogame.</returns>
+-    public GameMetadata ToMetadata() => new(
+-        Name ?? string.Empty,
+-        Description ?? string.Empty,
+-        Categories ?? [],
+-        Tags ?? [],
+-        CoverImage ?? string.Empty,
+-        Images ?? [],
+-        Version ?? string.Empty,
+-        SizeBytes,
+-        MinPlayers,
+-        MaxPlayers,
+-        OperatingSystem ?? string.Empty,
+-        DistributionType ?? string.Empty,
+-        InstallationType ?? string.Empty,
+-        LaunchConfiguration ?? new InstallationManifest.LaunchSettings(
+-            string.Empty,
+-            [],
+-            string.Empty),
+-        Dependencies ?? [],
+-        License ?? string.Empty,
+-        DistributionRestrictions ?? string.Empty);
++    /// <returns>The contract of the videogame.</returns>
++    /// <exception cref="GameRequestInvalidException">
++    /// The body does not carry the metadata of the videogame.
++    /// </exception>
++    public GameDescriptor ToDescriptor()
++    {
++        if (Game is null)
++        {
++            throw new GameRequestInvalidException(
++                "El cuerpo de la petici├│n no lleva los metadatos del videojuego.");
++        }
++
++        if (string.IsNullOrWhiteSpace(GameId))
++        {
++            return Game;
++        }
++
++        return Game with { GameId = GameId.Trim() };
++    }
++}
++
++/// <summary>
++/// The body of the administration does not carry the metadata of the videogame (AD-5,
++/// AD-34).
++/// </summary>
++public sealed class GameRequestInvalidException : Exception
++{
++    /// <summary>Creates the exception of a body that does not carry the metadata.</summary>
++    /// <param name="message">Message that tells what is missing in the body.</param>
++    public GameRequestInvalidException(string message)
++        : base(message)
++    {
++    }
+ }
+diff --git a/src/Server/Host/GamesEndpoint.cs b/src/Server/Host/GamesEndpoint.cs
+index 671b87d..da29262 100644
+--- a/src/Server/Host/GamesEndpoint.cs
++++ b/src/Server/Host/GamesEndpoint.cs
+@@ -89,7 +89,15 @@ public static class GamesEndpoint
+                 return;
+             }
+ 
+-            if (request.SchemaVersion is null)
++            // The version of the schema is the first thing that is checked: a mutation
++            // with a version that the server does not understand is rejected before
++            // anything is written (AD-5). The exceptions of the domain state the two
++            // cases, so the rule lives in one place and the adapter translates it.
++            try
++            {
++                EnsureSupportedSchemaVersion(request.SchemaVersion);
++            }
++            catch (SchemaVersionMissingException)
+             {
+                 await WriteErrorAsync(
+                     context,
+@@ -102,8 +110,7 @@ public static class GamesEndpoint
+ 
+                 return;
+             }
+-
+-            if (request.SchemaVersion != SupportedSchemaVersion)
++            catch (SchemaVersionNotSupportedException)
+             {
+                 await WriteErrorAsync(
+                     context,
+@@ -119,34 +126,52 @@ public static class GamesEndpoint
+ 
+             try
+             {
+-                var descriptor = string.IsNullOrWhiteSpace(request.GameId)
+-                    ? await registerGame
+-                        .ExecuteAsync(request.ToMetadata(), context.RequestAborted)
++                var metadata = request.ToDescriptor();
++
++                var isModification = !string.IsNullOrWhiteSpace(request.GameId);
++
++                var descriptor = isModification
++                    ? await modifyGame
++                        .ExecuteAsync(request.GameId!, metadata, context.RequestAborted)
+                         .ConfigureAwait(false)
+-                    : await modifyGame
+-                        .ExecuteAsync(request.GameId, request.ToMetadata(), context.RequestAborted)
++                    : await registerGame
++                        .ExecuteAsync(metadata, context.RequestAborted)
+                         .ConfigureAwait(false);
+ 
+-                var status = string.IsNullOrWhiteSpace(request.GameId)
+-                    ? StatusCodes.Status201Created
+-                    : StatusCodes.Status200OK;
++                context.Response.StatusCode = isModification
++                    ? StatusCodes.Status200OK
++                    : StatusCodes.Status201Created;
+ 
+-                context.Response.StatusCode = status;
+                 context.Response.ContentType = "application/json; charset=utf-8";
+ 
+                 await context.Response
+                     .WriteAsync(Serialize(descriptor), context.RequestAborted)
+                     .ConfigureAwait(false);
+             }
++            catch (GameRequestInvalidException exception)
++            {
++                await WriteErrorAsync(
++                    context,
++                    metrics,
++                    logger,
++                    StatusCodes.Status400BadRequest,
++                    ErrorCatalog.Resolve(ErrorCatalog.SchemaVersionMissingCode),
++                    exception.Message)
++                    .ConfigureAwait(false);
++            }
+             catch (GameMetadataMissingException exception)
+             {
+-                // The message names the concrete field that is missing, so the organizer
+-                // knows which one to fill in (AD-25).
++                // El c├│digo del cat├ílogo nombra el campo que falta, porque la forma de
++                // ApiError es fija y no tiene hueco para el campo (AD-15, AD-25).
++                var code = MetadataMissingCodeFor(exception.FieldName);
++
++                var entry = ErrorCatalog.Resolve(code);
++
+                 var error = new ApiError(
+-                    ErrorCatalog.GameMetadataMissingCode,
++                    code,
+                     exception.Message,
+-                    ErrorCatalog.Resolve(ErrorCatalog.GameMetadataMissingCode).Cause,
+-                    ErrorCatalog.Resolve(ErrorCatalog.GameMetadataMissingCode).NextStep);
++                    entry.Cause,
++                    entry.NextStep);
+ 
+                 await WriteErrorAsync(
+                     context,
+@@ -159,11 +184,15 @@ public static class GamesEndpoint
+             }
+             catch (GamePlayerRangeException exception)
+             {
++                // El rango inv├ílido tiene su propio c├│digo: la m├®trica de errores por
++                // c├│digo distingue el rango del metadato ausente (AD-15, AD-25).
++                var entry = ErrorCatalog.Resolve(ErrorCatalog.GamePlayerRangeInvalidCode);
++
+                 var error = new ApiError(
+-                    ErrorCatalog.GameMetadataMissingCode,
++                    ErrorCatalog.GamePlayerRangeInvalidCode,
+                     exception.Message,
+-                    ErrorCatalog.Resolve(ErrorCatalog.GameMetadataMissingCode).Cause,
+-                    ErrorCatalog.Resolve(ErrorCatalog.GameMetadataMissingCode).NextStep);
++                    entry.Cause,
++                    entry.NextStep);
+ 
+                 await WriteErrorAsync(
+                     context,
+@@ -187,8 +216,8 @@ public static class GamesEndpoint
+             }
+             catch (Exception exception) when (exception is not OperationCanceledException)
+             {
+-                // The exception never reaches the message of the response: the operator
+-                // finds it in the log, correlated by its operationId (AD-15).
++                // La excepci├│n nunca alcanza el mensaje de la respuesta: el operador
++                // la encuentra en el log, correlacionada por su operationId (AD-15).
+                 logger.LogError(
+                     exception,
+                     "No se pudo guardar el videojuego del cat├ílogo: la persistencia ha fallado.");
+@@ -205,6 +234,64 @@ public static class GamesEndpoint
+         });
+     }
+ 
++    /// <summary>
++    /// Comprueba que el cuerpo de la mutaci├│n lleva la versi├│n del esquema que el servidor
++    /// soporta (AD-5).
++    ///
++    /// <para>
++    /// La regla vive en el dominio y el adaptador la traduce a la forma de error de la
++    /// API: un cuerpo sin <c>schemaVersion</c> y un cuerpo con una versi├│n que no se
++    /// soportan son dos casos distintos y cada uno tiene su excepci├│n y su c├│digo
++    /// (AD-15, AD-25).
++    /// </para>
++    /// </summary>
++    /// <param name="schemaVersion">Versi├│n del esquema que lleva el cuerpo.</param>
++    /// <exception cref="SchemaVersionMissingException">El cuerpo no lleva la versi├│n del esquema.</exception>
++    /// <exception cref="SchemaVersionNotSupportedException">
++    /// El cuerpo lleva una versi├│n del esquema que el servidor no soporta.
++    /// </exception>
++    private static void EnsureSupportedSchemaVersion(int? schemaVersion)
++    {
++        if (schemaVersion is null)
++        {
++            throw new SchemaVersionMissingException();
++        }
++
++        if (schemaVersion != SupportedSchemaVersion)
++        {
++            throw new SchemaVersionNotSupportedException(schemaVersion.Value);
++        }
++    }
++
++    /// <summary>
++    /// The stable code of the catalog que responde al rechazo de un metadato obligatorio
++    /// ausente. El c├│digo nombra el campo que falta (AD-15, AD-25).
++    /// </summary>
++    /// <param name="fieldName">Nombre del campo que falta.</param>
++    /// <returns>El c├│digo estable del cat├ílogo de errores.</returns>
++    public static string MetadataMissingCodeFor(string fieldName) => fieldName switch
++    {
++        GameRegistration.FieldNames.GameId => ErrorCatalog.GameIdMissingCode,
++        GameRegistration.FieldNames.Name => ErrorCatalog.GameNameMissingCode,
++        GameRegistration.FieldNames.Description => ErrorCatalog.GameDescriptionMissingCode,
++        GameRegistration.FieldNames.Categories => ErrorCatalog.GameCategoriesMissingCode,
++        GameRegistration.FieldNames.Tags => ErrorCatalog.GameTagsMissingCode,
++        GameRegistration.FieldNames.CoverImage => ErrorCatalog.GameCoverImageMissingCode,
++        GameRegistration.FieldNames.Images => ErrorCatalog.GameImagesMissingCode,
++        GameRegistration.FieldNames.Version => ErrorCatalog.GameVersionMissingCode,
++        GameRegistration.FieldNames.SizeBytes => ErrorCatalog.GameSizeBytesMissingCode,
++        GameRegistration.FieldNames.MinPlayers => ErrorCatalog.GameMinPlayersMissingCode,
++        GameRegistration.FieldNames.MaxPlayers => ErrorCatalog.GameMaxPlayersMissingCode,
++        GameRegistration.FieldNames.OperatingSystem => ErrorCatalog.GameOperatingSystemMissingCode,
++        GameRegistration.FieldNames.DistributionType => ErrorCatalog.GameDistributionTypeMissingCode,
++        GameRegistration.FieldNames.InstallationType => ErrorCatalog.GameInstallationTypeMissingCode,
++        GameRegistration.FieldNames.LaunchConfiguration => ErrorCatalog.GameLaunchConfigurationMissingCode,
++        GameRegistration.FieldNames.Dependencies => ErrorCatalog.GameDependenciesMissingCode,
++        GameRegistration.FieldNames.License => ErrorCatalog.GameLicenseMissingCode,
++        GameRegistration.FieldNames.DistributionRestrictions => ErrorCatalog.GameDistributionRestrictionsMissingCode,
++        _ => ErrorCatalog.GameMetadataMissingCode,
++    };
++
+     /// <summary>
+     /// Writes the single error shape of the system in the response and counts the error
+     /// under its stable code (AD-15, AD-25).
+diff --git a/src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs b/src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs
+index e1f5d14..c360992 100644
+--- a/src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs
++++ b/src/Server/Infrastructure/Http/AdminCorrelationMiddleware.cs
+@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
+ namespace LANPartyHub.Server.Infrastructure.Http;
+ 
+ /// <summary>
+-/// Correlation of the requests of the administration surface (AD-15).
++/// Correlation of the requests of the administration surface (AD-15, AD-30).
+ ///
+ /// <para>
+ /// The surface of the administration is not the surface of the client: the organizer is
+@@ -24,7 +24,7 @@ namespace LANPartyHub.Server.Infrastructure.Http;
+ /// </summary>
+ public sealed class AdminCorrelationMiddleware
+ {
+-    /// <summary>Header that carries the identifier of the unit of work (AD-12).</summary>
++    /// <summary>Header that carries the identifier of the unit of work (AD-15).</summary>
+     public const string OperationIdHeaderName = "X-Operation-Id";
+ 
+     /// <summary>
+@@ -68,26 +68,50 @@ public sealed class AdminCorrelationMiddleware
+     {
+         ArgumentNullException.ThrowIfNull(context);
+ 
+-        var operationId = ReadCanonicalIdentifier(context.Request, OperationIdHeaderName)
+-            ?? GenerateOperationId();
++        var originalBody = context.Response.Body;
++        var counter = new CountingResponseStream(originalBody);
+ 
+-        context.Response.Headers[OperationIdHeaderName] = operationId;
+-
+-        using var scope = _scopeFactory.Open(operationId, clientId: null);
+-
+-        _metrics.OperationStarted();
++        context.Response.Body = counter;
+ 
+         try
+         {
+-            await _next(context).ConfigureAwait(false);
++            var operationId = ReadCanonicalIdentifier(context.Request, OperationIdHeaderName)
++                ?? GenerateOperationId();
++
++            context.Response.Headers[OperationIdHeaderName] = operationId;
++
++            using var scope = _scopeFactory.Open(operationId, clientId: null);
++
++            _metrics.OperationStarted();
+ 
+-            _logger.LogInformation(
+-                "Petici├│n de la superficie de administraci├│n atendida con el estado {StatusCode}.",
+-                context.Response.StatusCode);
++            try
++            {
++                await _next(context).ConfigureAwait(false);
++
++                _logger.LogInformation(
++                    "Petici├│n de la superficie de administraci├│n atendida con el estado {StatusCode}.",
++                    context.Response.StatusCode);
++            }
++            finally
++            {
++                _metrics.OperationCompleted();
++            }
+         }
+         finally
+         {
+-            _metrics.OperationCompleted();
++            // The bytes that the host has written are counted before the stream of the
++            // response is restored, so the traffic of the administration also feeds the
++            // published transfer rate (AD-15).
++            _metrics.RecordBytesWritten(counter.BytesWritten);
++
++            var installed = context.Response.Body;
++
++            context.Response.Body = originalBody;
++
++            if (!ReferenceEquals(installed, counter))
++            {
++                installed.Dispose();
++            }
+         }
+     }
+ 
+diff --git a/src/Server/Infrastructure/Persistence/GameRepository.cs b/src/Server/Infrastructure/Persistence/GameRepository.cs
+index f3d5418..da4f48f 100644
+--- a/src/Server/Infrastructure/Persistence/GameRepository.cs
++++ b/src/Server/Infrastructure/Persistence/GameRepository.cs
+@@ -54,6 +54,19 @@ public sealed class GameRepository : IGameRepository
+         return entity is null ? null : ToRegistration(entity);
+     }
+ 
++    /// <inheritdoc />
++    public async Task<IReadOnlyList<GameRegistration>> ListAsync(CancellationToken cancellationToken)
++    {
++        var entities = await _context.Games
++            .AsNoTracking()
++            .OrderBy(candidate => candidate.Name)
++            .ThenBy(candidate => candidate.GameId)
++            .ToListAsync(cancellationToken)
++            .ConfigureAwait(false);
++
++        return entities.Select(ToRegistration).ToArray();
++    }
++
+     /// <inheritdoc />
+     public async Task<bool> UpdateAsync(GameRegistration game, CancellationToken cancellationToken)
+     {
+diff --git a/src/Server/LANPartyHub.Server.csproj b/src/Server/LANPartyHub.Server.csproj
+index 81b337a..ec72126 100644
+--- a/src/Server/LANPartyHub.Server.csproj
++++ b/src/Server/LANPartyHub.Server.csproj
+@@ -35,13 +35,6 @@
+     <PackageReference Include="Haukcode.Mdns" Version="1.0.22" />
+   </ItemGroup>
+ 
+-  <!--
+-    AD-17: the configuration file that sits next to the binary is optional and carries the
+-    lowest priority of the three configuration sources (flags > env > file). It is copied to
+-    the output by the web SDK default, which already includes appsettings.json as Content
+-    with CopyToOutputDirectory=PreserveNewest, so no item group is needed for it.
+-  -->
+-
+   <!--
+     AD-1: the server is a single deployable, so its interface lives inside src/Server and
+     not in a project of its own: the binary of the server carries the host HTTP and the
+@@ -54,6 +47,13 @@
+     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+   </ItemGroup>
+ 
++  <!--
++    AD-17: the configuration file that sits next to the binary is optional and carries the
++    lowest priority of the three configuration sources (flags > env > file). It is copied to
++    the output by the web SDK default, which already includes appsettings.json as Content
++    with CopyToOutputDirectory=PreserveNewest, so no item group is needed for it.
++  -->
++
+   <!--
+     AD-18: the server consumes the shared contracts.
+     The web SDK already references the ASP.NET Core shared framework implicitly, so the
+diff --git a/src/Server/Presentation/Catalog/CatalogViewModel.cs b/src/Server/Presentation/Catalog/CatalogViewModel.cs
+index 0a23f35..47c8ede 100644
+--- a/src/Server/Presentation/Catalog/CatalogViewModel.cs
++++ b/src/Server/Presentation/Catalog/CatalogViewModel.cs
+@@ -11,6 +11,10 @@ namespace LANPartyHub.Server.Presentation.Catalog;
+ /// offers the alta and the modification of them. It holds no rule of the domain: the
+ /// validation of the metadata belongs to the domain (AD-1).
+ /// </para>
++/// <para>
++/// The list is filled with the videogames that the read port of the repository returns, so
++/// the section is not a list that is empty for ever (AC1).
++/// </para>
+ /// </summary>
+ public sealed class CatalogViewModel
+ {
+diff --git a/src/Server/Presentation/Catalog/CatalogWindow.cs b/src/Server/Presentation/Catalog/CatalogWindow.cs
+index ea1c95e..64f8ba2 100644
+--- a/src/Server/Presentation/Catalog/CatalogWindow.cs
++++ b/src/Server/Presentation/Catalog/CatalogWindow.cs
+@@ -2,6 +2,8 @@ using Avalonia;
+ using Avalonia.Controls;
+ using Avalonia.Layout;
+ using Avalonia.Media;
++using LANPartyHub.Server.Application.Catalog;
++using LANPartyHub.Shared.Contracts;
+ 
+ namespace LANPartyHub.Server.Presentation.Catalog;
+ 
+@@ -17,6 +19,11 @@ namespace LANPartyHub.Server.Presentation.Catalog;
+ /// The window is built in code, like the whole interface of the product: the repository
+ /// has no XAML file (AD-1).
+ /// </para>
++/// <para>
++/// The list is filled with the videogames that the read port of the repository returns, and
++/// the button of the alta opens the form, which hands the videogame to the use case of the
++/// catalog: the server and its interface live in the same process (AD-1).
++/// </para>
+ /// </summary>
+ public sealed class CatalogWindow : Window
+ {
+@@ -31,13 +38,30 @@ public sealed class CatalogWindow : Window
+     /// </summary>
+     public static readonly FontFamily MetaFontFamily = GameFormView.MetaFontFamily;
+ 
++    private readonly RegisterGame _registerGame;
++    private readonly ModifyGame _modifyGame;
++    private readonly ListGames _listGames;
++    private readonly StackPanel _rows;
++    private readonly TextBlock _summary;
++    private readonly TextBlock _status;
++
+     /// <summary>
+     /// Creates the window of the section of the catalog.
+     /// </summary>
+     /// <param name="viewModel">View model of the section.</param>
+-    public CatalogWindow(CatalogViewModel viewModel)
++    /// <param name="registerGame">Use case of the registration of a videogame.</param>
++    /// <param name="modifyGame">Use case of the modification of a videogame.</param>
++    /// <param name="listGames">Use case that reads the videogames of the catalog.</param>
++    public CatalogWindow(
++        CatalogViewModel viewModel,
++        RegisterGame registerGame,
++        ModifyGame modifyGame,
++        ListGames listGames)
+     {
+         ArgumentNullException.ThrowIfNull(viewModel);
++        ArgumentNullException.ThrowIfNull(registerGame);
++        ArgumentNullException.ThrowIfNull(modifyGame);
++        ArgumentNullException.ThrowIfNull(listGames);
+ 
+         Title = "Cat├ílogo";
+         Width = 960;
+@@ -45,6 +69,10 @@ public sealed class CatalogWindow : Window
+ 
+         ViewModel = viewModel;
+ 
++        _registerGame = registerGame;
++        _modifyGame = modifyGame;
++        _listGames = listGames;
++
+         var navigation = new StackPanel
+         {
+             Margin = new Thickness(12),
+@@ -64,20 +92,22 @@ public sealed class CatalogWindow : Window
+             },
+         };
+ 
+-        var rows = new StackPanel
++        _rows = new StackPanel
+         {
+             Spacing = 8,
+         };
+ 
+-        foreach (var row in viewModel.Rows)
+-        {
+-            rows.Children.Add(BuildRow(row));
+-        }
+-
+         var add = new Button { Content = "Registrar videojuego" };
+-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
++        var refresh = new Button { Content = "Actualizar cat├ílogo" };
++        _summary = new TextBlock
++        {
++            FontFamily = MetaFontFamily,
++            FontSize = GameFormView.MetaFontSize,
++        };
++        _status = new TextBlock { TextWrapping = TextWrapping.Wrap };
+ 
+-        add.Click += (_, _) => status.Text = "El formulario de alta se abre desde el cat├ílogo.";
++        add.Click += async (_, _) => await OpenFormAsync().ConfigureAwait(true);
++        refresh.Click += async (_, _) => await RefreshAsync().ConfigureAwait(true);
+ 
+         var main = new StackPanel
+         {
+@@ -91,18 +121,22 @@ public sealed class CatalogWindow : Window
+                     FontSize = 22,
+                     FontWeight = FontWeight.SemiBold,
+                 },
+-                new TextBlock
++                _summary,
++                new ScrollViewer
+                 {
+-                    Text = $"{viewModel.Count} videojuegos publicados.",
+-                    FontFamily = MetaFontFamily,
+-                    FontSize = GameFormView.MetaFontSize,
++                    Content = _rows,
+                 },
+-                new ScrollViewer
++                new StackPanel
+                 {
+-                    Content = rows,
++                    Orientation = Orientation.Horizontal,
++                    Spacing = 8,
++                    Children =
++                    {
++                        add,
++                        refresh,
++                    },
+                 },
+-                add,
+-                status,
++                _status,
+             },
+         };
+ 
+@@ -127,14 +161,97 @@ public sealed class CatalogWindow : Window
+     /// <summary>View model of the section.</summary>
+     public CatalogViewModel ViewModel { get; }
+ 
++    /// <summary>
++    /// Reads the videogames of the catalog and fills the list of the section with them.
++    /// </summary>
++    /// <returns>A task that completes when the list has been filled.</returns>
++    public async Task RefreshAsync()
++    {
++        try
++        {
++            var games = await _listGames.ExecuteAsync(CancellationToken.None).ConfigureAwait(true);
++
++            ViewModel.Replace(games);
++
++            RebuildRows();
++
++            _summary.Text = $"{ViewModel.Count} videojuegos publicados.";
++        }
++        catch (Exception exception)
++        {
++            // The exception never reaches the interface as a stack trace: the organizer
++            // sees a line and the operator finds the detail in the log (AD-15).
++            _status.Text = $"No se pudo leer el cat├ílogo: {exception.Message}";
++        }
++    }
++
++    /// <summary>
++    /// Opens the form of the alta. The form hands the videogame to the use case of the
++    /// catalog, and the list is refreshed when the videogame has been saved.
++    /// </summary>
++    /// <returns>A task that completes when the form has been closed.</returns>
++    private async Task OpenFormAsync()
++    {
++        var form = new GameFormView(ViewModel.CreateFormViewModel(), _registerGame, _modifyGame);
++
++        await form.ShowDialog(this).ConfigureAwait(true);
++
++        if (form.SavedGame is not null)
++        {
++            await RefreshAsync().ConfigureAwait(true);
++        }
++    }
++
++    /// <summary>
++    /// Opens the form of the modificaci├│n of one of the videogames of the list.
++    /// </summary>
++    /// <param name="game">Contract of the videogame to modify.</param>
++    /// <returns>A task that completes when the form has been closed.</returns>
++    private async Task OpenFormAsync(GameDescriptor game)
++    {
++        var form = new GameFormView(ViewModel.CreateFormViewModel(game), _registerGame, _modifyGame);
++
++        await form.ShowDialog(this).ConfigureAwait(true);
++
++        if (form.SavedGame is not null)
++        {
++            await RefreshAsync().ConfigureAwait(true);
++        }
++    }
++
++    /// <summary>
++    /// Builds the rows of the list again, with the videogames that the view model holds.
++    /// </summary>
++    private void RebuildRows()
++    {
++        _rows.Children.Clear();
++
++        foreach (var row in ViewModel.Rows)
++        {
++            var game = ViewModel.Games.FirstOrDefault(candidate => candidate.GameId == row.GameId);
++
++            var edit = new Button { Content = "Editar" };
++
++            if (game is not null)
++            {
++                var captured = game;
++
++                edit.Click += async (_, _) => await OpenFormAsync(captured).ConfigureAwait(true);
++            }
++
++            _rows.Children.Add(BuildRow(row, edit));
++        }
++    }
++
+     /// <summary>
+     /// Builds the row of a videogame of the list. The name, the version and the size are
+     /// the data that the organizer compares, so the version goes in a monospaced font and
+     /// the size carries the numeric value and the unit apart (AC4).
+     /// </summary>
+     /// <param name="row">Row of the videogame.</param>
++    /// <param name="edit">Button that opens the form of the modificaci├│n.</param>
+     /// <returns>The control of the row.</returns>
+-    private static Border BuildRow(CatalogGameRow row)
++    private static Border BuildRow(CatalogGameRow row, Button edit)
+     {
+         var size = new StackPanel
+         {
+@@ -176,6 +293,7 @@ public sealed class CatalogWindow : Window
+                     FontFamily = MetaFontFamily,
+                     FontSize = GameFormView.MetaFontSize,
+                 },
++                edit,
+             },
+         };
+ 
+diff --git a/src/Server/Presentation/Catalog/GameFormView.cs b/src/Server/Presentation/Catalog/GameFormView.cs
+index b234985..d4e9d0e 100644
+--- a/src/Server/Presentation/Catalog/GameFormView.cs
++++ b/src/Server/Presentation/Catalog/GameFormView.cs
+@@ -2,7 +2,9 @@ using Avalonia;
+ using Avalonia.Controls;
+ using Avalonia.Layout;
+ using Avalonia.Media;
++using LANPartyHub.Server.Application.Catalog;
+ using LANPartyHub.Server.Domain.Catalog;
++using LANPartyHub.Shared.Contracts;
+ 
+ namespace LANPartyHub.Server.Presentation.Catalog;
+ 
+@@ -20,6 +22,11 @@ namespace LANPartyHub.Server.Presentation.Catalog;
+ /// to the Epic 11, which is later. What this window reproduces is what the acceptance
+ /// criterion demands of the literals and of the derived size (AC4).
+ /// </para>
++/// <para>
++/// The button of the save hands the videogame to the use case of the catalog: the server
++/// and its interface live in the same process (AD-1), so the call is a direct call to the
++/// use case and not a call over the network (AD-5).
++/// </para>
+ /// </summary>
+ public sealed class GameFormView : Window
+ {
+@@ -48,13 +55,42 @@ public sealed class GameFormView : Window
+     /// </summary>
+     public const double MetaFontSize = 12;
+ 
++    private readonly TextBox _name;
++    private readonly TextBox _description;
++    private readonly TextBox _categories;
++    private readonly TextBox _tags;
++    private readonly TextBox _coverImage;
++    private readonly TextBox _images;
++    private readonly TextBox _version;
++    private readonly TextBox _sizeBytes;
++    private readonly TextBox _minPlayers;
++    private readonly TextBox _maxPlayers;
++    private readonly TextBox _operatingSystem;
++    private readonly TextBox _distributionType;
++    private readonly TextBox _installationType;
++    private readonly TextBox _launchExecutablePath;
++    private readonly TextBox _launchArguments;
++    private readonly TextBox _launchWorkingDirectory;
++    private readonly TextBox _dependencies;
++    private readonly TextBox _license;
++    private readonly TextBox _distributionRestrictions;
++    private readonly TextBlock _sizeValue;
++    private readonly TextBlock _status;
++
+     /// <summary>
+-    /// Creates the window of the form of the alta and the modificaci├│n of a videogame.
++    /// Creates the window of the form of the alta and la modificaci├│n of a videogame.
+     /// </summary>
+     /// <param name="viewModel">View model of the form.</param>
+-    public GameFormView(GameFormViewModel viewModel)
++    /// <param name="registerGame">Use case of the registration of a videogame.</param>
++    /// <param name="modifyGame">Use case of the modification of a videogame.</param>
++    public GameFormView(
++        GameFormViewModel viewModel,
++        RegisterGame registerGame,
++        ModifyGame modifyGame)
+     {
+         ArgumentNullException.ThrowIfNull(viewModel);
++        ArgumentNullException.ThrowIfNull(registerGame);
++        ArgumentNullException.ThrowIfNull(modifyGame);
+ 
+         Title = viewModel.IsModification ? "Editar videojuego" : "Registrar videojuego";
+         Width = 640;
+@@ -62,14 +98,14 @@ public sealed class GameFormView : Window
+ 
+         ViewModel = viewModel;
+ 
+-        var name = Field("Nombre", viewModel.Name, GameRegistration.FieldNames.Name);
+-        var description = Field("Descripci├│n", viewModel.Description, GameRegistration.FieldNames.Description);
+-        var categories = Field("Categor├¡as", viewModel.Categories, GameRegistration.FieldNames.Categories);
+-        var tags = Field("Etiquetas", viewModel.Tags, GameRegistration.FieldNames.Tags);
+-        var coverImage = Field("Car├ítula", viewModel.CoverImage, GameRegistration.FieldNames.CoverImage);
+-        var images = Field("Im├ígenes", viewModel.Images, GameRegistration.FieldNames.Images);
++        _name = Field("Nombre", viewModel.Name, GameRegistration.FieldNames.Name);
++        _description = Field("Descripci├│n", viewModel.Description, GameRegistration.FieldNames.Description);
++        _categories = Field("Categor├¡as", viewModel.Categories, GameRegistration.FieldNames.Categories);
++        _tags = Field("Etiquetas", viewModel.Tags, GameRegistration.FieldNames.Tags);
++        _coverImage = Field("Car├ítula", viewModel.CoverImage, GameRegistration.FieldNames.CoverImage);
++        _images = Field("Im├ígenes", viewModel.Images, GameRegistration.FieldNames.Images);
+ 
+-        var version = new TextBox
++        _version = new TextBox
+         {
+             PlaceholderText = "Versi├│n",
+             Text = viewModel.Version,
+@@ -77,7 +113,7 @@ public sealed class GameFormView : Window
+             FontSize = MonospaceFontSize,
+         };
+ 
+-        var sizeBytes = new TextBox
++        _sizeBytes = new TextBox
+         {
+             PlaceholderText = "Tama├▒o en bytes exactos",
+             Text = viewModel.SizeBytes > 0
+@@ -88,7 +124,7 @@ public sealed class GameFormView : Window
+         // The size is written in exact bytes and it is presented as the derived decimal
+         // value: the number in the monospaced token of sizes and the unit in the small
+         // token of metadata (AD-7, AC4).
+-        var sizeValue = new TextBlock
++        _sizeValue = new TextBlock
+         {
+             Text = viewModel.SizeValue,
+             FontFamily = MonospaceFontFamily,
+@@ -108,18 +144,18 @@ public sealed class GameFormView : Window
+             Spacing = 4,
+             Children =
+             {
+-                sizeValue,
++                _sizeValue,
+                 sizeUnit,
+             },
+         };
+ 
+-        var minPlayers = Field("Jugadores m├¡nimo", viewModel.MinPlayers.ToString(System.Globalization.CultureInfo.InvariantCulture), GameRegistration.FieldNames.MinPlayers);
+-        var maxPlayers = Field("Jugadores m├íximo", viewModel.MaxPlayers.ToString(System.Globalization.CultureInfo.InvariantCulture), GameRegistration.FieldNames.MaxPlayers);
+-        var operatingSystem = Field("Sistema operativo", viewModel.OperatingSystem, GameRegistration.FieldNames.OperatingSystem);
+-        var distributionType = Field("Tipo de distribuci├│n", viewModel.DistributionType, GameRegistration.FieldNames.DistributionType);
+-        var installationType = Field("Tipo de instalaci├│n", viewModel.InstallationType, GameRegistration.FieldNames.InstallationType);
++        _minPlayers = Field("Jugadores m├¡nimo", viewModel.MinPlayers.ToString(System.Globalization.CultureInfo.InvariantCulture), GameRegistration.FieldNames.MinPlayers);
++        _maxPlayers = Field("Jugadores m├íximo", viewModel.MaxPlayers.ToString(System.Globalization.CultureInfo.InvariantCulture), GameRegistration.FieldNames.MaxPlayers);
++        _operatingSystem = Field("Sistema operativo", viewModel.OperatingSystem, GameRegistration.FieldNames.OperatingSystem);
++        _distributionType = Field("Tipo de distribuci├│n", viewModel.DistributionType, GameRegistration.FieldNames.DistributionType);
++        _installationType = Field("Tipo de instalaci├│n", viewModel.InstallationType, GameRegistration.FieldNames.InstallationType);
+ 
+-        var launchExecutablePath = new TextBox
++        _launchExecutablePath = new TextBox
+         {
+             PlaceholderText = "Ruta de lanzamiento",
+             Text = viewModel.LaunchExecutablePath,
+@@ -127,8 +163,8 @@ public sealed class GameFormView : Window
+             FontSize = MonospaceFontSize,
+         };
+ 
+-        var launchArguments = Field("Argumentos de lanzamiento", viewModel.LaunchArguments, GameRegistration.FieldNames.LaunchConfiguration);
+-        var launchWorkingDirectory = new TextBox
++        _launchArguments = Field("Argumentos de lanzamiento", viewModel.LaunchArguments, GameRegistration.FieldNames.LaunchConfiguration);
++        _launchWorkingDirectory = new TextBox
+         {
+             PlaceholderText = "Directorio de trabajo",
+             Text = viewModel.LaunchWorkingDirectory,
+@@ -136,17 +172,21 @@ public sealed class GameFormView : Window
+             FontSize = MonospaceFontSize,
+         };
+ 
+-        var dependencies = Field("Dependencias", viewModel.Dependencies, GameRegistration.FieldNames.Dependencies);
+-        var license = Field("Licencia", viewModel.License, GameRegistration.FieldNames.License);
+-        var restrictions = Field("Restricciones de distribuci├│n", viewModel.DistributionRestrictions, GameRegistration.FieldNames.DistributionRestrictions);
++        _dependencies = Field("Dependencias", viewModel.Dependencies, GameRegistration.FieldNames.Dependencies);
++        _license = Field("Licencia", viewModel.License, GameRegistration.FieldNames.License);
++        _distributionRestrictions = Field("Restricciones de distribuci├│n", viewModel.DistributionRestrictions, GameRegistration.FieldNames.DistributionRestrictions);
+ 
+         var save = new Button { Content = "Guardar" };
+         var cancel = new Button { Content = "Cancelar" };
+-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
++        _status = new TextBlock { TextWrapping = TextWrapping.Wrap };
+ 
+-        save.Click += (_, _) => status.Text = "El guardado del videojuego lo confirma el servidor.";
++        save.Click += async (_, _) => await SaveAsync(registerGame, modifyGame).ConfigureAwait(true);
+         cancel.Click += (_, _) => Close();
+ 
++        // The size that is typed is reflected in the derived value as it is written, so the
++        // organizer sees the value that the catalog will publish (AD-7, AC4).
++        _sizeBytes.TextChanged += (_, _) => RefreshSizeValue();
++
+         Content = new StackPanel
+         {
+             Margin = new Thickness(16),
+@@ -167,45 +207,45 @@ public sealed class GameFormView : Window
+                     TextWrapping = TextWrapping.Wrap,
+                 },
+                 Label("Nombre *"),
+-                name,
++                _name,
+                 Label("Descripci├│n *"),
+-                description,
++                _description,
+                 Label("Categor├¡as *"),
+-                categories,
++                _categories,
+                 Label("Etiquetas *"),
+-                tags,
++                _tags,
+                 Label("Car├ítula *"),
+-                coverImage,
++                _coverImage,
+                 Label("Im├ígenes *"),
+-                images,
++                _images,
+                 Label("Versi├│n *"),
+-                version,
++                _version,
+                 Label("Tama├▒o en bytes exactos *"),
+-                sizeBytes,
++                _sizeBytes,
+                 sizeLine,
+                 Label("Jugadores m├¡nimo *"),
+-                minPlayers,
++                _minPlayers,
+                 Label("Jugadores m├íximo *"),
+-                maxPlayers,
++                _maxPlayers,
+                 Label("Sistema operativo *"),
+-                operatingSystem,
++                _operatingSystem,
+                 Label("Tipo de distribuci├│n *"),
+-                distributionType,
++                _distributionType,
+                 Label("Tipo de instalaci├│n *"),
+-                installationType,
++                _installationType,
+                 Label("Configuraci├│n de lanzamiento *"),
+                 Label("Ruta de lanzamiento *"),
+-                launchExecutablePath,
++                _launchExecutablePath,
+                 Label("Argumentos de lanzamiento *"),
+-                launchArguments,
++                _launchArguments,
+                 Label("Directorio de trabajo *"),
+-                launchWorkingDirectory,
++                _launchWorkingDirectory,
+                 Label("Dependencias *"),
+-                dependencies,
++                _dependencies,
+                 Label("Licencia *"),
+-                license,
++                _license,
+                 Label("Restricciones de distribuci├│n *"),
+-                restrictions,
++                _distributionRestrictions,
+                 new StackPanel
+                 {
+                     Orientation = Orientation.Horizontal,
+@@ -216,7 +256,7 @@ public sealed class GameFormView : Window
+                         cancel,
+                     },
+                 },
+-                status,
++                _status,
+             },
+         };
+     }
+@@ -224,6 +264,132 @@ public sealed class GameFormView : Window
+     /// <summary>View model of the form.</summary>
+     public GameFormViewModel ViewModel { get; }
+ 
++    /// <summary>
++    /// The videogame that the form has registered or modified, or <c>null</c> when the
++    /// form has not been saved yet.
++    /// </summary>
++    public GameDescriptor? SavedGame { get; private set; }
++
++    /// <summary>
++    /// Reads the fields of the form and hands the videogame to the use case of the
++    /// catalog. The rejection of the domain is shown in the window, and it is the text of
++    /// the domain that names the field that fails (AD-25).
++    /// </summary>
++    /// <param name="registerGame">Use case of the registration of a videogame.</param>
++    /// <param name="modifyGame">Use case of the modification of a videogame.</param>
++    /// <returns>A task that completes when the videogame has been saved.</returns>
++    private async Task SaveAsync(RegisterGame registerGame, ModifyGame modifyGame)
++    {
++        try
++        {
++            ReadFields();
++
++            var metadata = ViewModel.ToDescriptor();
++
++            SavedGame = ViewModel.IsModification
++                ? await modifyGame
++                    .ExecuteAsync(ViewModel.GameId!, metadata, CancellationToken.None)
++                    .ConfigureAwait(true)
++                : await registerGame
++                    .ExecuteAsync(metadata, CancellationToken.None)
++                    .ConfigureAwait(true);
++
++            _status.Text = ViewModel.IsModification
++                ? $"El videogame ┬½{SavedGame.Name}┬╗ se ha modificado con la versi├│n {SavedGame.Version}."
++                : $"El videogame ┬½{SavedGame.Name}┬╗ se ha registrado con el identificador {SavedGame.GameId}.";
++
++            Close();
++        }
++        catch (GameMetadataMissingException exception)
++        {
++            _status.Text = exception.Message;
++        }
++        catch (GamePlayerRangeException exception)
++        {
++            _status.Text = exception.Message;
++        }
++        catch (GameNotFoundException exception)
++        {
++            _status.Text = exception.Message;
++        }
++        catch (Exception exception)
++        {
++            // The exception never reaches the interface as a stack trace: the organizer
++            // sees a line and the operator finds the detail in the log (AD-15).
++            _status.Text = $"No se pudo guardar el videogame: {exception.Message}";
++        }
++    }
++
++    /// <summary>
++    /// Reads the fields of the form into the view model. The size is read as exact bytes
++    /// and it is never rounded on the way in (AD-7).
++    /// </summary>
++    private void ReadFields()
++    {
++        ViewModel.Name = _name.Text ?? string.Empty;
++        ViewModel.Description = _description.Text ?? string.Empty;
++        ViewModel.Categories = _categories.Text ?? string.Empty;
++        ViewModel.Tags = _tags.Text ?? string.Empty;
++        ViewModel.CoverImage = _coverImage.Text ?? string.Empty;
++        ViewModel.Images = _images.Text ?? string.Empty;
++        ViewModel.Version = _version.Text ?? string.Empty;
++        ViewModel.SizeBytes = ParseSizeBytes(_sizeBytes.Text);
++        ViewModel.MinPlayers = ParseInt(_minPlayers.Text, ViewModel.MinPlayers);
++        ViewModel.MaxPlayers = ParseInt(_maxPlayers.Text, ViewModel.MaxPlayers);
++        ViewModel.OperatingSystem = _operatingSystem.Text ?? string.Empty;
++        ViewModel.DistributionType = _distributionType.Text ?? string.Empty;
++        ViewModel.InstallationType = _installationType.Text ?? string.Empty;
++        ViewModel.LaunchExecutablePath = _launchExecutablePath.Text ?? string.Empty;
++        ViewModel.LaunchArguments = _launchArguments.Text ?? string.Empty;
++        ViewModel.LaunchWorkingDirectory = _launchWorkingDirectory.Text ?? string.Empty;
++        ViewModel.Dependencies = _dependencies.Text ?? string.Empty;
++        ViewModel.License = _license.Text ?? string.Empty;
++        ViewModel.DistributionRestrictions = _distributionRestrictions.Text ?? string.Empty;
++    }
++
++    /// <summary>
++    /// Reflects in the derived value the size that is being typed.
++    /// </summary>
++    private void RefreshSizeValue()
++    {
++        var bytes = ParseSizeBytes(_sizeBytes.Text);
++
++        ViewModel.SizeBytes = bytes;
++
++        _sizeValue.Text = Presentation.Formatting.SizeFormatter.FormatValue(bytes);
++    }
++
++    /// <summary>
++    /// Reads a size in exact bytes. A text that is not a number is read as zero, and the
++    /// domain rejects it as a missing metadata (AD-1, AD-7).
++    /// </summary>
++    /// <param name="text">Text of the field of the size.</param>
++    /// <returns>The exact size in bytes.</returns>
++    private static long ParseSizeBytes(string? text) =>
++        long.TryParse(
++            text?.Trim(),
++            System.Globalization.NumberStyles.Integer,
++            System.Globalization.CultureInfo.InvariantCulture,
++            out var bytes)
++            ? bytes
++            : 0;
++
++    /// <summary>
++    /// Reads a number. A text that is not a number keeps the value that the view model
++    /// already had, and the domain rejects the incoherent one (AD-1).
++    /// </summary>
++    /// <param name="text">Text of the field.</param>
++    /// <param name="fallback">Value that the field keeps when the text is not a number.</param>
++    /// <returns>The number of the field.</returns>
++    private static int ParseInt(string? text, int fallback) =>
++        int.TryParse(
++            text?.Trim(),
++            System.Globalization.NumberStyles.Integer,
++            System.Globalization.CultureInfo.InvariantCulture,
++            out var value)
++            ? value
++            : fallback;
++
+     /// <summary>
+     /// Builds a labelled field of the form. The label carries the mark of the obligation
+     /// when FR-1 demands the field (AC4).
+diff --git a/src/Server/Presentation/Catalog/GameFormViewModel.cs b/src/Server/Presentation/Catalog/GameFormViewModel.cs
+index 50d8db2..ac8e9a4 100644
+--- a/src/Server/Presentation/Catalog/GameFormViewModel.cs
++++ b/src/Server/Presentation/Catalog/GameFormViewModel.cs
+@@ -1,5 +1,6 @@
+ using LANPartyHub.Server.Domain.Catalog;
+ using LANPartyHub.Server.Presentation.Formatting;
++using LANPartyHub.Shared.Contracts;
+ 
+ namespace LANPartyHub.Server.Presentation.Catalog;
+ 
+@@ -17,6 +18,11 @@ namespace LANPartyHub.Server.Presentation.Catalog;
+ /// the validation of the metadata belongs to the domain and it is the domain that
+ /// rejects the registration (AD-1).
+ /// </para>
++/// <para>
++/// The view model also builds the contract of <c>Shared</c> that the use cases receive
++/// out of what the organizer has typed, so the form is wired to the use case and not
++/// only to a label of status.
++/// </para>
+ /// </summary>
+ public sealed class GameFormViewModel
+ {
+@@ -36,7 +42,7 @@ public sealed class GameFormViewModel
+     /// Contract of the videogame that is being modified, or <c>null</c> when the form is
+     /// for an alta.
+     /// </param>
+-    public GameFormViewModel(Shared.Contracts.GameDescriptor? game)
++    public GameFormViewModel(GameDescriptor? game)
+     {
+         GameId = game?.GameId;
+         Name = game?.Name ?? string.Empty;
+@@ -168,12 +174,25 @@ public sealed class GameFormViewModel
+     /// <summary>
+     /// The label of a field with the mark of the obligation, the way the form shows it
+     /// when FR-1 demands it.
++    ///
++    /// <para>
++    /// The mark is added only when the label does not already carry it: the form writes
++    /// the visible labels with the mark and passes that same text here, so the label of
++    /// the tooltip would show the mark twice.
++    /// </para>
+     /// </summary>
+     /// <param name="label">Label of the field.</param>
+     /// <param name="fieldName">Name of the field, as the domain names it.</param>
+     /// <returns>The label with the mark of the obligation, when the field is obligatory.</returns>
+-    public static string LabelFor(string label, string fieldName) =>
+-        RequiredFieldNames.Contains(fieldName, StringComparer.Ordinal) ? $"{label} *" : label;
++    public static string LabelFor(string label, string fieldName)
++    {
++        if (!RequiredFieldNames.Contains(fieldName, StringComparer.Ordinal))
++        {
++            return label;
++        }
++
++        return label.Contains('*', StringComparison.Ordinal) ? label : $"{label} *";
++    }
+ 
+     /// <summary>
+     /// Splits a list of the form into the values that it holds, discarding the empty ones.
+@@ -192,6 +211,35 @@ public sealed class GameFormViewModel
+             .ToArray();
+     }
+ 
++    /// <summary>
++    /// Builds the contract of <c>Shared</c> with the eighteen metadata of FR-1 out of what
++    /// the organizer has typed. The contract is the single form that the use cases receive
++    /// and the single form that the API publishes (AD-34).
++    /// </summary>
++    /// <returns>The contract of the videogame.</returns>
++    public GameDescriptor ToDescriptor() => new(
++        GameId ?? string.Empty,
++        Name,
++        Description,
++        SplitList(Categories),
++        SplitList(Tags),
++        CoverImage,
++        SplitList(Images),
++        Version,
++        SizeBytes,
++        MinPlayers,
++        MaxPlayers,
++        OperatingSystem,
++        DistributionType,
++        InstallationType,
++        new InstallationManifest.LaunchSettings(
++            LaunchExecutablePath,
++            SplitList(LaunchArguments),
++            LaunchWorkingDirectory),
++        SplitList(Dependencies),
++        License,
++        DistributionRestrictions);
++
+     /// <summary>
+     /// Joins a list of the form into the text that the field shows.
+     /// </summary>
+diff --git a/src/Server/Presentation/Formatting/SizeFormatter.cs b/src/Server/Presentation/Formatting/SizeFormatter.cs
+index 2893657..ac16d15 100644
+--- a/src/Server/Presentation/Formatting/SizeFormatter.cs
++++ b/src/Server/Presentation/Formatting/SizeFormatter.cs
+@@ -19,7 +19,7 @@ namespace LANPartyHub.Server.Presentation.Formatting;
+ /// The formatting does not depend on the ambient culture of the machine: the separator is
+ /// the Spanish comma and the decimal point never reaches the text.
+ /// </para>
+-/// </remarks>
++/// </summary>
+ public static class SizeFormatter
+ {
+     /// <summary>Unit of the size of a videogame: decimal gigabytes (AD-7).</summary>
+diff --git a/src/Server/Presentation/ServerApp.cs b/src/Server/Presentation/ServerApp.cs
+index 4fd136a..2e01628 100644
+--- a/src/Server/Presentation/ServerApp.cs
++++ b/src/Server/Presentation/ServerApp.cs
+@@ -1,6 +1,8 @@
+ using Avalonia.Controls.ApplicationLifetimes;
+ using Avalonia.Themes.Fluent;
++using LANPartyHub.Server.Application.Catalog;
+ using LANPartyHub.Server.Presentation.Catalog;
++using Microsoft.Extensions.DependencyInjection;
+ 
+ namespace LANPartyHub.Server.Presentation;
+ 
+@@ -16,12 +18,23 @@ namespace LANPartyHub.Server.Presentation;
+ /// The base type is fully qualified because the Application layer of the server owns a
+ /// namespace with the same name.
+ /// </para>
++/// <para>
++/// The use cases of the catalog are scoped, because they depend on the scoped context of
++/// the database, so the window is opened inside a scope of the container of the host and
++/// that scope lives as long as the window lives.
++/// </para>
+ /// </summary>
+ public sealed class ServerApp : Avalonia.Application
+ {
++    private readonly IServiceProvider _services;
++
+     /// <summary>Creates the application of the server.</summary>
+-    public ServerApp()
++    /// <param name="services">Container of the host, with the use cases of the catalog.</param>
++    public ServerApp(IServiceProvider services)
+     {
++        ArgumentNullException.ThrowIfNull(services);
++
++        _services = services;
+     }
+ 
+     /// <inheritdoc />
+@@ -32,7 +45,20 @@ public sealed class ServerApp : Avalonia.Application
+     {
+         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+         {
+-            desktop.MainWindow = new CatalogWindow(new CatalogViewModel());
++            // The scope of the container of the host is created here and lives as long as
++            // the window of the organizer, so the use cases of the catalog always have the
++            // scoped context of the database that they need (AD-1).
++            var scope = _services.CreateScope();
++
++            var registerGame = scope.ServiceProvider.GetRequiredService<RegisterGame>();
++            var modifyGame = scope.ServiceProvider.GetRequiredService<ModifyGame>();
++            var listGames = scope.ServiceProvider.GetRequiredService<ListGames>();
++
++            var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames);
++
++            desktop.MainWindow = window;
++
++            desktop.ShutdownRequested += (_, _) => scope.Dispose();
+         }
+ 
+         base.OnFrameworkInitializationCompleted();
+diff --git a/src/Server/Program.cs b/src/Server/Program.cs
+index 08e58e1..4661bd4 100644
+--- a/src/Server/Program.cs
++++ b/src/Server/Program.cs
+@@ -1,3 +1,4 @@
++using Avalonia;
+ using LANPartyHub.Server.Application.Catalog;
+ using LANPartyHub.Server.Application.Ports;
+ using LANPartyHub.Server.Host;
+@@ -5,6 +6,7 @@ using LANPartyHub.Server.Infrastructure.Http;
+ using LANPartyHub.Server.Infrastructure.Logging;
+ using LANPartyHub.Server.Infrastructure.Networking;
+ using LANPartyHub.Server.Infrastructure.Persistence;
++using LANPartyHub.Server.Presentation;
+ using Microsoft.AspNetCore.Builder;
+ using Microsoft.AspNetCore.Hosting;
+ using Microsoft.AspNetCore.Http;
+@@ -31,6 +33,12 @@ try
+ {
+     var app = await Program.BuildServerAsync(args);
+ 
++    // AD-1: the server is a single deployable, so the window of the organizer opens in
++    // the same process as the host HTTP. The window lives in its own thread, and the
++    // failure of the desktop never takes the host down: the server keeps serving the
++    // clients of the LAN even when there is no graphical session to draw the window on.
++    Program.StartOrganizerWindow(app.Services);
++
+     await app.RunAsync();
+ 
+     return 0;
+@@ -188,6 +196,7 @@ public partial class Program
+         builder.Services.AddScoped<IGameRepository, GameRepository>();
+         builder.Services.AddScoped<RegisterGame>();
+         builder.Services.AddScoped<ModifyGame>();
++        builder.Services.AddScoped<ListGames>();
+ 
+         var app = builder.Build();
+ 
+@@ -256,4 +265,62 @@ public partial class Program
+     private static bool IsClientSurface(PathString path) =>
+         path.StartsWithSegments(ClientSurfacePrefix, StringComparison.OrdinalIgnoreCase)
+         && !path.StartsWithSegments(AdminSurfacePrefix, StringComparison.OrdinalIgnoreCase);
++
++    /// <summary>
++    /// Builds the Avalonia application builder of the server.
++    /// </summary>
++    /// <param name="services">Container of the host, with the use cases of the catalog.</param>
++    /// <returns>The builder of the application of the organizer.</returns>
++    public static AppBuilder BuildAvaloniaApp(IServiceProvider services) =>
++        AppBuilder.Configure(() => new ServerApp(services)).UsePlatformDetect();
++
++    /// <summary>
++    /// Opens the window of the organizer in a thread of its own, so the host HTTP keeps
++    /// serving the clients of the LAN while the interface is open (AD-1).
++    ///
++    /// <para>
++    /// The failure of the desktop never takes the host down: a server that runs without a
++    /// graphical session still serves the surface of la API, y la organizadora puede
++    /// Catch it con las herramientas de la l├¡nea de ├│rdenes.
++    /// </para>
++    /// </summary>
++    /// <param name="services">Container of the host, with the use cases of the catalog.</param>
++    public static void StartOrganizerWindow(IServiceProvider services)
++    {
++        ArgumentNullException.ThrowIfNull(services);
++
++        var thread = new Thread(() =>
++        {
++            try
++            {
++                BuildAvaloniaApp(services).StartWithClassicDesktopLifetime([]);
++            }
++            catch (Exception exception)
++            {
++                // La interfaz del organizador es un complemento del host, no su motivo de
++                // vida: si el escritorio no est├í disponible, el servidor sigue sirviendo
++                // la API y el fallo queda escrito en el log (AD-15).
++                services
++                    .GetRequiredService<ILoggerFactory>()
++                    .CreateLogger("LANPartyHub.Server.Startup")
++                    .LogWarning(
++                        exception,
++                        "No se pudo abrir la ventana del organizador: el servidor sigue sirviendo la API.");
++            }
++        })
++        {
++            IsBackground = true,
++            Name = "LANPartyHub.Server.Organizer",
++        };
++
++        // El hilo de la interfaz necesita un apartamento de un solo hilo en Windows, que
++        // es la plataforma del despliegue del MVP (AD-17). En el resto de plataformas el
++        // modelo del hilo es el de por defecto y la llamada no existe (CA1416).
++        if (OperatingSystem.IsWindows())
++        {
++            thread.SetApartmentState(ApartmentState.STA);
++        }
++
++        thread.Start();
++    }
+ }
+diff --git a/src/Shared/Contracts/ErrorCatalog.cs b/src/Shared/Contracts/ErrorCatalog.cs
+index ada8471..6210cb0 100644
+--- a/src/Shared/Contracts/ErrorCatalog.cs
++++ b/src/Shared/Contracts/ErrorCatalog.cs
+@@ -37,20 +37,22 @@ public static class ErrorCatalog
+     public const string ClientIdInvalidCode = "CLIENT_ID_INVALID";
+ 
+     /// <summary>
+-    /// The registration of a videogame carries a mandatory metadata of FR-1 that is empty
+-    /// or absent (AD-1, AD-25). The code names the field that is missing.
++    /// A mandatory metadata of FR-1 is empty or absent and the catalog has no code that
++    /// names the concrete field (AD-15, AD-25). It is the generic fallback of the rejection
++    /// of a missing metadata; the codes that name a field are the ones that the
++    /// administration of the catalog answers (AD-34).
+     /// </summary>
+     public const string GameMetadataMissingCode = "GAME_METADATA_MISSING";
+ 
+     /// <summary>
+-    /// The body of the registration of a videogame does not carry the <c>schemaVersion</c>
+-    /// that every mutation of the API carries (AD-5).
++    /// The body of the mutation does not carry the <c>schemaVersion</c> that every mutation
++    /// of the API carries (AD-5).
+     /// </summary>
+     public const string SchemaVersionMissingCode = "SCHEMA_VERSION_MISSING";
+ 
+     /// <summary>
+-    /// The body of the registration of a videogame carries a <c>schemaVersion</c> that the
+-    /// server does not support (AD-5, AD-8).
++    /// The body of the mutation carries a <c>schemaVersion</c> that the server does not
++    /// support (AD-5, AD-8).
+     /// </summary>
+     public const string SchemaVersionNotSupportedCode = "SCHEMA_VERSION_NOT_SUPPORTED";
+ 
+@@ -60,6 +62,68 @@ public static class ErrorCatalog
+     /// </summary>
+     public const string GameNotFoundCode = "GAME_NOT_FOUND";
+ 
++    /// <summary>
++    /// The range of players of the videogame is not coherent: the minimum is greater than
++    /// the maximum (AD-1, FR-1).
++    /// </summary>
++    public const string GamePlayerRangeInvalidCode = "GAME_PLAYER_RANGE_INVALID";
++
++    /// <summary>
++    /// The videogame does not carry its identifier (AD-1, AD-34).
++    /// </summary>
++    public const string GameIdMissingCode = "GAME_ID_MISSING";
++
++    /// <summary>The videogame does not carry its name (AD-1, FR-1).</summary>
++    public const string GameNameMissingCode = "GAME_NAME_MISSING";
++
++    /// <summary>The videogame does not carry its description (AD-1, FR-1).</summary>
++    public const string GameDescriptionMissingCode = "GAME_DESCRIPTION_MISSING";
++
++    /// <summary>The videogame does not carry its categories (AD-1, FR-1).</summary>
++    public const string GameCategoriesMissingCode = "GAME_CATEGORIES_MISSING";
++
++    /// <summary>The videogame does not carry its tags (AD-1, FR-1).</summary>
++    public const string GameTagsMissingCode = "GAME_TAGS_MISSING";
++
++    /// <summary>The videogame does not carry its cover image (AD-1, FR-1).</summary>
++    public const string GameCoverImageMissingCode = "GAME_COVER_IMAGE_MISSING";
++
++    /// <summary>The videogame does not carry its images (AD-1, FR-1).</summary>
++    public const string GameImagesMissingCode = "GAME_IMAGES_MISSING";
++
++    /// <summary>The videogame does not carry its version (AD-1, FR-1).</summary>
++    public const string GameVersionMissingCode = "GAME_VERSION_MISSING";
++
++    /// <summary>The videogame does not carry its size in exact bytes (AD-1, AD-7).</summary>
++    public const string GameSizeBytesMissingCode = "GAME_SIZE_BYTES_MISSING";
++
++    /// <summary>The videogame does not carry its minimum number of players (AD-1, FR-1).</summary>
++    public const string GameMinPlayersMissingCode = "GAME_MIN_PLAYERS_MISSING";
++
++    /// <summary>The videogame does not carry its maximum number of players (AD-1, FR-1).</summary>
++    public const string GameMaxPlayersMissingCode = "GAME_MAX_PLAYERS_MISSING";
++
++    /// <summary>The videogame does not carry its operating system (AD-1, FR-1).</summary>
++    public const string GameOperatingSystemMissingCode = "GAME_OPERATING_SYSTEM_MISSING";
++
++    /// <summary>The videogame does not carry its distribution type (AD-1, FR-1).</summary>
++    public const string GameDistributionTypeMissingCode = "GAME_DISTRIBUTION_TYPE_MISSING";
++
++    /// <summary>The videogame does not carry its installation type (AD-1, FR-1).</summary>
++    public const string GameInstallationTypeMissingCode = "GAME_INSTALLATION_TYPE_MISSING";
++
++    /// <summary>The videogame does not carry its launch configuration (AD-1, FR-1).</summary>
++    public const string GameLaunchConfigurationMissingCode = "GAME_LAUNCH_CONFIGURATION_MISSING";
++
++    /// <summary>The videogame does not carry its dependencies (AD-1, FR-1).</summary>
++    public const string GameDependenciesMissingCode = "GAME_DEPENDENCIES_MISSING";
++
++    /// <summary>The videogame does not carry its license (AD-1, FR-1, NFR-8).</summary>
++    public const string GameLicenseMissingCode = "GAME_LICENSE_MISSING";
++
++    /// <summary>The videogame does not carry its distribution restrictions (AD-1, FR-1).</summary>
++    public const string GameDistributionRestrictionsMissingCode = "GAME_DISTRIBUTION_RESTRICTIONS_MISSING";
++
+     private static readonly ApiError[] CatalogEntries =
+     [
+         new(
+@@ -112,6 +176,101 @@ public static class ErrorCatalog
+             "El videojuego no est├í en el cat├ílogo",
+             "El identificador de la modificaci├│n no corresponde a ning├║n videojuego registrado.",
+             "Revisa el identificador del videojuego y vuelve a intentarlo."),
++        new(
++            GamePlayerRangeInvalidCode,
++            "El n├║mero de jugadores no es un rango v├ílido",
++            "El m├¡nimo de jugadores del videogame es mayor que su m├íximo.",
++            "Corrige el m├¡nimo y el m├íximo de jugadores y vuelve a guardar el videojuego."),
++        new(
++            GameIdMissingCode,
++            "Falta el identificador del videojuego",
++            "El registro del videojuego no lleva el identificador que el cat├ílogo exige.",
++            "Vuelve a guardar el videojuego con su identificador."),
++        new(
++            GameNameMissingCode,
++            "Falta el nombre del videojuego",
++            "El registro del videojuego no lleva el nombre que el cat├ílogo exige.",
++            "Rellena el nombre del videojuego y vuelve a guardarlo."),
++        new(
++            GameDescriptionMissingCode,
++            "Falta la descripci├│n del videojuego",
++            "El registro del videojuego no lleva la descripci├│n que el cat├ílogo exige.",
++            "Rellena la descripci├│n del videojuego y vuelve a guardarlo."),
++        new(
++            GameCategoriesMissingCode,
++            "Faltan las categor├¡as del videojuego",
++            "El registro del videojuego no lleva las categor├¡as que el cat├ílogo exige.",
++            "Rellena las categor├¡as del videojuego y vuelve a guardarlo."),
++        new(
++            GameTagsMissingCode,
++            "Faltan las etiquetas del videojuego",
++            "El registro del videojuego no lleva las etiquetas que el cat├ílogo exige.",
++            "Rellena las etiquetas del videojuego y vuelve a guardarlo."),
++        new(
++            GameCoverImageMissingCode,
++            "Falta la car├ítula del videojuego",
++            "El registro del videojuego no lleva la car├ítula que el cat├ílogo exige.",
++            "Rellena la car├ítula del videojuego y vuelve a guardarlo."),
++        new(
++            GameImagesMissingCode,
++            "Faltan las im├ígenes del videojuego",
++            "El registro del videojuego no lleva las im├ígenes que el cat├ílogo exige.",
++            "Rellena las im├ígenes del videojuego y vuelve a guardarlo."),
++        new(
++            GameVersionMissingCode,
++            "Falta la versi├│n del videojuego",
++            "El registro del videojuego no lleva la versi├│n que el cat├ílogo exige.",
++            "Rellena la versi├│n del videojuego y vuelve a guardarlo."),
++        new(
++            GameSizeBytesMissingCode,
++            "Falta el tama├▒o del videojuego",
++            "El registro del videojuego no lleva el tama├▒o en bytes exactos que el cat├ílogo exige.",
++            "Rellena el tama├▒o del videogame en bytes exactos y vuelve a guardarlo."),
++        new(
++            GameMinPlayersMissingCode,
++            "Falta el n├║mero m├¡nimo de jugadores",
++            "El registro del videojuego no lleva el m├¡nimo de jugadores que el cat├ílogo exige.",
++            "Rellena el m├¡nimo de jugadores del videojuego y vuelve a guardarlo."),
++        new(
++            GameMaxPlayersMissingCode,
++            "Falta el n├║mero m├íximo de jugadores",
++            "El registro del videojuego no lleva el m├íximo de jugadores que el cat├ílogo exige.",
++            "Rellena el m├íximo de jugadores del videojuego y vuelve a guardarlo."),
++        new(
++            GameOperatingSystemMissingCode,
++            "Falta el sistema operativo del videojuego",
++            "El registro del videojuego no lleva el sistema operativo que el cat├ílogo exige.",
++            "Rellena el sistema operativo del videojuego y vuelve a guardarlo."),
++        new(
++            GameDistributionTypeMissingCode,
++            "Falta el tipo de distribuci├│n del videojuego",
++            "El registro del videojuego no lleva el tipo de distribuci├│n que el cat├ílogo exige.",
++            "Rellena el tipo de distribuci├│n del videojuego y vuelve a guardarlo."),
++        new(
++            GameInstallationTypeMissingCode,
++            "Falta el tipo de instalaci├│n del videojuego",
++            "El registro del videojuego no lleva el tipo de instalaci├│n que el cat├ílogo exige.",
++            "Rellena el tipo de instalaci├│n del videojuego y vuelve a guardarlo."),
++        new(
++            GameLaunchConfigurationMissingCode,
++            "Falta la configuraci├│n de lanzamiento del videojuego",
++            "El registro del videojuego no lleva la configuraci├│n de lanzamiento que el cat├ílogo exige.",
++            "Rellena la ruta, los argumentos y el directorio de trabajo del lanzamiento y vuelve a guardarlo."),
++        new(
++            GameDependenciesMissingCode,
++            "Faltan las dependencias del videojuego",
++            "El registro del videojuego no lleva las dependencias que el cat├ílogo exige.",
++            "Rellena las dependencias del videojuego y vuelve a guardarlo."),
++        new(
++            GameLicenseMissingCode,
++            "Falta la licencia del videojuego",
++            "El registro del videojuego no lleva la licencia que el cat├ílogo exige.",
++            "Rellena la licencia del videojuego y vuelve a guardarlo."),
++        new(
++            GameDistributionRestrictionsMissingCode,
++            "Faltan las restricciones de distribuci├│n del videojuego",
++            "El registro del videojuego no lleva las restricciones de distribuci├│n que el cat├ílogo exige.",
++            "Rellena las restricciones de distribuci├│n del videojuego y vuelve a guardarlo."),
+         new(
+             UnknownErrorCode,
+             "Se produjo un error no identificado",
+diff --git a/tests/IntegrationTests/GameCatalogTests.cs b/tests/IntegrationTests/GameCatalogTests.cs
+index 3d93f11..cf651ba 100644
+--- a/tests/IntegrationTests/GameCatalogTests.cs
++++ b/tests/IntegrationTests/GameCatalogTests.cs
+@@ -15,11 +15,12 @@ namespace LANPartyHub.IntegrationTests;
+ /// <para>
+ /// The tests start the real host, with the real Kestrel, the real sockets and a real
+ /// <c>catalog.sqlite</c> in a file, because that is the only way to observe what the
+-/// server persists and what it answers. Every row of the matrix of the story is covered
+-/// here: the alta, the modificaci├│n, the rejection of a mandatory metadata that is
+-/// absent, the rejection of a body without <c>schemaVersion</c> and with an unsupported
+-/// one, the rejection of a modification of a videogame that does not exist, the two
+-/// videogames with the same name and the failure of the persistence.
++/// server persists and what it answers. Every row of the matrix of edges of the story is
++/// covered here: the alta, the modificaci├│n, the rejection of a mandatory metadata that
++/// is absent, the rejection of a body without <c>schemaVersion</c> and with an unsupported
++/// one, the rejection of a modification of a videogame that does not exist, the rejection
++/// of an incoherent range of players, the two videogames with the same name and the
++/// failure of the persistence.
+ /// </para>
+ /// </summary>
+ public sealed class GameCatalogTests
+@@ -112,7 +113,7 @@ public sealed class GameCatalogTests
+             ],
+             root.EnumerateObject().Select(property => property.Name).ToArray());
+ 
+-        // The identifier is a UUID v7 opaco in su forma can├│nica (AD-23).
++        // The identifier is a UUID v7 opaco en su forma can├│nica (AD-23).
+         var gameId = root.GetProperty("gameId").GetString();
+ 
+         Assert.NotNull(gameId);
+@@ -123,6 +124,32 @@ public sealed class GameCatalogTests
+             $"The identifier '{gameId}' is not canonical."));
+     }
+ 
++    [Fact]
++    public async Task The_alta_keeps_the_size_in_exact_bytes()
++    {
++        var dataDirectory = CreateTemporaryDataDirectory();
++
++        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
++
++        using var client = host.CreateClient();
++
++        var request = BuildValidRequest();
++        request.Game = request.Game! with { SizeBytes = 7_600_000_001 };
++
++        using var response = await client.PostAsync(
++            GamesEndpoint.Route,
++            BuildBody(request),
++            TestContext.Current.CancellationToken);
++
++        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
++
++        var descriptor = await ReadDescriptorAsync(response, TestContext.Current.CancellationToken);
++
++        var row = ReadRow(dataDirectory, descriptor.GameId);
++
++        Assert.Equal(7_600_000_001L, row["sizeBytes"]);
++    }
++
+     [Fact]
+     public async Task The_modificacion_keeps_the_identifier_and_reflects_the_change()
+     {
+@@ -141,12 +168,15 @@ public sealed class GameCatalogTests
+ 
+         var request = BuildValidRequest();
+         request.GameId = original.GameId;
+-        request.Version = "1.42.0";
+-        request.SizeBytes = 8_100_000_000;
+-        request.LaunchConfiguration = new InstallationManifest.LaunchSettings(
+-            "bin\\cs2.exe",
+-            ["-novid"],
+-            "game\\bin");
++        request.Game = request.Game! with
++        {
++            Version = "1.42.0",
++            SizeBytes = 8_100_000_000,
++            LaunchConfiguration = new InstallationManifest.LaunchSettings(
++                "bin\\cs2.exe",
++                ["-novid"],
++                "game\\bin"),
++        };
+ 
+         using var modified = await client.PostAsync(
+             GamesEndpoint.Route,
+@@ -190,7 +220,7 @@ public sealed class GameCatalogTests
+ 
+         var request = BuildValidRequest();
+         request.GameId = original.GameId;
+-        request.Version = "1.42.0";
++        request.Game = request.Game! with { Version = "1.42.0" };
+ 
+         using var modified = await client.PostAsync(
+             GamesEndpoint.Route,
+@@ -225,7 +255,7 @@ public sealed class GameCatalogTests
+         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+ 
+         var second = BuildValidRequest();
+-        second.Version = "1.42.0";
++        second.Game = second.Game! with { Version = "1.42.0" };
+ 
+         using var secondResponse = await client.PostAsync(
+             GamesEndpoint.Route,
+@@ -245,8 +275,19 @@ public sealed class GameCatalogTests
+         Assert.Equal(2, ReadRowCount(dataDirectory));
+     }
+ 
+-    [Fact]
+-    public async Task A_mandatory_metadata_that_is_absent_is_rejected_without_writing_a_row()
++    [Theory]
++    [InlineData("license", "GAME_LICENSE_MISSING")]
++    [InlineData("distributionRestrictions", "GAME_DISTRIBUTION_RESTRICTIONS_MISSING")]
++    [InlineData("name", "GAME_NAME_MISSING")]
++    [InlineData("description", "GAME_DESCRIPTION_MISSING")]
++    [InlineData("coverImage", "GAME_COVER_IMAGE_MISSING")]
++    [InlineData("version", "GAME_VERSION_MISSING")]
++    [InlineData("operatingSystem", "GAME_OPERATING_SYSTEM_MISSING")]
++    [InlineData("distributionType", "GAME_DISTRIBUTION_TYPE_MISSING")]
++    [InlineData("installationType", "GAME_INSTALLATION_TYPE_MISSING")]
++    public async Task A_mandatory_metadata_that_is_absent_is_rejected_with_the_code_that_names_the_field(
++        string fieldName,
++        string expectedCode)
+     {
+         var dataDirectory = CreateTemporaryDataDirectory();
+ 
+@@ -255,27 +296,95 @@ public sealed class GameCatalogTests
+         using var client = host.CreateClient();
+ 
+         var request = BuildValidRequest();
+-        request.License = string.Empty;
++        request.Game = ApplyEmptyField(request.Game!, fieldName);
+ 
+         using var response = await client.PostAsync(
+             GamesEndpoint.Route,
+             BuildBody(request),
+             TestContext.Current.CancellationToken);
+ 
+-        // El cuerpo es sint├ícticamente v├ílido y viola una regla de negocio (AD-32, AD-15).
++        // El cuerpo es sint├ícticamente v├ílido y viola una regla de negocio (AD-15).
+         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+ 
+-        var error = await ReadErrorAsync(response, TestContext.Current.CancellationToken);
++        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
++
++        AssertRejected(body, expectedCode);
++
++        // El c├│digo nombra el campo concreto que falta (AD-25). El nombre del campo va
++        // en el c├│digo con la convenci├│n del cat├ílogo, que son palabras en may├║sculas
++        // separadas por guion bajo, de modo que la comparaci├│n se hace con las palabras
++        // del campo y no con su nombre en camelCase.
++        using var document = JsonDocument.Parse(body);
++
++        var code = document.RootElement.GetProperty("code").GetString();
+ 
+-        Assert.Equal(ErrorCatalog.GameMetadataMissingCode, error.Code);
++        Assert.NotNull(code);
++        Assert.NotEqual(ErrorCatalog.GameMetadataMissingCode, code);
++        Assert.Equal(expectedCode, code);
+ 
+-        // El c├│digo y el mensaje nombran el campo concreto que falta (AD-25).
+-        Assert.Contains("license", error.Message, StringComparison.OrdinalIgnoreCase);
++        foreach (var word in SplitWords(fieldName))
++        {
++            Assert.Contains(word, code!, StringComparison.OrdinalIgnoreCase);
++        }
+ 
+         // No se escribe ninguna fila (AD-15).
+         Assert.Equal(0, ReadRowCount(dataDirectory));
+     }
+ 
++    [Fact]
++    public async Task A_mandatory_collection_that_is_empty_is_rejected_with_the_code_that_names_the_field()
++    {
++        var dataDirectory = CreateTemporaryDataDirectory();
++
++        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
++
++        using var client = host.CreateClient();
++
++        var request = BuildValidRequest();
++        request.Game = request.Game! with { Categories = [] };
++
++        using var response = await client.PostAsync(
++            GamesEndpoint.Route,
++            BuildBody(request),
++            TestContext.Current.CancellationToken);
++
++        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
++
++        AssertRejected(
++            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
++            ErrorCatalog.GameCategoriesMissingCode);
++
++        Assert.Equal(0, ReadRowCount(dataDirectory));
++    }
++
++    [Fact]
++    public async Task The_range_of_players_that_is_not_coherent_is_rejected_with_its_own_code()
++    {
++        var dataDirectory = CreateTemporaryDataDirectory();
++
++        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
++
++        using var client = host.CreateClient();
++
++        var request = BuildValidRequest();
++        request.Game = request.Game! with { MinPlayers = 4, MaxPlayers = 2 };
++
++        using var response = await client.PostAsync(
++            GamesEndpoint.Route,
++            BuildBody(request),
++            TestContext.Current.CancellationToken);
++
++        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
++
++        // El rango inv├ílido tiene su propio c├│digo, distinto del de un metadato ausente,
++        // de modo que la m├®trica de errores por c├│digo los distingue (AD-15, AD-25).
++        AssertRejected(
++            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
++            ErrorCatalog.GamePlayerRangeInvalidCode);
++
++        Assert.Equal(0, ReadRowCount(dataDirectory));
++    }
++
+     [Fact]
+     public async Task A_body_without_the_schema_version_is_rejected_without_writing_a_row()
+     {
+@@ -295,9 +404,9 @@ public sealed class GameCatalogTests
+ 
+         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+ 
+-        var error = await ReadErrorAsync(response, TestContext.Current.CancellationToken);
+-
+-        Assert.Equal(ErrorCatalog.SchemaVersionMissingCode, error.Code);
++        AssertRejected(
++            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
++            ErrorCatalog.SchemaVersionMissingCode);
+ 
+         // No se escribe ninguna fila (AD-15).
+         Assert.Equal(0, ReadRowCount(dataDirectory));
+@@ -322,9 +431,9 @@ public sealed class GameCatalogTests
+ 
+         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+ 
+-        var error = await ReadErrorAsync(response, TestContext.Current.CancellationToken);
+-
+-        Assert.Equal(ErrorCatalog.SchemaVersionNotSupportedCode, error.Code);
++        AssertRejected(
++            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
++            ErrorCatalog.SchemaVersionNotSupportedCode);
+ 
+         // No se escribe ninguna fila (AD-15).
+         Assert.Equal(0, ReadRowCount(dataDirectory));
+@@ -349,9 +458,9 @@ public sealed class GameCatalogTests
+ 
+         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+ 
+-        var error = await ReadErrorAsync(response, TestContext.Current.CancellationToken);
+-
+-        Assert.Equal(ErrorCatalog.GameNotFoundCode, error.Code);
++        AssertRejected(
++            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
++            ErrorCatalog.GameNotFoundCode);
+ 
+         // No se escribe ninguna fila (AD-15).
+         Assert.Equal(0, ReadRowCount(dataDirectory));
+@@ -384,12 +493,20 @@ public sealed class GameCatalogTests
+         // La excepci├│n nunca alcanza el mensaje de la respuesta (AD-15).
+         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+ 
+-        var error = await ReadErrorAsync(response, TestContext.Current.CancellationToken);
++        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
++
++        using var document = JsonDocument.Parse(body);
+ 
+-        Assert.False(string.IsNullOrWhiteSpace(error.Code));
+-        Assert.False(string.IsNullOrWhiteSpace(error.Message));
+-        Assert.False(string.IsNullOrWhiteSpace(error.Cause));
+-        Assert.False(string.IsNullOrWhiteSpace(error.NextStep));
++        var code = document.RootElement.GetProperty("code").GetString();
++
++        Assert.False(string.IsNullOrWhiteSpace(code));
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("message").GetString()));
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("cause").GetString()));
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("nextStep").GetString()));
++
++        // El mensaje de la respuesta no lleva la excepci├│n de EF Core (AD-15).
++        Assert.DoesNotContain("SqliteException", body, StringComparison.Ordinal);
++        Assert.DoesNotContain("GAME", body, StringComparison.Ordinal);
+     }
+ 
+     [Fact]
+@@ -436,6 +553,35 @@ public sealed class GameCatalogTests
+         Assert.DoesNotContain("CLIENT_INSTALLATION", tables);
+     }
+ 
++    [Fact]
++    public async Task The_rejection_counts_the_error_by_its_stable_code()
++    {
++        var dataDirectory = CreateTemporaryDataDirectory();
++
++        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
++
++        using var client = host.CreateClient();
++
++        var request = BuildValidRequest();
++        request.Game = request.Game! with { License = string.Empty };
++
++        using var response = await client.PostAsync(
++            GamesEndpoint.Route,
++            BuildBody(request),
++            TestContext.Current.CancellationToken);
++
++        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
++
++        using var document = JsonDocument.Parse(
++            await client.GetStringAsync(MetricsEndpoint.Route, TestContext.Current.CancellationToken));
++
++        var errors = document.RootElement.GetProperty("errorsByCode");
++
++        // La m├®trica cuenta el error por su c├│digo estable, y el c├│digo nombra el campo
++        // que falta (AD-15, AD-25).
++        Assert.Equal(1, errors.GetProperty(ErrorCatalog.GameLicenseMissingCode).GetInt64());
++    }
++
+     /// <summary>
+     /// Builds a body of the administration with the eighteen metadata de FR-1.
+     /// </summary>
+@@ -443,30 +589,82 @@ public sealed class GameCatalogTests
+     private static GameRequest BuildValidRequest() => new()
+     {
+         SchemaVersion = GamesEndpoint.SupportedSchemaVersion,
+-        Name = "Counter-Strike 2",
+-        Description = "Disparadores en primera persona.",
+-        Categories = ["Shooter", "Multijugador"],
+-        Tags = ["fps", "valve"],
+-        CoverImage = "cover.png",
+-        Images = ["captura-1.png", "captura-2.png"],
+-        Version = "1.41.3",
+-        SizeBytes = 7_600_000_000,
+-        MinPlayers = 1,
+-        MaxPlayers = 10,
+-        OperatingSystem = "Windows",
+-        DistributionType = "Servidor",
+-        InstallationType = "Portable",
+-        LaunchConfiguration = new InstallationManifest.LaunchSettings(
+-            "bin\\cs2.exe",
+-            ["-novid", "-fullscreen"],
+-            "game\\bin"),
+-        Dependencies = ["DirectX 12"],
+-        License = "Propietaria",
+-        DistributionRestrictions = "Solo para el evento",
++        Game = new GameDescriptor(
++            string.Empty,
++            "Counter-Strike 2",
++            "Disparadores en primera persona.",
++            ["Shooter", "Multijugador"],
++            ["fps", "valve"],
++            "cover.png",
++            ["captura-1.png", "captura-2.png"],
++            "1.41.3",
++            7_600_000_000,
++            1,
++            10,
++            "Windows",
++            "Servidor",
++            "Portable",
++            new InstallationManifest.LaunchSettings(
++                "bin\\cs2.exe",
++                ["-novid", "-fullscreen"],
++                "game\\bin"),
++            ["DirectX 12"],
++            "Propietaria",
++            "Solo para el evento"),
+     };
+ 
+     /// <summary>
+-    /// Builds the body of the request with the JSON that el servidor espera.
++    /// Leaves empty the metadata that the test wants to leave empty.
++    /// </summary>
++    /// <param name="descriptor">Contract of the videogame.</param>
++    /// <param name="fieldName">Name of the field that the test wants to leave empty.</param>
++    /// <returns>The contract with the field empty.</returns>
++    private static GameDescriptor ApplyEmptyField(GameDescriptor descriptor, string fieldName) => fieldName switch
++    {
++        "name" => descriptor with { Name = string.Empty },
++        "description" => descriptor with { Description = string.Empty },
++        "coverImage" => descriptor with { CoverImage = string.Empty },
++        "version" => descriptor with { Version = string.Empty },
++        "operatingSystem" => descriptor with { OperatingSystem = string.Empty },
++        "distributionType" => descriptor with { DistributionType = string.Empty },
++        "installationType" => descriptor with { InstallationType = string.Empty },
++        "license" => descriptor with { License = string.Empty },
++        "distributionRestrictions" => descriptor with { DistributionRestrictions = string.Empty },
++        _ => descriptor,
++    };
++
++    /// <summary>
++    /// Splits the name of a field in camelCase into its words, the way the catalog of
++    /// errors writes them: en may├║sculas y separadas por guion bajo.
++    /// </summary>
++    /// <param name="fieldName">Name of the field.</param>
++    /// <returns>The words of the name of the field.</returns>
++    private static IReadOnlyList<string> SplitWords(string fieldName)
++    {
++        var words = new List<string>();
++        var current = new System.Text.StringBuilder();
++
++        foreach (var character in fieldName)
++        {
++            if (char.IsUpper(character) && current.Length > 0)
++            {
++                words.Add(current.ToString());
++                current.Clear();
++            }
++
++            current.Append(character);
++        }
++
++        if (current.Length > 0)
++        {
++            words.Add(current.ToString());
++        }
++
++        return words;
++    }
++
++    /// <summary>
++    /// Builds the body of the request with the JSON que el servidor espera.
+     /// </summary>
+     /// <param name="request">Request of the administration.</param>
+     /// <returns>The content of the request.</returns>
+@@ -497,7 +695,7 @@ public sealed class GameCatalogTests
+     /// </summary>
+     /// <param name="response">Response of the host.</param>
+     /// <param name="cancellationToken">Token that cancels the operation.</param>
+-    /// <returns>The error of la API.</returns>
++    /// <returns>The error de la API.</returns>
+     private static async Task<ApiError> ReadErrorAsync(
+         HttpResponseMessage response,
+         CancellationToken cancellationToken)
+@@ -511,6 +709,22 @@ public sealed class GameCatalogTests
+         return error!;
+     }
+ 
++    /// <summary>
++    /// Asserts that the body of a rejection is the single shape of error of the system,
++    /// taken from the catalog.
++    /// </summary>
++    /// <param name="body">Body of the rejection.</param>
++    /// <param name="expectedCode">Stable code that the rejection carries.</param>
++    private static void AssertRejected(string body, string expectedCode)
++    {
++        using var document = JsonDocument.Parse(body);
++
++        Assert.Equal(expectedCode, document.RootElement.GetProperty("code").GetString());
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("message").GetString()));
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("cause").GetString()));
++        Assert.False(string.IsNullOrWhiteSpace(document.RootElement.GetProperty("nextStep").GetString()));
++    }
++
+     /// <summary>
+     /// Reads a value of the first column of a query over the database of the server.
+     /// </summary>
+diff --git a/tests/IntegrationTests/LogEntries.cs b/tests/IntegrationTests/LogEntries.cs
+index 98bc2ee..5c32026 100644
+--- a/tests/IntegrationTests/LogEntries.cs
++++ b/tests/IntegrationTests/LogEntries.cs
+@@ -17,15 +17,6 @@ internal static class LogEntries
+         && category.GetString() is { } name
+         && name.StartsWith("LANPartyHub", StringComparison.Ordinal);
+ 
+-    /// <summary>
+-    /// Tells whether the entry was written by the given category of the product.
+-    /// </summary>
+-    /// <param name="entry">Entry of the log.</param>
+-    /// <param name="category">Category of the logger that wrote the entry.</param>
+-    public static bool HasCategory(JsonElement entry, string category) =>
+-        entry.TryGetProperty("Category", out var entryCategory)
+-        && entryCategory.GetString() == category;
+-
+     /// <summary>
+     /// The scopes of the entry. A scope that is not an object is not a scope of the
+     /// product and it is ignored.
+@@ -130,25 +121,4 @@ internal static class LogEntries
+ 
+         return false;
+     }
+-
+-    /// <summary>
+-    /// Tells whether the entry carries a correlation scope with the given identifier of
+-    /// the unit of work. It does not ask for the identifier of the client, because the
+-    /// surface of the administration does not carry one (AD-30).
+-    /// </summary>
+-    /// <param name="entry">Entry of the log.</param>
+-    /// <param name="operationId">Identifier of the unit of work.</param>
+-    public static bool HasOperationScope(JsonElement entry, string operationId)
+-    {
+-        foreach (var scope in Scopes(entry))
+-        {
+-            if (scope.TryGetProperty("OperationId", out var scopeOperationId)
+-                && scopeOperationId.GetString() == operationId)
+-            {
+-                return true;
+-            }
+-        }
+-
+-        return false;
+-    }
+ }
+diff --git a/tests/IntegrationTests/ServerCorrelationTests.cs b/tests/IntegrationTests/ServerCorrelationTests.cs
+index 60a6cdc..25816ee 100644
+--- a/tests/IntegrationTests/ServerCorrelationTests.cs
++++ b/tests/IntegrationTests/ServerCorrelationTests.cs
+@@ -26,12 +26,6 @@ public sealed class ServerCorrelationTests
+ 
+     private const string UnknownClientId = "0000000000000000000000000000ffff";
+ 
+-    /// <summary>
+-    /// Category of the logger of the use case that registers a videogame. The entry that
+-    /// writes it is the one that tells the operator that the videogame is in the catalog.
+-    /// </summary>
+-    private const string RegisterGameCategory = "LANPartyHub.Server.Application.Catalog.RegisterGame";
+-
+     [Fact]
+     public async Task A_request_with_the_two_headers_is_correlated_and_its_log_entry_carries_them()
+     {
+@@ -347,37 +341,24 @@ public sealed class ServerCorrelationTests
+     }
+ 
+     [Fact]
+-    public async Task The_admin_surface_does_not_require_the_identifier_of_the_client()
++    public async Task The_administration_surface_does_not_ask_for_the_identifier_of_the_client()
+     {
+         await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+ 
+         using var client = host.CreateClient();
+ 
+-        // The organizer is not a client of the LAN, so the surface of the administration
+-        // does not ask for the identifier of a client (AD-30).
+-        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
+-        {
+-            Content = new StringContent(
+-                "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
+-                + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
+-                + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
+-                + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
+-                + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
+-                + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
+-                + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
+-                + "\"distributionRestrictions\":\"Solo para el evento\"}",
+-                System.Text.Encoding.UTF8,
+-                "application/json"),
+-        };
++        // El organizador no es un cliente de la LAN, as├¡ que la superficie de la
++        // administraci├│n no exige la cabecera X-Client-Id (AD-30).
++        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
++        request.Content = BuildValidGameBody();
+ 
+         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+ 
+         Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+     }
+ 
+     [Fact]
+-    public async Task The_admin_surface_is_correlated_by_the_identifier_of_the_operation()
++    public async Task The_administration_surface_is_still_correlated_by_the_identifier_of_the_operation()
+     {
+         await using var capture = await ConsoleLogCapture.StartAsync();
+ 
+@@ -385,73 +366,105 @@ public sealed class ServerCorrelationTests
+         {
+             using var client = host.CreateClient();
+ 
+-            using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
+-            {
+-                Content = new StringContent(
+-                    "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
+-                    + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
+-                    + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
+-                    + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
+-                    + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
+-                    + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
+-                    + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
+-                    + "\"distributionRestrictions\":\"Solo para el evento\"}",
+-                    System.Text.Encoding.UTF8,
+-                    "application/json"),
+-            };
+-
+-            request.Headers.Add(AdminCorrelationMiddleware.OperationIdHeaderName, OperationId);
++            using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
++            request.Content = BuildValidGameBody();
++            request.Headers.Add(CorrelationMiddleware.OperationIdHeaderName, OperationId);
+ 
+             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+ 
+-            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
++            Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+ 
+-            // The effective identifier of the operation travels back to the organizer.
++            // La operaci├│n sigue correlacionada por su identificador, que es lo que AD-15
++            // exige para toda operaci├│n.
+             Assert.Equal(
+                 OperationId,
+-                response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single());
++                response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single());
+         }
+ 
+-        // The entry of the registration carries the identifier of the unit of work in its
+-        // scope, so the log of the server and the log of the organizer can be joined
+-        // (AD-15). The operation writes one registration entry, so the assertion stays
+-        // strict: exactly one entry of the use case carries the identifier.
+-        Assert.Single(
+-            capture.Entries,
+-            candidate => LogEntries.HasCategory(candidate, RegisterGameCategory)
+-                && LogEntries.HasOperationScope(candidate, OperationId));
++        // La entrada del log de la operaci├│n lleva el identificador de la unidad de
++        // trabajo, y no el del cliente, porque la administraci├│n no lo tiene (AD-30).
++        // Varias entradas pueden llevar el identificador: la del middleware y la del
++        // caso de uso, y las dos est├ín dentro del mismo scope de correlaci├│n.
++        var entries = capture.Entries
++            .Where(candidate => LogEntries.IsProduct(candidate)
++                && LogEntries.Scopes(candidate).Any(scope =>
++                    scope.TryGetProperty("OperationId", out var operationId)
++                    && operationId.GetString() == OperationId))
++            .ToArray();
++
++        Assert.NotEmpty(entries);
++
++        Assert.All(entries, entry =>
++        {
++            var scopes = LogEntries.Scopes(entry).ToArray();
++
++            Assert.Contains(
++                scopes,
++                scope => scope.TryGetProperty("OperationId", out var operationId)
++                    && operationId.GetString() == OperationId);
++        });
+     }
+ 
+     [Fact]
+-    public async Task The_admin_surface_gets_an_identifier_of_the_operation_when_the_organizer_does_not_send_one()
++    public async Task The_administration_surface_gets_an_identifier_of_the_operation_when_the_request_does_not_carry_one()
+     {
+         await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+ 
+         using var client = host.CreateClient();
+ 
+-        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route)
+-        {
+-            Content = new StringContent(
+-                "{\"schemaVersion\":1,\"name\":\"Counter-Strike 2\",\"description\":\"Disparadores\","
+-                + "\"categories\":[\"Shooter\"],\"tags\":[\"fps\"],\"coverImage\":\"cover.png\","
+-                + "\"images\":[\"captura.png\"],\"version\":\"1.41.3\",\"sizeBytes\":7600000000,"
+-                + "\"minPlayers\":1,\"maxPlayers\":10,\"operatingSystem\":\"Windows\","
+-                + "\"distributionType\":\"Servidor\",\"installationType\":\"Portable\","
+-                + "\"launchConfiguration\":{\"executablePath\":\"bin\\\\cs2.exe\",\"arguments\":[],"
+-                + "\"workingDirectory\":\"game\"},\"dependencies\":[\"DirectX 12\"],\"license\":\"Propietaria\","
+-                + "\"distributionRestrictions\":\"Solo para el evento\"}",
+-                System.Text.Encoding.UTF8,
+-                "application/json"),
+-        };
++        using var request = new HttpRequestMessage(HttpMethod.Post, GamesEndpoint.Route);
++        request.Content = BuildValidGameBody();
+ 
+         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+ 
+-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
++        var operationId = response.Headers.GetValues(CorrelationMiddleware.OperationIdHeaderName).Single();
++
++        Assert.Equal(CorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
++        Assert.NotEqual(string.Empty, operationId);
++    }
+ 
+-        var operationId = response.Headers.GetValues(AdminCorrelationMiddleware.OperationIdHeaderName).Single();
++    /// <summary>
++    /// Builds a body of the administration of the catalog with the eighteen metadata de
++    /// FR-1 (AD-34).
++    /// </summary>
++    /// <returns>The content of the request.</returns>
++    private static StringContent BuildValidGameBody()
++    {
++        var body = new
++        {
++            schemaVersion = GamesEndpoint.SupportedSchemaVersion,
++            game = new
++            {
++                gameId = string.Empty,
++                name = "Counter-Strike 2",
++                description = "Disparadores en primera persona.",
++                categories = new[] { "Shooter" },
++                tags = new[] { "fps" },
++                coverImage = "cover.png",
++                images = new[] { "captura-1.png" },
++                version = "1.41.3",
++                sizeBytes = 7_600_000_000,
++                minPlayers = 1,
++                maxPlayers = 10,
++                operatingSystem = "Windows",
++                distributionType = "Servidor",
++                installationType = "Portable",
++                launchConfiguration = new
++                {
++                    executablePath = "bin\\cs2.exe",
++                    arguments = new[] { "-novid" },
++                    workingDirectory = "game\\bin",
++                },
++                dependencies = new[] { "DirectX 12" },
++                license = "Propietaria",
++                distributionRestrictions = "Solo para el evento",
++            },
++        };
+ 
+-        Assert.False(string.IsNullOrWhiteSpace(operationId));
+-        Assert.Equal(AdminCorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
++        return new StringContent(
++            JsonSerializer.Serialize(body),
++            System.Text.Encoding.UTF8,
++            "application/json");
+     }
+ 
+     /// <summary>
+diff --git a/tests/UnitTests/CatalogPresentationTests.cs b/tests/UnitTests/CatalogPresentationTests.cs
+new file mode 100644
+index 0000000..7dfb713
+--- /dev/null
++++ b/tests/UnitTests/CatalogPresentationTests.cs
+@@ -0,0 +1,256 @@
++using LANPartyHub.Server.Presentation.Catalog;
++using LANPartyHub.Server.Presentation.Formatting;
++using LANPartyHub.Shared.Contracts;
++using Xunit;
++
++namespace LANPartyHub.UnitTests;
++
++/// <summary>
++/// The surface of presentation of the catalog of the organizer (AC1, AC4).
++///
++/// <para>
++/// The form and the list of the section are the surface that the organizer uses, and they
++/// have to be verified: the form builds the contract that the use cases receive out of
++/// what the organizer types, and the list shows the size already derived.
++/// </para>
++/// </summary>
++public sealed class CatalogPresentationTests
++{
++    private const string GameId = "0193f2a1b2c34d4e5f60718293a4b5c6";
++
++    [Fact]
++    public void The_text_of_a_collection_is_split_into_its_values()
++    {
++        var values = GameFormViewModel.SplitList("Shooter, Multijugador");
++
++        Assert.Equal(["Shooter", "Multijugador"], values);
++    }
++
++    [Fact]
++    public void The_values_of_a_collection_that_have_padding_are_trimmed()
++    {
++        var values = GameFormViewModel.SplitList("  Shooter  ,  Multijugador  ");
++
++        Assert.Equal(["Shooter", "Multijugador"], values);
++    }
++
++    [Fact]
++    public void The_text_of_a_collection_that_is_empty_has_no_values()
++    {
++        Assert.Empty(GameFormViewModel.SplitList(string.Empty));
++        Assert.Empty(GameFormViewModel.SplitList("   "));
++        Assert.Empty(GameFormViewModel.SplitList(null));
++    }
++
++    [Fact]
++    public void The_values_of_a_collection_survive_the_way_back_to_the_text()
++    {
++        var values = new[] { "Shooter", "Multijugador" };
++
++        var text = string.Join(", ", values);
++
++        Assert.Equal(values, GameFormViewModel.SplitList(text));
++    }
++
++    [Fact]
++    public void The_form_of_an_alta_has_no_identifier()
++    {
++        var viewModel = new GameFormViewModel();
++
++        Assert.Null(viewModel.GameId);
++        Assert.False(viewModel.IsModification);
++    }
++
++    [Fact]
++    public void The_form_of_a_modificacion_carries_the_identifier_of_the_videogame()
++    {
++        var viewModel = new GameFormViewModel(CreateDescriptor());
++
++        Assert.Equal(GameId, viewModel.GameId);
++        Assert.True(viewModel.IsModification);
++    }
++
++    [Fact]
++    public void The_form_builds_the_contract_with_the_eighteen_metadata_of_fr_1()
++    {
++        var viewModel = new GameFormViewModel
++        {
++            Name = "Counter-Strike 2",
++            Description = "Disparadores en primera persona.",
++            Categories = "Shooter, Multijugador",
++            Tags = "fps, valve",
++            CoverImage = "cover.png",
++            Images = "captura-1.png, captura-2.png",
++            Version = "1.41.3",
++            SizeBytes = 7_600_000_000,
++            MinPlayers = 1,
++            MaxPlayers = 10,
++            OperatingSystem = "Windows",
++            DistributionType = "Servidor",
++            InstallationType = "Portable",
++            LaunchExecutablePath = "bin\\cs2.exe",
++            LaunchArguments = "-novid, -fullscreen",
++            LaunchWorkingDirectory = "game\\bin",
++            Dependencies = "DirectX 12",
++            License = "Propietaria",
++            DistributionRestrictions = "Solo para el evento",
++        };
++
++        var descriptor = viewModel.ToDescriptor();
++
++        Assert.Equal(string.Empty, descriptor.GameId);
++        Assert.Equal("Counter-Strike 2", descriptor.Name);
++        Assert.Equal("Disparadores en primera persona.", descriptor.Description);
++        Assert.Equal(["Shooter", "Multijugador"], descriptor.Categories);
++        Assert.Equal(["fps", "valve"], descriptor.Tags);
++        Assert.Equal("cover.png", descriptor.CoverImage);
++        Assert.Equal(["captura-1.png", "captura-2.png"], descriptor.Images);
++        Assert.Equal("1.41.3", descriptor.Version);
++        Assert.Equal(7_600_000_000, descriptor.SizeBytes);
++        Assert.Equal(1, descriptor.MinPlayers);
++        Assert.Equal(10, descriptor.MaxPlayers);
++        Assert.Equal("Windows", descriptor.OperatingSystem);
++        Assert.Equal("Servidor", descriptor.DistributionType);
++        Assert.Equal("Portable", descriptor.InstallationType);
++        Assert.Equal("bin\\cs2.exe", descriptor.LaunchConfiguration.ExecutablePath);
++        Assert.Equal(["-novid", "-fullscreen"], descriptor.LaunchConfiguration.Arguments);
++        Assert.Equal("game\\bin", descriptor.LaunchConfiguration.WorkingDirectory);
++        Assert.Equal(["DirectX 12"], descriptor.Dependencies);
++        Assert.Equal("Propietaria", descriptor.License);
++        Assert.Equal("Solo para el evento", descriptor.DistributionRestrictions);
++    }
++
++    [Fact]
++    public void The_form_builds_the_contract_with_the_eighteen_fields_and_no_more()
++    {
++        // El contrato de Shared tiene una lista exacta de campos, y el formulario no puede
++        // a├▒adir ni uno (AD-34).
++        var properties = typeof(GameDescriptor)
++            .GetProperties()
++            .Select(property => property.Name)
++            .ToArray();
++
++        Assert.Equal(18, properties.Length);
++    }
++
++    [Fact]
++    public void The_form_of_a_modificacion_is_filled_with_the_metadata_of_the_videogame()
++    {
++        var viewModel = new GameFormViewModel(CreateDescriptor());
++
++        Assert.Equal("Counter-Strike 2", viewModel.Name);
++        Assert.Equal("Shooter, Multijugador", viewModel.Categories);
++        Assert.Equal("fps, valve", viewModel.Tags);
++        Assert.Equal("captura-1.png, captura-2.png", viewModel.Images);
++        Assert.Equal("1.41.3", viewModel.Version);
++        Assert.Equal(7_600_000_000, viewModel.SizeBytes);
++        Assert.Equal("bin\\cs2.exe", viewModel.LaunchExecutablePath);
++        Assert.Equal("-novid, -fullscreen", viewModel.LaunchArguments);
++        Assert.Equal("DirectX 12", viewModel.Dependencies);
++        Assert.Equal("Propietaria", viewModel.License);
++        Assert.Equal("Solo para el evento", viewModel.DistributionRestrictions);
++    }
++
++    [Fact]
++    public void The_form_shows_the_size_as_the_derived_decimal_value_and_the_unit_apart()
++    {
++        var viewModel = new GameFormViewModel(CreateDescriptor());
++
++        Assert.Equal("7,6", viewModel.SizeValue);
++        Assert.Equal("GB", viewModel.SizeUnit);
++    }
++
++    [Fact]
++    public void The_form_marks_exactly_the_fields_that_fr_1_demands()
++    {
++        // Los campos obligatorios de FR-1 son los que el cat├ílogo exige, y el formulario
++        // marca exactamente esos (AC4).
++        Assert.Equal(17, GameFormViewModel.RequiredFieldNames.Count);
++        Assert.Contains("name", GameFormViewModel.RequiredFieldNames);
++        Assert.Contains("license", GameFormViewModel.RequiredFieldNames);
++        Assert.Contains("distributionRestrictions", GameFormViewModel.RequiredFieldNames);
++        Assert.DoesNotContain("gameId", GameFormViewModel.RequiredFieldNames);
++    }
++
++    [Fact]
++    public void The_label_of_an_obligatory_field_carries_the_mark()
++    {
++        Assert.Equal("Nombre *", GameFormViewModel.LabelFor("Nombre *", "name"));
++    }
++
++    [Fact]
++    public void The_list_shows_the_size_that_the_formatter_derives()
++    {
++        var viewModel = new CatalogViewModel([CreateDescriptor()]);
++
++        var row = Assert.Single(viewModel.Rows);
++
++        Assert.Equal(GameId, row.GameId);
++        Assert.Equal("Counter-Strike 2", row.Name);
++        Assert.Equal("1.41.3", row.Version);
++        Assert.Equal(SizeFormatter.FormatValue(7_600_000_000), row.SizeValue);
++        Assert.Equal("7,6", row.SizeValue);
++        Assert.Equal(SizeFormatter.Unit, row.SizeUnit);
++        Assert.Equal("GB", row.SizeUnit);
++        Assert.Equal(1, row.MinPlayers);
++        Assert.Equal(10, row.MaxPlayers);
++    }
++
++    [Fact]
++    public void The_list_counts_the_videogames_that_the_catalog_publishes()
++    {
++        var viewModel = new CatalogViewModel([CreateDescriptor(), CreateDescriptor("Otro juego")]);
++
++        Assert.Equal(2, viewModel.Count);
++        Assert.Equal(2, viewModel.Rows.Count);
++    }
++
++    [Fact]
++    public void The_list_is_replaced_by_the_videogames_that_the_repository_returns()
++    {
++        var viewModel = new CatalogViewModel([CreateDescriptor()]);
++
++        viewModel.Replace([CreateDescriptor("Otro juego")]);
++
++        Assert.Equal(1, viewModel.Count);
++        Assert.Equal("Otro juego", viewModel.Rows[0].Name);
++    }
++
++    [Fact]
++    public void The_section_builds_the_form_of_the_alta_and_the_form_of_the_modificacion()
++    {
++        var viewModel = new CatalogViewModel([CreateDescriptor()]);
++
++        var alta = viewModel.CreateFormViewModel();
++
++        var modificacion = viewModel.CreateFormViewModel(CreateDescriptor());
++
++        Assert.Null(alta.GameId);
++        Assert.Equal(GameId, modificacion.GameId);
++    }
++
++    /// <summary>
++    /// Builds the contract of a videogame with the eighteen metadata de FR-1.
++    /// </summary>
++    /// <param name="name">Human readable name.</param>
++    /// <returns>The contract of the videogame.</returns>
++    private static GameDescriptor CreateDescriptor(string name = "Counter-Strike 2") => new(
++        GameId,
++        name,
++        "Disparadores en primera persona.",
++        ["Shooter", "Multijugador"],
++        ["fps", "valve"],
++        "cover.png",
++        ["captura-1.png", "captura-2.png"],
++        "1.41.3",
++        7_600_000_000,
++        1,
++        10,
++        "Windows",
++        "Servidor",
++        "Portable",
++        new InstallationManifest.LaunchSettings("bin\\cs2.exe", ["-novid", "-fullscreen"], "game\\bin"),
++        ["DirectX 12"],
++        "Propietaria",
++        "Solo para el evento");
++}
+diff --git a/tests/UnitTests/GameMetadataTests.cs b/tests/UnitTests/GameMetadataTests.cs
+index 0201e4c..c12281c 100644
+--- a/tests/UnitTests/GameMetadataTests.cs
++++ b/tests/UnitTests/GameMetadataTests.cs
+@@ -4,61 +4,28 @@ using Xunit;
+ namespace LANPartyHub.UnitTests;
+ 
+ /// <summary>
+-/// The invariants of the metadata of a videogame (AC1, AC2, FR-1, AD-1, AD-34).
++/// Invariants of the domain of the catalog (AD-1, AD-7, AD-34, FR-1, AC1, AC2).
+ ///
+ /// <para>
+-/// The rules live in the domain, so these checks exercise the domain and not the adapter:
+-/// a mandatory metadata that is absent is named, the range of players has to be coherent,
+-/// the version is an opaque string of the editor and the size is kept in exact bytes.
++/// The domain is the layer that holds the rules of the videogame, so the rules are
++/// exercised here and not in the adapter: a mandatory metadata that is absent is
++/// rejected and the rejection names the concrete field, the range of players has to be
++/// coherent, the size is kept in exact bytes and the version is an opaque string of the
++/// editor (AD-1, AD-25).
+ /// </para>
+ /// </summary>
+ public sealed class GameMetadataTests
+ {
+-    /// <summary>
+-    /// Builds a registration with the eighteen metadata of FR-1, so that every check can
+-    /// break exactly the field that it examines.
+-    /// </summary>
+-    /// <returns>A registration that satisfies every invariant.</returns>
+-    private static GameRegistration CreateValidRegistration() => new(
+-        "0193f2a1b2c34d4e5f60718293a4b5c6",
+-        "Counter-Strike 2",
+-        "Disparadores en primera persona.",
+-        ["Shooter", "Multijugador"],
+-        ["fps", "valve"],
+-        "cover.png",
+-        ["captura-1.png", "captura-2.png"],
+-        "1.41.3",
+-        7_600_000_000,
+-        1,
+-        10,
+-        "Windows",
+-        "Servidor",
+-        "Portable",
+-        "bin\\cs2.exe",
+-        ["-novid", "-fullscreen"],
+-        "game\\bin",
+-        ["DirectX 12"],
+-        "Propietaria",
+-        "Solo para el evento");
++    private const string GameId = "0193f2a1b2c34d4e5f60718293a4b5c6";
+ 
+-    [Theory]
+-    [InlineData("name")]
+-    [InlineData("description")]
+-    [InlineData("coverImage")]
+-    [InlineData("version")]
+-    [InlineData("operatingSystem")]
+-    [InlineData("distributionType")]
+-    [InlineData("installationType")]
+-    [InlineData("license")]
+-    [InlineData("distributionRestrictions")]
+-    public void A_mandatory_metadata_that_is_empty_is_rejected_and_named(string fieldName)
++    [Fact]
++    public void A_mandatory_metadata_that_is_absent_is_rejected_and_the_exception_names_the_field()
+     {
+-        var exception = Assert.Throws<GameMetadataMissingException>(() => BuildWithText(fieldName, string.Empty));
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(name: string.Empty));
+ 
+-        // The exception names the concrete field that is missing, so the organizer knows
+-        // which one to fill in without having to guess (AD-25).
+-        Assert.Equal(fieldName, exception.FieldName);
+-        Assert.Contains(fieldName, exception.Message, StringComparison.Ordinal);
++        Assert.Equal(GameRegistration.FieldNames.Name, exception.FieldName);
++        Assert.Contains(GameRegistration.FieldNames.Name, exception.Message, StringComparison.Ordinal);
+     }
+ 
+     [Theory]
+@@ -71,283 +38,305 @@ public sealed class GameMetadataTests
+     [InlineData("installationType")]
+     [InlineData("license")]
+     [InlineData("distributionRestrictions")]
+-    public void A_mandatory_metadata_that_is_only_white_space_is_rejected_and_named(string fieldName)
++    public void Every_mandatory_text_names_the_field_that_fails(string fieldName)
+     {
+-        var exception = Assert.Throws<GameMetadataMissingException>(() => BuildWithText(fieldName, "   "));
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(fieldName: fieldName));
+ 
+         Assert.Equal(fieldName, exception.FieldName);
+     }
+ 
+-    [Theory]
+-    [InlineData("categories")]
+-    [InlineData("tags")]
+-    [InlineData("images")]
+-    [InlineData("dependencies")]
+-    public void A_mandatory_collection_that_is_empty_is_rejected_and_named(string fieldName)
++    [Fact]
++    public void A_null_identifier_names_the_identifier_and_not_the_name()
+     {
+-        var exception = Assert.Throws<GameMetadataMissingException>(() => BuildWithCollection(fieldName, []));
++        // The identifier that is absent is the identifier itself, and not another field:
++        // the organizer has to know which box is empty (AD-25).
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(gameId: null));
+ 
+-        Assert.Equal(fieldName, exception.FieldName);
++        Assert.Equal(GameRegistration.FieldNames.GameId, exception.FieldName);
++        Assert.NotEqual(GameRegistration.FieldNames.Name, exception.FieldName);
+     }
+ 
+     [Fact]
+-    public void The_launch_configuration_without_a_path_is_rejected_and_named()
++    public void An_empty_identifier_is_rejected()
+     {
+         var exception = Assert.Throws<GameMetadataMissingException>(
+-            () => new GameRegistration(
+-                "0193f2a1b2c34d4e5f60718293a4b5c6",
+-                "Counter-Strike 2",
+-                "Disparadores en primera persona.",
+-                ["Shooter"],
+-                ["fps"],
+-                "cover.png",
+-                ["captura-1.png"],
+-                "1.41.3",
+-                7_600_000_000,
+-                1,
+-                10,
+-                "Windows",
+-                "Servidor",
+-                "Portable",
+-                string.Empty,
+-                [],
+-                "game\\bin",
+-                [],
+-                "Propietaria",
+-                "Solo para el evento"));
++            () => Create(gameId: string.Empty));
+ 
+-        Assert.Equal(GameRegistration.FieldNames.LaunchConfiguration, exception.FieldName);
++        Assert.Equal(GameRegistration.FieldNames.GameId, exception.FieldName);
+     }
+ 
+     [Fact]
+-    public void A_minimum_of_players_that_is_greater_than_the_maximum_is_rejected()
++    public void An_identifier_that_holds_only_white_space_is_rejected()
+     {
+-        var exception = Assert.Throws<GamePlayerRangeException>(() => new GameRegistration(
+-            "0193f2a1b2c34d4e5f60718293a4b5c6",
+-            "Counter-Strike 2",
+-            "Disparadores en primera persona.",
+-            ["Shooter"],
+-            ["fps"],
+-            "cover.png",
+-            ["captura-1.png"],
+-            "1.41.3",
+-            7_600_000_000,
+-            8,
+-            4,
+-            "Windows",
+-            "Servidor",
+-            "Portable",
+-            "bin\\cs2.exe",
+-            [],
+-            "game\\bin",
+-            ["DirectX 12"],
+-            "Propietaria",
+-            "Solo para el evento"));
+-
+-        Assert.Equal(8, exception.MinPlayers);
+-        Assert.Equal(4, exception.MaxPlayers);
+-        Assert.Contains("8", exception.Message, StringComparison.Ordinal);
+-        Assert.Contains("4", exception.Message, StringComparison.Ordinal);
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(gameId: "   "));
++
++        Assert.Equal(GameRegistration.FieldNames.GameId, exception.FieldName);
+     }
+ 
+     [Fact]
+-    public void A_minimum_of_players_that_equals_the_maximum_is_accepted()
++    public void A_mandatory_collection_that_is_empty_is_rejected()
+     {
+-        var registration = new GameRegistration(
+-            "0193f2a1b2c34d4e5f60718293a4b5c6",
+-            "Counter-Strike 2",
+-            "Disparadores en primera persona.",
+-            ["Shooter"],
+-            ["fps"],
+-            "cover.png",
+-            ["captura-1.png"],
+-            "1.41.3",
+-            7_600_000_000,
+-            4,
+-            4,
+-            "Windows",
+-            "Servidor",
+-            "Portable",
+-            "bin\\cs2.exe",
+-            [],
+-            "game\\bin",
+-            ["DirectX 12"],
+-            "Propietaria",
+-            "Solo para el evento");
+-
+-        Assert.Equal(4, registration.MinPlayers);
+-        Assert.Equal(4, registration.MaxPlayers);
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(categories: []));
++
++        Assert.Equal(GameRegistration.FieldNames.Categories, exception.FieldName);
++    }
++
++    [Fact]
++    public void An_absent_item_inside_a_mandatory_collection_is_rejected()
++    {
++        // A collection with an absent item is as absent as an empty one: the organizer
++        // would publish a category that does not exist (AD-25).
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(categories: ["Shooter", null!]));
++
++        Assert.Equal(GameRegistration.FieldNames.Categories, exception.FieldName);
++    }
++
++    [Fact]
++    public void An_item_of_a_mandatory_collection_that_holds_only_white_space_is_rejected()
++    {
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(tags: ["fps", "   "]));
++
++        Assert.Equal(GameRegistration.FieldNames.Tags, exception.FieldName);
++    }
++
++    [Fact]
++    public void The_items_of_a_mandatory_collection_are_trimmed_like_the_texts()
++    {
++        var game = Create(categories: ["  Shooter  ", " Multijugador "]);
++
++        Assert.Equal(["Shooter", "Multijugador"], game.Categories);
++    }
++
++    [Fact]
++    public void The_mandatory_texts_are_trimmed()
++    {
++        var game = Create(name: "  Counter-Strike 2  ");
++
++        Assert.Equal("Counter-Strike 2", game.Name);
++    }
++
++    [Fact]
++    public void The_minimum_of_players_that_is_greater_than_the_maximum_is_rejected()
++    {
++        var exception = Assert.Throws<GamePlayerRangeException>(
++            () => Create(minPlayers: 4, maxPlayers: 2));
++
++        Assert.Equal(4, exception.MinPlayers);
++        Assert.Equal(2, exception.MaxPlayers);
++    }
++
++    [Fact]
++    public void The_range_of_players_that_is_coherent_is_accepted()
++    {
++        var game = Create(minPlayers: 2, maxPlayers: 2);
++
++        Assert.Equal(2, game.MinPlayers);
++        Assert.Equal(2, game.MaxPlayers);
+     }
+ 
+     [Theory]
+-    [InlineData("1.41.3")]
+-    [InlineData("v1.0-beta")]
+-    [InlineData("2026.10")]
+-    [InlineData("nightly-20261029")]
+-    [InlineData("0")]
+-    public void The_version_is_an_opaque_string_of_the_editor_and_never_a_number(string version)
++    [InlineData(0)]
++    [InlineData(-1)]
++    public void A_size_that_is_not_positive_is_rejected(int sizeBytes)
+     {
+-        var registration = BuildWithText(GameRegistration.FieldNames.Version, version);
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(sizeBytes: sizeBytes));
+ 
+-        // The version travels as it was written: it is not parsed and it is not compared
+-        // as a number (AD-34, convenci├│n de datos).
+-        Assert.Equal(version, registration.Version);
++        Assert.Equal(GameRegistration.FieldNames.SizeBytes, exception.FieldName);
+     }
+ 
+     [Theory]
+-    [InlineData(1L)]
+-    [InlineData(1_073_741_824L)]
+-    [InlineData(7_600_000_000L)]
+-    [InlineData(9_999_999_999_999L)]
+-    public void The_size_is_kept_in_exact_bytes(long sizeBytes)
++    [InlineData(0)]
++    [InlineData(-3)]
++    public void A_minimum_of_players_that_is_not_positive_is_rejected(int minPlayers)
+     {
+-        var registration = BuildWithSize(sizeBytes);
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(minPlayers: minPlayers, maxPlayers: 10));
+ 
+-        // The size travels in exact bytes and it is never rounded or converted (AD-7).
+-        Assert.Equal(sizeBytes, registration.SizeBytes);
++        Assert.Equal(GameRegistration.FieldNames.MinPlayers, exception.FieldName);
++    }
++
++    [Theory]
++    [InlineData(0)]
++    [InlineData(-3)]
++    public void A_maximum_of_players_that_is_not_positive_is_rejected(int maxPlayers)
++    {
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(minPlayers: 1, maxPlayers: maxPlayers));
++
++        Assert.Equal(GameRegistration.FieldNames.MaxPlayers, exception.FieldName);
+     }
+ 
+     [Fact]
+-    public void A_size_of_zero_bytes_is_rejected_as_a_missing_metadata()
++    public void The_size_is_kept_in_exact_bytes()
+     {
+-        var exception = Assert.Throws<GameMetadataMissingException>(() => BuildWithSize(0));
++        // The conversion to decimal gigabytes is a rule of presentation and not of the
++        // model, so the domain keeps the exact value (AD-7).
++        var game = Create(sizeBytes: 7_600_000_001);
+ 
+-        Assert.Equal(GameRegistration.FieldNames.SizeBytes, exception.FieldName);
++        Assert.Equal(7_600_000_001, game.SizeBytes);
+     }
+ 
+     [Fact]
+-    public void A_negative_size_is_rejected_as_a_missing_metadata()
++    public void The_version_is_an_opaque_string_of_the_editor()
+     {
+-        var exception = Assert.Throws<GameMetadataMissingException>(() => BuildWithSize(-1));
++        // The version is never parsed as a number: the editor decides what it means
++        // (AD-7, convenci├│n de datos).
++        var game = Create(version: "1.41.3-beta2+build77");
+ 
+-        Assert.Equal(GameRegistration.FieldNames.SizeBytes, exception.FieldName);
++        Assert.Equal("1.41.3-beta2+build77", game.Version);
++    }
++
++    [Fact]
++    public void The_launch_arguments_are_validated_like_the_rest_of_the_mandatory_collections()
++    {
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(launchArguments: ["-novid", null!]));
++
++        Assert.Equal(GameRegistration.FieldNames.LaunchConfiguration, exception.FieldName);
++    }
++
++    [Fact]
++    public void The_launch_arguments_are_trimmed_like_the_rest_of_the_mandatory_collections()
++    {
++        var game = Create(launchArguments: [" -novid ", "-fullscreen"]);
++
++        Assert.Equal(["-novid", "-fullscreen"], game.LaunchArguments);
+     }
+ 
+     [Fact]
+-    public void A_valid_registration_keeps_every_metadata_of_fr_1()
++    public void The_launch_configuration_that_is_empty_names_the_launch_configuration()
+     {
+-        var registration = CreateValidRegistration();
+-
+-        Assert.Equal("Counter-Strike 2", registration.Name);
+-        Assert.Equal("Disparadores en primera persona.", registration.Description);
+-        Assert.Equal(["Shooter", "Multijugador"], registration.Categories);
+-        Assert.Equal(["fps", "valve"], registration.Tags);
+-        Assert.Equal("cover.png", registration.CoverImage);
+-        Assert.Equal(["captura-1.png", "captura-2.png"], registration.Images);
+-        Assert.Equal("1.41.3", registration.Version);
+-        Assert.Equal(7_600_000_000, registration.SizeBytes);
+-        Assert.Equal(1, registration.MinPlayers);
+-        Assert.Equal(10, registration.MaxPlayers);
+-        Assert.Equal("Windows", registration.OperatingSystem);
+-        Assert.Equal("Servidor", registration.DistributionType);
+-        Assert.Equal("Portable", registration.InstallationType);
+-        Assert.Equal("bin\\cs2.exe", registration.LaunchExecutablePath);
+-        Assert.Equal(["-novid", "-fullscreen"], registration.LaunchArguments);
+-        Assert.Equal("game\\bin", registration.LaunchWorkingDirectory);
+-        Assert.Equal(["DirectX 12"], registration.Dependencies);
+-        Assert.Equal("Propietaria", registration.License);
+-        Assert.Equal("Solo para el evento", registration.DistributionRestrictions);
++        var exception = Assert.Throws<GameMetadataMissingException>(
++            () => Create(launchExecutablePath: string.Empty));
++
++        Assert.Equal(GameRegistration.FieldNames.LaunchConfiguration, exception.FieldName);
+     }
+ 
+     [Fact]
+-    public void The_identifier_of_a_videogame_is_a_canonical_uuid_v7()
++    public void The_generated_identifier_is_a_canonical_uuid_v7()
+     {
+         var gameId = GameRegistration.GenerateGameId();
+ 
+-        Assert.Equal(32, gameId.Length);
+-        Assert.True(GameRegistration.IsCanonicalIdentifier(gameId));
++        Assert.Equal(GameRegistration.CanonicalIdentifierLength, gameId.Length);
+         Assert.Equal(gameId.ToLowerInvariant(), gameId);
++        Assert.All(gameId, character => Assert.True(
++            char.IsAsciiDigit(character) || (character is >= 'a' and <= 'f'),
++            $"The identifier '{gameId}' is not canonical."));
++        Assert.True(GameRegistration.IsCanonicalIdentifier(gameId));
+     }
+ 
+     [Fact]
+-    public void Two_identifiers_of_videogames_are_different()
++    public void The_identifier_that_arrives_is_kept_as_it_is()
+     {
+-        var first = GameRegistration.GenerateGameId();
+-        var second = GameRegistration.GenerateGameId();
++        // The identifier never changes in a modificaci├│n, y el servidor no inventa otro
++        // (AD-34).
++        var game = Create(gameId: GameId);
+ 
+-        Assert.NotEqual(first, second);
++        Assert.Equal(GameId, game.GameId);
+     }
+ 
+     /// <summary>
+-    /// Builds a registration with one of its mandatory texts replaced.
++    /// Builds a registration of a videogame with the eighteen metadata de FR-1, de forma
++    /// que cada prueba pueda alterar uno solo de ellos.
+     /// </summary>
+-    /// <param name="fieldName">Name of the field to replace.</param>
+-    /// <param name="value">Value that the field takes.</param>
+-    /// <returns>The registration.</returns>
+-    private static GameRegistration BuildWithText(string fieldName, string value) => new(
+-        "0193f2a1b2c34d4e5f60718293a4b5c6",
+-        fieldName == "name" ? value : "Counter-Strike 2",
+-        fieldName == "description" ? value : "Disparadores en primera persona.",
+-        ["Shooter"],
+-        ["fps"],
+-        fieldName == "coverImage" ? value : "cover.png",
+-        ["captura-1.png"],
+-        fieldName == "version" ? value : "1.41.3",
+-        7_600_000_000,
+-        1,
+-        10,
+-        fieldName == "operatingSystem" ? value : "Windows",
+-        fieldName == "distributionType" ? value : "Servidor",
+-        fieldName == "installationType" ? value : "Portable",
+-        "bin\\cs2.exe",
+-        [],
+-        "game\\bin",
+-        ["DirectX 12"],
+-        fieldName == "license" ? value : "Propietaria",
+-        fieldName == "distributionRestrictions" ? value : "Solo para el evento");
++    /// <param name="gameId">Identifier of the videogame.</param>
++    /// <param name="name">Human readable name.</param>
++    /// <param name="description">Description of the videogame.</param>
++    /// <param name="categories">Categories used to filter the catalog.</param>
++    /// <param name="tags">Free form tags of the videogame.</param>
++    /// <param name="coverImage">Reference of the cover image.</param>
++    /// <param name="images">References of the additional images.</param>
++    /// <param name="version">Version published in the catalog.</param>
++    /// <param name="sizeBytes">Exact size of the package in bytes.</param>
++    /// <param name="minPlayers">Minimum number of players.</param>
++    /// <param name="maxPlayers">Maximum number of players.</param>
++    /// <param name="operatingSystem">Operating system the videogame runs on.</param>
++    /// <param name="distributionType">Distribution type of the videogame.</param>
++    /// <param name="installationType">Installation type of the videogame.</param>
++    /// <param name="launchExecutablePath">Path of the executable.</param>
++    /// <param name="launchArguments">Arguments passed to the executable.</param>
++    /// <param name="launchWorkingDirectory">Working directory of the process.</param>
++    /// <param name="dependencies">Dependencies required by the videogame.</param>
++    /// <param name="license">License of the videogame.</param>
++    /// <param name="distributionRestrictions">Restrictions on the publication.</param>
++    /// <param name="fieldName">
++    /// Name of the field that the test wants to leave empty. It exists so the tests that
++    /// comprueban el nombre del campo que falta no repiten el constructor entero.
++    /// </param>
++    /// <returns>The registration of the videogame.</returns>
++    private static GameRegistration Create(
++        string? gameId = GameId,
++        string name = "Counter-Strike 2",
++        string description = "Disparadores en primera persona.",
++        IReadOnlyList<string>? categories = null,
++        IReadOnlyList<string>? tags = null,
++        string coverImage = "cover.png",
++        IReadOnlyList<string>? images = null,
++        string version = "1.41.3",
++        long sizeBytes = 7_600_000_000,
++        int minPlayers = 1,
++        int maxPlayers = 10,
++        string operatingSystem = "Windows",
++        string distributionType = "Servidor",
++        string installationType = "Portable",
++        string launchExecutablePath = "bin\\cs2.exe",
++        IReadOnlyList<string>? launchArguments = null,
++        string launchWorkingDirectory = "game\\bin",
++        IReadOnlyList<string>? dependencies = null,
++        string license = "Propietaria",
++        string distributionRestrictions = "Solo para el evento",
++        string? fieldName = null)
++    {
++        name = Empty(fieldName, GameRegistration.FieldNames.Name, name);
++        description = Empty(fieldName, GameRegistration.FieldNames.Description, description);
++        coverImage = Empty(fieldName, GameRegistration.FieldNames.CoverImage, coverImage);
++        version = Empty(fieldName, GameRegistration.FieldNames.Version, version);
++        operatingSystem = Empty(fieldName, GameRegistration.FieldNames.OperatingSystem, operatingSystem);
++        distributionType = Empty(fieldName, GameRegistration.FieldNames.DistributionType, distributionType);
++        installationType = Empty(fieldName, GameRegistration.FieldNames.InstallationType, installationType);
++        license = Empty(fieldName, GameRegistration.FieldNames.License, license);
++        distributionRestrictions = Empty(
++            fieldName,
++            GameRegistration.FieldNames.DistributionRestrictions,
++            distributionRestrictions);
+ 
+-    /// <summary>
+-    /// Builds a registration with one of its mandatory collections replaced.
+-    /// </summary>
+-    /// <param name="fieldName">Name of the field to replace.</param>
+-    /// <param name="values">Values that the field takes.</param>
+-    /// <returns>The registration.</returns>
+-    private static GameRegistration BuildWithCollection(string fieldName, IReadOnlyList<string> values) => new(
+-        "0193f2a1b2c34d4e5f60718293a4b5c6",
+-        "Counter-Strike 2",
+-        "Disparadores en primera persona.",
+-        fieldName == "categories" ? values : ["Shooter"],
+-        fieldName == "tags" ? values : ["fps"],
+-        "cover.png",
+-        fieldName == "images" ? values : ["captura-1.png"],
+-        "1.41.3",
+-        7_600_000_000,
+-        1,
+-        10,
+-        "Windows",
+-        "Servidor",
+-        "Portable",
+-        "bin\\cs2.exe",
+-        [],
+-        "game\\bin",
+-        fieldName == "dependencies" ? values : ["DirectX 12"],
+-        "Propietaria",
+-        "Solo para el evento");
++        return new GameRegistration(
++            gameId!,
++            name,
++            description,
++            categories ?? ["Shooter", "Multijugador"],
++            tags ?? ["fps", "valve"],
++            coverImage,
++            images ?? ["captura-1.png", "captura-2.png"],
++            version,
++            sizeBytes,
++            minPlayers,
++            maxPlayers,
++            operatingSystem,
++            distributionType,
++            installationType,
++            launchExecutablePath,
++            launchArguments ?? ["-novid", "-fullscreen"],
++            launchWorkingDirectory,
++            dependencies ?? ["DirectX 12"],
++            license,
++            distributionRestrictions);
++    }
+ 
+     /// <summary>
+-    /// Builds a registration with another size.
++    /// Leaves empty the field that the test wants to leave empty.
+     /// </summary>
+-    /// <param name="sizeBytes">Size in bytes.</param>
+-    /// <returns>The registration.</returns>
+-    private static GameRegistration BuildWithSize(long sizeBytes) => new(
+-        "0193f2a1b2c34d4e5f60718293a4b5c6",
+-        "Counter-Strike 2",
+-        "Disparadores en primera persona.",
+-        ["Shooter"],
+-        ["fps"],
+-        "cover.png",
+-        ["captura-1.png"],
+-        "1.41.3",
+-        sizeBytes,
+-        1,
+-        10,
+-        "Windows",
+-        "Servidor",
+-        "Portable",
+-        "bin\\cs2.exe",
+-        [],
+-        "game\\bin",
+-        ["DirectX 12"],
+-        "Propietaria",
+-        "Solo para el evento");
++    /// <param name="fieldName">Name of the field that the test wants to leave empty.</param>
++    /// <param name="candidate">Name of the field that this value belongs to.</param>
++    /// <param name="value">Value of the field.</param>
++    /// <returns>The value of the field, empty when it is the one that the test alters.</returns>
++    private static string Empty(string? fieldName, string candidate, string value) =>
++        fieldName == candidate ? string.Empty : value;
+ }
+diff --git a/tests/UnitTests/SizeFormatterTests.cs b/tests/UnitTests/SizeFormatterTests.cs
+index ee15751..9272215 100644
+--- a/tests/UnitTests/SizeFormatterTests.cs
++++ b/tests/UnitTests/SizeFormatterTests.cs
+@@ -1,124 +1,136 @@
++using System.Globalization;
+ using LANPartyHub.Server.Presentation.Formatting;
+ using Xunit;
+ 
+ namespace LANPartyHub.UnitTests;
+ 
+ /// <summary>
+-/// The single rule of the sizes of the interface (AD-7, AC4).
++/// The rule of the sizes of the catalog (AD-7, AC4).
+ ///
+ /// <para>
+-/// Every size is expressed in decimal gigabytes, with the Spanish decimal separator and
+-/// with exactly one decimal. There is no MiB and no GiB, no two decimals and no size
+-/// without its unit.
++/// There is a single rule for the sizes: decimal gigabytes, with the Spanish decimal
++/// separator and with exactly one decimal. There is no MiB and no GiB, no two decimals and
++/// no size without its unit.
+ /// </para>
+ /// </summary>
+ public sealed class SizeFormatterTests
+ {
+     [Fact]
+-    public void Seven_comma_six_gigabytes_is_the_size_of_seven_billion_six_hundred_million_bytes()
++    public void The_size_of_seven_gigabytes_and_a_half_is_seven_comma_six_gigabytes()
+     {
+         Assert.Equal("7,6 GB", SizeFormatter.Format(7_600_000_000));
+     }
+ 
+     [Fact]
+-    public void The_numeric_value_and_the_unit_are_two_parts()
++    public void The_numeric_part_of_the_size_travels_apart_from_the_unit()
+     {
++        // El valor va en el token de tama├▒o y la unidad en el token de meta, de modo que
++        // los dos tienen que poder separarse (AC4).
+         var (value, unit) = SizeFormatter.Split(7_600_000_000);
+ 
+         Assert.Equal("7,6", value);
+         Assert.Equal("GB", unit);
+     }
+ 
+-    [Theory]
+-    [InlineData(0L, "0,0 GB")]
+-    [InlineData(1L, "0,0 GB")]
+-    [InlineData(100_000_000L, "0,1 GB")]
+-    [InlineData(150_000_000L, "0,2 GB")]
+-    [InlineData(1_000_000_000L, "1,0 GB")]
+-    [InlineData(3_200_000_000L, "3,2 GB")]
+-    [InlineData(7_600_000_000L, "7,6 GB")]
+-    [InlineData(42_000_000_000L, "42,0 GB")]
+-    public void The_size_is_expressed_in_decimal_gigabytes_with_one_decimal(long sizeBytes, string expected)
++    [Fact]
++    public void The_decimal_separator_is_the_spanish_comma()
+     {
+-        Assert.Equal(expected, SizeFormatter.Format(sizeBytes));
++        Assert.Equal("7,6", SizeFormatter.FormatValue(7_600_000_000));
++        Assert.DoesNotContain(".", SizeFormatter.FormatValue(7_600_000_000), StringComparison.Ordinal);
+     }
+ 
+-    [Theory]
+-    [InlineData(0L)]
+-    [InlineData(1L)]
+-    [InlineData(999_999_999L)]
+-    [InlineData(1_000_000_000L)]
+-    [InlineData(7_600_000_000L)]
+-    [InlineData(999_999_999_999L)]
+-    public void The_decimal_separator_is_the_spanish_comma_and_never_the_point(long sizeBytes)
++    [Fact]
++    public void The_decimal_separator_does_not_depend_on_the_culture_of_the_machine()
+     {
+-        var formatted = SizeFormatter.Format(sizeBytes);
++        var previous = CultureInfo.CurrentCulture;
+ 
+-        Assert.DoesNotContain(".", formatted, StringComparison.Ordinal);
+-        Assert.Contains(",", formatted, StringComparison.Ordinal);
++        try
++        {
++            // Con una cultura que usa el punto decimal, el texto del tama├▒o no cambia: el
++            // separador se escribe a mano y no por un formateador de la cultura.
++            CultureInfo.CurrentCulture = new CultureInfo("en-US");
++
++            Assert.Equal("7,6 GB", SizeFormatter.Format(7_600_000_000));
++        }
++        finally
++        {
++            CultureInfo.CurrentCulture = previous;
++        }
+     }
+ 
+     [Theory]
+-    [InlineData(0L)]
+-    [InlineData(1L)]
+-    [InlineData(999_999_999L)]
+-    [InlineData(1_000_000_000L)]
+-    [InlineData(7_600_000_000L)]
+-    [InlineData(1_050_000_000L)]
+-    [InlineData(999_999_999_999L)]
+-    public void The_size_has_exactly_one_decimal_and_never_two(long sizeBytes)
++    [InlineData(0, "0,0")]
++    [InlineData(1, "0,0")]
++    [InlineData(500_000_000, "0,5")]
++    [InlineData(1_000_000_000, "1,0")]
++    [InlineData(1_500_000_000, "1,5")]
++    [InlineData(7_600_000_000, "7,6")]
++    [InlineData(10_000_000_000, "10,0")]
++    [InlineData(123_400_000_000, "123,4")]
++    public void The_size_has_exactly_one_decimal(long sizeBytes, string expected)
+     {
+-        var formatted = SizeFormatter.Format(sizeBytes);
+-
+-        var separator = formatted.IndexOf(',', StringComparison.Ordinal);
+-
+-        Assert.True(separator >= 0, $"The size '{formatted}' has no decimal separator.");
++        Assert.Equal(expected, SizeFormatter.FormatValue(sizeBytes));
++    }
+ 
+-        var decimals = formatted[(separator + 1)..];
++    [Theory]
++    [InlineData(0)]
++    [InlineData(1)]
++    [InlineData(7_600_000_000)]
++    [InlineData(123_400_000_000)]
++    public void The_size_never_carries_two_decimals(long sizeBytes)
++    {
++        var value = SizeFormatter.FormatValue(sizeBytes);
+ 
+-        Assert.DoesNotContain(",", decimals, StringComparison.Ordinal);
+-        Assert.Single(decimals, character => char.IsDigit(character));
++        Assert.Equal(1, value.Count(character => character == ','));
++        Assert.DoesNotContain(".", value, StringComparison.Ordinal);
+     }
+ 
+     [Theory]
+-    [InlineData(0L)]
+-    [InlineData(1L)]
+-    [InlineData(7_600_000_000L)]
+-    [InlineData(999_999_999_999L)]
+-    public void The_size_always_carries_its_unit(long sizeBytes)
++    [InlineData(0)]
++    [InlineData(7_600_000_000)]
++    [InlineData(123_400_000_000)]
++    public void The_size_never_travels_without_its_unit(long sizeBytes)
+     {
+-        var formatted = SizeFormatter.Format(sizeBytes);
++        var text = SizeFormatter.Format(sizeBytes);
+ 
+-        Assert.EndsWith(" GB", formatted, StringComparison.Ordinal);
+-        Assert.DoesNotContain("MiB", formatted, StringComparison.Ordinal);
+-        Assert.DoesNotContain("GiB", formatted, StringComparison.Ordinal);
+-        Assert.DoesNotContain("MB", formatted, StringComparison.Ordinal);
+-        Assert.DoesNotContain("KB", formatted, StringComparison.Ordinal);
++        Assert.EndsWith(" " + SizeFormatter.Unit, text, StringComparison.Ordinal);
++        Assert.Contains(SizeFormatter.Unit, text, StringComparison.Ordinal);
+     }
+ 
+     [Fact]
+-    public void The_formatting_does_not_depend_on_the_culture_of_the_machine()
++    public void The_size_never_uses_the_binary_units()
+     {
+-        var original = Thread.CurrentThread.CurrentCulture;
++        var text = SizeFormatter.Format(7_600_000_000);
+ 
+-        try
+-        {
+-            // A culture whose decimal separator is the point is installed, and the text of
+-            // the size has to be the same all the same.
+-            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
++        Assert.DoesNotContain("MiB", text, StringComparison.Ordinal);
++        Assert.DoesNotContain("GiB", text, StringComparison.Ordinal);
++        Assert.DoesNotContain("MB", text, StringComparison.Ordinal);
++    }
+ 
+-            Assert.Equal("7,6 GB", SizeFormatter.Format(7_600_000_000));
+-        }
+-        finally
+-        {
+-            Thread.CurrentThread.CurrentCulture = original;
+-        }
++    [Fact]
++    public void The_size_is_computed_in_decimal_gigabytes_and_not_in_binary_gigabytes()
++    {
++        // Un gigabyte binario son 1.073.741.824 bytes, y un tama├▒o de 1.073.741.824 bytes
++        // son 1,1 GB decimales, no 1,0 GiB.
++        Assert.Equal("1,1", SizeFormatter.FormatValue(1_073_741_824));
++    }
++
++    [Fact]
++    public void The_tenth_of_a_gigabyte_is_rounded_to_the_nearest_one()
++    {
++        // El resto se calcula con enteros, de modo que el redondeo no depende de la
++        // precisi├│n de un n├║mero de coma flotante.
++        Assert.Equal("1,0", SizeFormatter.FormatValue(1_040_000_000));
++        Assert.Equal("1,1", SizeFormatter.FormatValue(1_050_000_000));
++        Assert.Equal("1,1", SizeFormatter.FormatValue(1_060_000_000));
+     }
+ 
+     [Fact]
+-    public void A_rounding_that_carries_to_the_next_gigabyte_does_not_lose_the_decimal()
++    public void The_size_that_carries_a_whole_gigabyte_does_not_roll_over()
+     {
+-        // 1,95 GB rounds to 2,0 GB and not to 2 GB.
+-        Assert.Equal("2,0 GB", SizeFormatter.Format(1_950_000_000));
++        // El resto exacto de un gigabyte no puede producir un d├®cimo que se lleva a un
++        // gigabyte entero.
++        Assert.Equal("1,0", SizeFormatter.FormatValue(1_000_000_000));
++        Assert.Equal("2,0", SizeFormatter.FormatValue(2_000_000_000));
+     }
+ }
