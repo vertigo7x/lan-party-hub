@@ -2,7 +2,7 @@
 title: 'Build Lite: pipeline acotado para historias'
 type: 'refactor'
 created: '2026-10-29'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: '240acabf52bb95660e32f4b798364724417d3e5d'
@@ -68,6 +68,12 @@ Build Lite carga las utilidades maduras de `tools/build-loop.py` para backlog, r
 ## Spec Change Log
 
 ## Review Triage Log
+
+### 2026-10-29 - Review pass
+
+- verdicts: 1 finding - high 0, medium 1, low 0, false 0, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` Un fallo del proveedor podia dejar el plan o la implementacion parcial solo en el arbol de trabajo. `main()` ahora llama a `preserve_pending_work()` antes de propagar el stop, por lo que el WIP queda recuperable en la rama.
 
 ## Design Notes
 

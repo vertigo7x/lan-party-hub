@@ -363,7 +363,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{story.short_id}: {story.title}")
         return 0
     for story in stories:
-        process_story(story, args)
+        try:
+            process_story(story, args)
+        except legacy.DriverError:
+            # A provider failure can leave a useful plan or partial implementation
+            # in the tree. Commit it as recoverable WIP before surfacing the stop.
+            legacy.preserve_pending_work(story)
+            raise
     return 0
 
 
