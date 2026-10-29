@@ -163,6 +163,21 @@ def write_diff(base: str, output: Path) -> None:
     output.write_text(result.stdout, encoding="utf-8")
 
 
+def merged_commit_from_pr(payload: str) -> str:
+    """Return the squash merge commit only once GitHub reports a merged PR."""
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict) or data.get("state") != "MERGED":
+        return ""
+    merge_commit = data.get("mergeCommit")
+    if not isinstance(merge_commit, dict):
+        return ""
+    oid = merge_commit.get("oid")
+    return oid if isinstance(oid, str) else ""
+
+
 def blocking_review_line(transcript: str) -> str:
     """Accept only the intentionally narrow blocking-review protocol."""
     for line in transcript.splitlines():
@@ -296,16 +311,22 @@ def process_story(story, args: argparse.Namespace) -> None:
         number, _ = legacy.open_pull_request(story, subject, body)
     if not args.no_merge:
         legacy.merge_pull_request(number, subject, "")
-        revision = legacy.git("rev-parse", "HEAD").stdout.strip()
         deadline = time.time() + 120
         while time.time() < deadline:
             legacy.git("fetch", "origin", BASE_BRANCH)
-            if legacy.git("merge-base", "--is-ancestor", revision, f"origin/{BASE_BRANCH}", check=False).ok:
+            pr_state = legacy.gh("pr", "view", str(number), "--json", "state,mergeCommit")
+            merge_commit = merged_commit_from_pr(pr_state.stdout)
+            if merge_commit and legacy.git(
+                "merge-base", "--is-ancestor", merge_commit, f"origin/{BASE_BRANCH}", check=False
+            ).ok:
                 break
             time.sleep(10)
         else:
             raise legacy.DriverError(f"the merge of pull request #{number} is not in origin/main yet")
-        merged_status = legacy.read_sprint_status()
+        status_file = relative(legacy.SPRINT_STATUS_FILE)
+        merged_status = legacy.parse_development_status(
+            legacy.git("show", f"origin/{BASE_BRANCH}:{status_file}").stdout
+        )
         if str(merged_status.get(story.key, "")).lower() != "done":
             raise legacy.DriverError(f"story {story.short_id} is not done after merge")
 
@@ -328,6 +349,10 @@ def self_test() -> int:
         failures.append("an OK review was parsed as blocking")
     if not blocking_review_line("note\nBLOCKING: an S1 is proven\n"):
         failures.append("a blocking review result was not parsed")
+    if merged_commit_from_pr('{"state":"MERGED","mergeCommit":{"oid":"abc"}}') != "abc":
+        failures.append("a merged squash commit was not parsed")
+    if merged_commit_from_pr('{"state":"OPEN","mergeCommit":{"oid":"abc"}}'):
+        failures.append("an open pull request was parsed as merged")
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")
