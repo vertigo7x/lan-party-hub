@@ -273,7 +273,7 @@ def run_command(
 OPENCODE_LOG_DIR = Path.home() / ".local" / "share" / "opencode" / "log"
 
 
-def run_log_signature(started_at: float) -> tuple:
+def run_log_signature(started_at: float, known: set[str]) -> tuple:
     """A fingerprint of the activity of the opencode process of the run.
 
     The parent session goes silent while its review subagents work: the
@@ -281,10 +281,9 @@ def run_log_signature(started_at: float) -> tuple:
     is not a signal of life. The opencode log of the process carries the
     activity of every one of its sessions, so it is part of the fingerprint.
 
-    Only the per process log files count. The shared `opencode.log` carries
-    the activity of every other opencode session of the machine, including the
-    one the operator is typing in, and a heartbeat from the operator would
-    hide a dead run.
+    Only the log files the run created count. The shared `opencode.log` and
+    the files of the other sessions of the machine carry the activity of
+    everybody else, and a heartbeat from the operator would hide a dead run.
     """
     newest_mtime = 0.0
     newest_size = 0
@@ -294,6 +293,8 @@ def run_log_signature(started_at: float) -> tuple:
         except OSError:
             candidates = []
         for candidate in candidates:
+            if candidate.name in known:
+                continue
             try:
                 stat = candidate.stat()
             except OSError:
@@ -304,6 +305,16 @@ def run_log_signature(started_at: float) -> tuple:
                 newest_mtime = stat.st_mtime
                 newest_size = stat.st_size
     return (round(newest_mtime, 3), newest_size)
+
+
+def opencode_log_files() -> set[str]:
+    """The log files that exist before the run starts."""
+    if not OPENCODE_LOG_DIR.is_dir():
+        return set()
+    try:
+        return {candidate.name for candidate in OPENCODE_LOG_DIR.glob("2026-*.log")}
+    except OSError:
+        return set()
 
 
 def run_command_watched(
@@ -321,6 +332,7 @@ def run_command_watched(
     will never come back.
     """
     started = time.time()
+    known_logs = opencode_log_files()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8", errors="replace") as handle:
         handle.write(f"$ {' '.join(argv)}\n\n")
@@ -333,7 +345,7 @@ def run_command_watched(
             stdin=subprocess.DEVNULL,
         )
         code = 0
-        signature = (log_path.stat().st_size if log_path.exists() else 0, run_log_signature(started))
+        signature = (log_path.stat().st_size if log_path.exists() else 0, run_log_signature(started, known_logs))
         last_change = time.time()
         while True:
             try:
@@ -351,7 +363,7 @@ def run_command_watched(
                 break
             current = (
                 log_path.stat().st_size if log_path.exists() else 0,
-                run_log_signature(started),
+                run_log_signature(started, known_logs),
             )
             if current != signature:
                 signature = current
@@ -1209,6 +1221,23 @@ def ensure_committed(path: Path) -> None:
     git("commit", "-m", f"chore(spec): record {path.name}")
 
 
+def story_signature(spec: Path | None) -> tuple:
+    """A fingerprint of how far the story has come.
+
+    The signature is what the loop watches to tell work from circling: a story
+    that does not move its status, does not spend a repair cycle and does not
+    grow its spec is not advancing, no matter how many attempts it has left.
+    """
+    if spec is None or not spec.exists():
+        return ("missing", 0, 0)
+    meta = read_frontmatter(spec)
+    try:
+        cycles = int(meta.get("review_loop_iteration") or 0)
+    except (TypeError, ValueError):
+        cycles = 0
+    return (str(meta.get("status", "")).lower(), cycles, spec.stat().st_size)
+
+
 def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> StoryOutcome:
     _log("=" * 72)
     _log(f"story {story.short_id} — {story.title}")
@@ -1254,6 +1283,8 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         session_id = load_session_id(story)
         if session_id:
             _log(f"resuming the session {session_id} of a previous run")
+        stalls = 0
+        signatures: list[tuple] = []
         for attempt in range(1, args.max_attempts + 1):
             status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
             skill_result, session_id = run_skill(
@@ -1271,9 +1302,15 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
             _log(f"the skill finished with exit code {skill_result.code}")
             save_session_id(story, session_id)
             if skill_result.code == 125:
+                stalls += 1
+                if stalls > args.max_stalls:
+                    raise DriverError(
+                        f"the run stalled {stalls} times for story {story.short_id}; the loop stops "
+                        f"here. Read {log_dir / f'skill-{attempt}.log'}"
+                    )
                 _log(
-                    f"the run stalled; continuing the session {session_id} "
-                    f"(attempt {attempt + 1} of {args.max_attempts})"
+                    f"the run stalled ({stalls} of {args.max_stalls}); continuing the session "
+                    f"{session_id} (attempt {attempt + 1} of {args.max_attempts})"
                 )
                 if attempt < args.max_attempts and session_id:
                     continue
@@ -1295,6 +1332,15 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
             status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
             if status == "done":
                 break
+            signature = story_signature(spec)
+            signatures.append(signature)
+            if len(signatures) >= args.no_progress_attempts and len(set(signatures[-args.no_progress_attempts:])) == 1:
+                raise DriverError(
+                    f"story {story.short_id} has not moved in the last "
+                    f"{args.no_progress_attempts} attempts (spec {signature[0]}, "
+                    f"{signature[1]} repair cycles); it is circling, so the loop stops here. "
+                    f"Read {log_dir / f'skill-{attempt}.log'}"
+                )
             if attempt < args.max_attempts and session_id:
                 _log(
                     f"the spec is '{status or 'missing'}': continuing the session {session_id} "
@@ -1750,6 +1796,26 @@ deferred:
                 "run_command_watched does not kill a command that stops producing output",
             )
 
+        # The signature of the story, which is what tells work from circling.
+        with tempfile.TemporaryDirectory() as temporary:
+            spec_file = Path(temporary) / "spec-7-3.md"
+            spec_file.write_text("---\nstatus: 'draft'\nreview_loop_iteration: 0\n---\n", encoding="utf-8")
+            check(
+                story_signature(spec_file) == ("draft", 0, spec_file.stat().st_size),
+                "the story signature does not read the status and the cycles",
+            )
+            spec_file.write_text(
+                "---\nstatus: 'draft'\nreview_loop_iteration: 1\n---\nmas contenido\n", encoding="utf-8"
+            )
+            check(
+                story_signature(spec_file)[:2] == ("draft", 1),
+                "the story signature does not move with the story",
+            )
+            check(
+                story_signature(Path(temporary) / "missing.md") == ("missing", 0, 0),
+                "the story signature of a missing spec is not the missing one",
+            )
+
         # The real repository, for the checks that need real artefacts.
         try:
             status = read_sprint_status()
@@ -1815,8 +1881,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-attempts",
         type=int,
-        default=20,
-        help="how many times the skill may run for one story, continuing the same session",
+        default=10,
+        help="how many turns of real work the skill may spend on one story",
+    )
+    parser.add_argument(
+        "--max-stalls",
+        type=int,
+        default=3,
+        help="how many times a run may hang waiting for the provider before the loop stops",
+    )
+    parser.add_argument(
+        "--no-progress-attempts",
+        type=int,
+        default=3,
+        help="how many attempts in a row may leave the story untouched before the loop stops",
     )
     parser.add_argument(
         "--stall-timeout-minutes",
@@ -1842,6 +1920,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--verification-timeout-minutes must be greater than zero")
     if args.max_attempts < 1:
         parser.error("--max-attempts must be at least one")
+    if args.max_stalls < 0:
+        parser.error("--max-stalls cannot be negative")
+    if args.no_progress_attempts < 1:
+        parser.error("--no-progress-attempts must be at least one")
     if args.stall_timeout_minutes <= 0:
         parser.error("--stall-timeout-minutes must be greater than zero")
     if args.story and not re.fullmatch(r"\d+\.\d+", args.story):
