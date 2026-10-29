@@ -6,23 +6,15 @@
     },
     "general": {
       "steps": 40,
-      "permissions": [
-        {
-          "action": "external_directory",
-          "resource": "*",
-          "effect": "allow"
-        }
-      ]
+      "permission": {
+        "external_directory": "allow"
+      }
     },
     "openai-reviewer": {
       "steps": 30,
-      "permissions": [
-        {
-          "action": "external_directory",
-          "resource": "*",
-          "effect": "allow"
-        }
-      ]
+      "permission": {
+        "external_directory": "allow"
+      }
     }
   }
 }
