@@ -100,7 +100,7 @@ def classify_risk(paths: Sequence[str]) -> Risk:
 
 def phase_command(agent: str, model: str, prompt: str) -> list[str]:
     return [
-        "opencode", "run", "--format", "json", "--auto", "--agent", agent,
+        "opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", agent,
         "--model", model, prompt,
     ]
 
@@ -313,7 +313,7 @@ def self_test() -> int:
     if not risk.required or "contrato compartido" not in risk.reasons:
         failures.append("shared contracts were not classified as sensitive")
     command = phase_command("general", PLAN_MODEL, "plan")
-    if command[:8] != ["opencode", "run", "--format", "json", "--auto", "--agent", "general", "--model"]:
+    if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "general", "--model"]:
         failures.append("phase command is malformed")
     if PHASE_MAX_ATTEMPTS != 2:
         failures.append("phase retry budget is not fixed at two technical attempts")
