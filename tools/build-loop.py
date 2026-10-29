@@ -545,20 +545,35 @@ def read_section(text: str, heading: str) -> str:
     return rest[: next_heading.start()] if next_heading else rest
 
 
-def read_bullet(section: str, label: str) -> str:
-    """The text of a bullet whose bold label is `label`.
+def read_field(section: str, labels: Sequence[str]) -> str:
+    """The text of a field of the `## Auto Run Result` section.
 
-    The skill writes two shapes: `- **Label.** text` and `- **Label:** text`,
-    and the body of a bullet can wrap onto the following lines.
+    The skill writes them as bullets (`- **Resumen.** ...`) and the specs
+    also write them as headings (`### Resumen del cambio implementado`), so
+    both shapes are read, and the labels are matched by prefix: the wording
+    after the label varies from spec to spec.
     """
-    pattern = re.compile(
-        rf"^-\s+\*\*{re.escape(label)}\s*[.:]?\*\*\s*(.*?)(?=\n-\s+\*\*|\n\n|\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
-    match = pattern.search(section)
-    if not match:
-        return ""
-    return " ".join(match.group(1).split())
+    for label in labels:
+        bullet = re.compile(
+            rf"^-\s+\*\*\s*{re.escape(label)}[^*]*\*\*\s*(.*?)(?=\n-\s+\*\*|\n\n|\Z)",
+            re.MULTILINE | re.DOTALL | re.IGNORECASE,
+        )
+        match = bullet.search(section)
+        if match:
+            return " ".join(match.group(1).split())
+        heading = re.compile(
+            rf"^###\s+[^\n]*{re.escape(label)}[^\n]*$\n(.*?)(?=^###\s|\Z)",
+            re.MULTILINE | re.DOTALL | re.IGNORECASE,
+        )
+        match = heading.search(section)
+        if match:
+            return " ".join(match.group(1).split())
+    return ""
+
+
+def read_bullet(section: str, label: str) -> str:
+    """The text of a `- **Label.** ...` bullet inside a section."""
+    return read_field(section, [label])
 
 
 def review_pass_count(spec_text: str) -> int:
@@ -1070,11 +1085,11 @@ def build_pull_request_body(
     spec_path: str = "",
 ) -> str:
     result_section = read_section(spec_text, "Auto Run Result")
-    summary = read_bullet(result_section, "Resumen")
-    files = read_bullet(result_section, "Ficheros")
-    review = read_bullet(result_section, "Revisión")
-    risks = read_bullet(result_section, "Riesgos residuales")
-    followup = read_bullet(result_section, "Revisión de seguimiento recomendada")
+    summary = read_field(result_section, ["Resumen"])
+    files = read_field(result_section, ["Ficheros"])
+    review = read_field(result_section, ["hallazgos", "Revisión"])
+    risks = read_field(result_section, ["Riesgos residuales", "Riesgos"])
+    followup = read_field(result_section, ["revisión de seguimiento", "seguimiento"])
 
     deferred = meta.get("deferred") or []
     deferred_text = ""
@@ -1317,10 +1332,10 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         revision=revision,
         spec_path=spec.relative_to(REPO_ROOT).as_posix(),
     )
-    if not read_bullet(read_section(spec_text, "Auto Run Result"), "Resumen"):
+    if not read_field(read_section(spec_text, "Auto Run Result"), ["Resumen"]):
         raise DriverError(
-            "the spec has no 'Resumen' bullet under '## Auto Run Result': the pull request body "
-            "would be empty, so the loop stops here"
+            "the spec has no summary under '## Auto Run Result': the pull request body would be "
+            "empty, so the loop stops here"
         )
 
     push_branch(story.branch)
@@ -1459,6 +1474,25 @@ deferred:
         )
 
         # The spec parsing, against a fixture that does not depend on the backlog.
+        heading_spec = (
+            "---\nstatus: 'done'\n---\n\n"
+            "## Auto Run Result\n\n"
+            "### Resumen del cambio implementado\n\nUn resumen escrito como encabezado.\n\n"
+            "### Ficheros cambiados\n\n- `src/Thing.cs`\n\n"
+            "### Desglose de los hallazgos de la revisión\n\nDos hallazgos.\n\n"
+            "### Recomendación de revisión de seguimiento\n\n`false`. Sin riesgo.\n\n"
+            "### Riesgos residuales\n\nNinguno.\n"
+        )
+        heading_section = read_section(heading_spec, "Auto Run Result")
+        check(bool(read_field(heading_section, ["Resumen"])), "the summary heading cannot be read")
+        check(bool(read_field(heading_section, ["Ficheros"])), "the files heading cannot be read")
+        check(bool(read_field(heading_section, ["hallazgos", "Revisión"])), "the review heading cannot be read")
+        check(
+            bool(read_field(heading_section, ["revisión de seguimiento", "seguimiento"])),
+            "the follow-up heading cannot be read",
+        )
+        check(bool(read_field(heading_section, ["Riesgos residuales", "Riesgos"])), "the risks heading cannot be read")
+
         with tempfile.TemporaryDirectory() as temporary:
             artifacts = Path(temporary)
             spec_file = artifacts / "spec-7-3-fixture.md"
