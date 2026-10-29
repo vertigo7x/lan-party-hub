@@ -38,6 +38,20 @@ public static class ManifestOperations
     /// <summary>
     /// Tells whether a name belongs to the closed set of the operations of the manifest
     /// (AD-7).
+    ///
+    /// <para>
+    /// The comparison is EXACT, and it is exact for the same reason that the deserializer
+    /// of the contract is exact: the polymorphic discriminator of <c>System.Text.Json</c>
+    /// is resolved against the exact string that the <c>JsonDerivedType</c> attributes
+    /// declare, so a body that spells <c>"EXTRACT"</c> carries a discriminator that the
+    /// contract does not recognize.
+    /// </para>
+    /// <para>
+    /// A check that was MORE permissive than the deserializer would let a body through
+    /// the inspection that precedes the deserialization, and that body would then be
+    /// rejected as malformed instead of as an operation outside the closed set: the same
+    /// defect counted under two different stable codes (AD-7, AD-15, AD-25).
+    /// </para>
     /// </summary>
     /// <param name="name">Name of the operation.</param>
     /// <returns><c>true</c> when the operation belongs to the closed set.</returns>

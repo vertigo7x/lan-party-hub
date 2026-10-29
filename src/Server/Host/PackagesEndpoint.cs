@@ -260,6 +260,7 @@ public static class PackagesEndpoint
                         data.ChunkSizeBytes,
                         data.Launch,
                         data.Operations,
+                        data.DeclaredSha256,
                         data.ManifestIdentity,
                         context.RequestAborted)
                     .ConfigureAwait(false);
@@ -271,19 +272,22 @@ public static class PackagesEndpoint
                     .WriteAsync(Serialize(descriptor), context.RequestAborted)
                     .ConfigureAwait(false);
             }
-            catch (PackagePayloadMissingException exception)
+            catch (PackagePayloadMissingException)
             {
                 // El cuerpo lleva la versión del esquema pero no los datos de la
                 // publicación: el código de esta ausencia es el suyo, de modo que la
                 // métrica de errores por código no lo mezcla con la ausencia de la
                 // versión del esquema (AD-15).
+                //
+                // La ausencia no nombra un campo concreto: el cuerpo entero es el que
+                // falta, y el registro anota el código y el estado, no un texto (AD-25).
                 await WriteErrorAsync(
                     context,
                     metrics,
                     logger,
                     StatusCodes.Status400BadRequest,
                     ErrorCatalog.Resolve(ErrorCatalog.PackagePayloadMissingCode),
-                    exception.Message)
+                    null)
                     .ConfigureAwait(false);
             }
             catch (PackageLicenseMissingException exception)
@@ -334,15 +338,17 @@ public static class PackagesEndpoint
                     exception.PackageId)
                     .ConfigureAwait(false);
             }
-            catch (PackageContentMismatchException exception)
+            catch (PackageContentMismatchException)
             {
+                // El desacuerdo es el del tamaño exacto del paquete: el campo que falla
+                // es el del tamaño, y no el texto de la excepción (AD-15, AD-25).
                 await WriteErrorAsync(
                     context,
                     metrics,
                     logger,
                     StatusCodes.Status422UnprocessableEntity,
                     ErrorCatalog.Resolve(ErrorCatalog.PackageContentMismatchCode),
-                    exception.Message)
+                    PackageFieldNames.SizeBytes)
                     .ConfigureAwait(false);
             }
             catch (ManifestOperationNotAllowedException exception)
@@ -373,19 +379,22 @@ public static class PackagesEndpoint
                     exception.FieldName)
                     .ConfigureAwait(false);
             }
-            catch (SchemaVersionNotSupportedException exception)
+            catch (SchemaVersionNotSupportedException)
             {
                 // El manifiesto declara una versión de su propio esquema que este
                 // servidor no entiende: se rechaza antes de escribir nada (AD-8). La
                 // versión del esquema del CUERPO es otra cosa, y su rechazo se resuelve
                 // antes de llegar aquí (AD-5).
+                //
+                // El campo que falla es el de la versión del esquema del MANIFIESTO, y
+                // no el texto de la excepción (AD-15, AD-25).
                 await WriteErrorAsync(
                     context,
                     metrics,
                     logger,
                     StatusCodes.Status400BadRequest,
                     ErrorCatalog.Resolve(ErrorCatalog.SchemaVersionNotSupportedCode),
-                    exception.Message)
+                    PackageFieldNames.SchemaVersion)
                     .ConfigureAwait(false);
             }
             catch (ArgumentException exception)

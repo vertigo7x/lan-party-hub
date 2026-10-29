@@ -58,6 +58,9 @@ public sealed class PackageRequest
     /// <exception cref="PackagePayloadMissingException">
     /// The body does not carry the data of the package or the manifest.
     /// </exception>
+    /// <exception cref="PackageManifestMismatchException">
+    /// The body declares a reference to the manifest that the server has not minted.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// The body carries the data, pero alguno de sus campos no tiene la forma que el
     /// contrato declara.
@@ -85,6 +88,19 @@ public sealed class PackageRequest
         if (string.IsNullOrWhiteSpace(Package.Version))
         {
             throw new ArgumentException("El cuerpo de la publicación no lleva la versión del paquete.", nameof(Package));
+        }
+
+        // La referencia al manifiesto la ACUÑA el servidor: es el identificador del
+        // manifiesto que él firma y persiste, y un cuerpo que la declara está
+        // describiendo un manifiesto que no existe. La referencia declarada que no está
+        // vacía es un desacuerdo entre el cuerpo y el servidor, y su rechazo es el del
+        // desacuerdo, no el del cuerpo mal formado (AD-2, AD-7, AC2).
+        if (!string.IsNullOrWhiteSpace(Package.ManifestRef))
+        {
+            throw new PackageManifestMismatchException(
+                PackageFieldNames.ManifestRef,
+                string.Empty,
+                Package.ManifestRef);
         }
 
         if (Manifest.Launch is null)

@@ -3,6 +3,40 @@ using LANPartyHub.Server.Domain.Catalog;
 namespace LANPartyHub.Server.Domain.Packages;
 
 /// <summary>
+/// Names of the fields of the publication of a package (AD-25).
+///
+/// <para>
+/// The name of the field is what the exception of the domain names and what the
+/// structured log annotates, so the operator knows WHICH field fails without having to
+/// interpret a text (AD-15, AD-25). The names are the ones of the contract of
+/// <c>Shared</c> and they are not translated: they are identifiers, not interface text.
+/// </para>
+/// </summary>
+public static class PackageFieldNames
+{
+    /// <summary>Version of the schema of the body of the administration (AD-5).</summary>
+    public const string SchemaVersion = "schemaVersion";
+
+    /// <summary>Identifier of the videogame the package belongs to (AD-7).</summary>
+    public const string GameId = "gameId";
+
+    /// <summary>Identifier of the package that is published (AD-7).</summary>
+    public const string PackageId = "packageId";
+
+    /// <summary>Opaque version string of the publisher (AD-7).</summary>
+    public const string Version = "version";
+
+    /// <summary>Exact size of the package in bytes (AD-7).</summary>
+    public const string SizeBytes = "sizeBytes";
+
+    /// <summary>Hexadecimal sha256 of the package bytes (AD-2).</summary>
+    public const string Sha256 = "sha256";
+
+    /// <summary>Reference to the signed installation manifest (AD-2, AD-7).</summary>
+    public const string ManifestRef = "manifestRef";
+}
+
+/// <summary>
 /// Base type of the exceptions of the domain of the distribution of packages (AD-1, AD-15).
 ///
 /// <para>

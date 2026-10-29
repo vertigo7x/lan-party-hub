@@ -77,6 +77,11 @@ public sealed class PublishPackage
     /// </param>
     /// <param name="launch">Launch configuration that the manifest materializes.</param>
     /// <param name="operations">Typed operations of the manifest, in order.</param>
+    /// <param name="declaredSha256">
+    /// Hash that the descriptor of the publication declares. The server is the authority
+    /// of the hash: it computes it over the real bytes and rejects a declared value that
+    /// disagrees with the one of the manifest (AD-2, AC7).
+    /// </param>
     /// <param name="declaredIdentity">
     /// Identity that the installation manifest that the body carries declares. It is
     /// compared with the identity of the descriptor before anything is written, so the
@@ -110,6 +115,7 @@ public sealed class PublishPackage
         long? chunkSizeBytes,
         InstallationManifest.LaunchSettings launch,
         IReadOnlyList<InstallationManifest.ManifestOperation> operations,
+        string declaredSha256,
         ManifestIdentity declaredIdentity,
         CancellationToken cancellationToken)
     {
@@ -180,19 +186,20 @@ public sealed class PublishPackage
         // signed and the value that is persisted come from one single reading (AD-2, AD-7).
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-        // The hash that the body declares is not the authority: the authority is the hash
-        // that the server computes over the real bytes. A declared hash that disagrees
-        // with it is rejected, because a declared value that is ignored in silence would
-        // let a body claim something that the signed manifest does not (AD-2, AC7).
+        // El hash que el cuerpo declara no es la autoridad: la autoridad es el hash
+        // que el servidor calcula sobre los bytes reales. Un hash declarado que NO está
+        // vacío y que no coincide con el calculado se rechaza, porque un valor declarado
+        // que se ignoraría en silencio dejaría que un cuerpo afirmara algo que el
+        // manifiesto firmado no dice (AD-2, AC7).
         //
-        // The rule is the SAME for the four fields of the identity: the manifest has to
-        // declare all of them. An omitted hash is a mismatch and not an absence, because
-        // the hash is what ties the manifest to the bytes it describes, and a manifest
-        // that does not declare it is a manifest that does not say what it signs.
-        if (!string.Equals(declaredIdentity.Sha256, sha256, StringComparison.OrdinalIgnoreCase))
+        // Un hash declarado VACÍO no es un desacuerdo: es la ausencia de una afirmación,
+        // y el manifiesto que el servidor firma lleva SIEMPRE el hash calculado, porque
+        // es él el que ata el manifiesto a los bytes que describe (AD-2, AD-7).
+        if (!string.IsNullOrWhiteSpace(declaredIdentity.Sha256)
+            && !string.Equals(declaredIdentity.Sha256, sha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new PackageManifestMismatchException(
-                "sha256",
+                PackageFieldNames.Sha256,
                 sha256,
                 declaredIdentity.Sha256);
         }
@@ -275,7 +282,7 @@ public sealed class PublishPackage
         if (!string.Equals(declaredIdentity.PackageId, packageId, StringComparison.Ordinal))
         {
             throw new PackageManifestMismatchException(
-                "packageId",
+                PackageFieldNames.PackageId,
                 packageId,
                 declaredIdentity.PackageId);
         }
@@ -291,7 +298,7 @@ public sealed class PublishPackage
         if (declaredIdentity.SizeBytes != sizeBytes)
         {
             throw new PackageManifestMismatchException(
-                "sizeBytes",
+                PackageFieldNames.SizeBytes,
                 sizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 declaredIdentity.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
@@ -300,10 +307,16 @@ public sealed class PublishPackage
         // another one. The two halves of the body describe the same package, so their
         // hashes have to agree: a body whose halves disagree does not describe a
         // package, and the publication is rejected (AC7).
-        if (!string.Equals(declaredSha256, declaredIdentity.Sha256, StringComparison.OrdinalIgnoreCase))
+        //
+        // Un hash declarado VACÍO en una de las dos mitades no es un desacuerdo: es la
+        // ausencia de una afirmación, y el hash que cuenta es el que el servidor calcula
+        // sobre los bytes reales y firma en el manifiesto canónico (AD-2, AD-7).
+        if (!string.IsNullOrWhiteSpace(declaredSha256)
+            && !string.IsNullOrWhiteSpace(declaredIdentity.Sha256)
+            && !string.Equals(declaredSha256, declaredIdentity.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new PackageManifestMismatchException(
-                "sha256",
+                PackageFieldNames.Sha256,
                 declaredIdentity.Sha256,
                 declaredSha256);
         }

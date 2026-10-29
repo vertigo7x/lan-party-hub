@@ -175,16 +175,22 @@ public sealed class PackageFormViewModel
     /// <summary>
     /// Builds the contract of the package that the body of the publication carries, out of
     /// what the organizer has typed.
+    ///
+    /// <para>
+    /// La referencia al manifiesto va VACÍA, porque la acuña el servidor cuando firma el
+    /// manifiesto canónico: un cuerpo que la declara está describiendo un manifiesto que
+    /// no existe (AD-2, AC2).
+    /// </para>
     /// </summary>
     /// <returns>The contract of the package.</returns>
-    public PackageDescriptor ToPackageDescriptor(string manifestRef) => new(
+    public PackageDescriptor ToPackageDescriptor() => new(
         string.IsNullOrWhiteSpace(PackageId) ? string.Empty : PackageId.Trim(),
         GameId ?? string.Empty,
         Version,
         SizeBytes,
         0,
         string.Empty,
-        manifestRef);
+        string.Empty);
 
     /// <summary>
     /// Builds the launch configuration of the manifest, out of what the organizer has typed.

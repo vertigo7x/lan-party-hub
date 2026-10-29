@@ -923,6 +923,143 @@ public sealed class PackagePublicationTests
     }
 
     /// <summary>
+    /// The reference to the manifest is MINTED by the server, so a body that declares one
+    /// is describing a manifest that does not exist and the publication is rejected
+    /// without writing anything (AD-2, AD-7, AC2).
+    ///
+    /// <para>
+    /// La referencia al manifiesto es la que el servidor acuña al firmar el manifiesto
+    /// canónico, y un cuerpo que la declara está describiendo un manifiesto que no
+    /// existe: la referencia declared no puede ser la autoridad, porque la autoridad es
+    /// el servidor (AD-2).
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("manifest-ref")]
+    [InlineData("0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e99")]
+    public async Task A_body_that_declares_the_reference_to_the_manifest_is_rejected_without_writing_a_row(
+        string manifestRef)
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        var packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e60";
+        var bytes = WritePackageBytes(dataDirectory, packageId, "contenido");
+        var gameId = await RegisterGameAsync(client, dataDirectory);
+
+        var request = BuildValidRequest(packageId, bytes.LongLength, gameId);
+
+        request.Package = request.Package! with { ManifestRef = manifestRef };
+
+        using var response = await client.PostAsync(
+            PackagesEndpoint.Route,
+            BuildBody(request),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        AssertRejected(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            ErrorCatalog.PackageManifestMismatchCode);
+
+        // El rechazo ocurre antes de cualquier escritura: ni fila ni archivo (AC2).
+        Assert.Equal(0, ReadRowCount(dataDirectory, "PACKAGE_DESCRIPTOR"));
+        Assert.Equal(0, ReadRowCount(dataDirectory, "INSTALLATION_MANIFEST"));
+        Assert.Equal(1, ReadPackageFileCount(dataDirectory));
+    }
+
+    /// <summary>
+    /// The reference to the manifest that the server mints is the one that travels back to
+    /// the organizer and the one that the persisted row carries, and the body does not
+    /// declare it (AD-2, AD-7, AC2).
+    /// </summary>
+    [Fact]
+    public async Task The_reference_to_the_manifest_is_the_one_that_the_server_mints()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        var packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e61";
+        var bytes = WritePackageBytes(dataDirectory, packageId, "contenido");
+        var gameId = await RegisterGameAsync(client, dataDirectory);
+
+        var request = BuildValidRequest(packageId, bytes.LongLength, gameId);
+
+        // El cuerpo NO declara la referencia: la deja vacía, y el servidor la acuña.
+        Assert.True(string.IsNullOrWhiteSpace(request.Package!.ManifestRef));
+
+        using var response = await client.PostAsync(
+            PackagesEndpoint.Route,
+            BuildBody(request),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var descriptor = await ReadDescriptorAsync(response, TestContext.Current.CancellationToken);
+        var descriptorRow = ReadRow(dataDirectory, "PACKAGE_DESCRIPTOR", "packageId", packageId);
+
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.ManifestRef));
+        Assert.Equal(descriptorRow["manifestRef"], descriptor.ManifestRef);
+    }
+
+    /// <summary>
+    /// A discriminator with a DIFFERENT case is rejected as an operation outside the
+    /// closed set, and NOT as a malformed body (AD-7, AD-15, AD-25).
+    ///
+    /// <para>
+    /// El discriminador polimórfico de <c>System.Text.Json</c> se resuelve por el
+    /// discriminador EXACTO, de modo que <c>"EXTRACT"</c> no es la operación
+    /// <c>extract</c>: es un discriminador que el contrato no reconoce. La inspección
+    /// que precede a la deserialización tiene que verlo, porque si lo deja pasar el
+    /// cuerpo se rechaza después como mal formado, y el mismo defecto se contaría bajo
+    /// dos códigos estables distintos (AD-15).
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("EXTRACT")]
+    [InlineData("CREATEDIRECTORY")]
+    [InlineData("CopyFile")]
+    public async Task An_operation_with_a_different_case_is_rejected_as_an_unknown_operation(
+        string operationName)
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        var packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e62";
+        var bytes = WritePackageBytes(dataDirectory, packageId, "contenido");
+        var gameId = await RegisterGameAsync(client, dataDirectory);
+
+        var request = BuildValidRequest(packageId, bytes.LongLength, gameId);
+
+        var payload = JsonSerializer.Serialize(request, SerializerOptions);
+
+        payload = payload.Replace("\"createDirectory\"", $"\"{operationName}\"", StringComparison.Ordinal);
+
+        using var response = await client.PostAsync(
+            PackagesEndpoint.Route,
+            new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        AssertRejected(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            ErrorCatalog.ManifestOperationNotAllowedCode);
+
+        Assert.Equal(0, ReadRowCount(dataDirectory, "PACKAGE_DESCRIPTOR"));
+        Assert.Equal(0, ReadRowCount(dataDirectory, "INSTALLATION_MANIFEST"));
+    }
+
+    /// <summary>
     /// Builds the operation of the closed set that the test declares (AD-7).
     /// </summary>
     /// <param name="operationName">Name of the operation.</param>
@@ -1077,7 +1214,7 @@ public sealed class PackagePublicationTests
             sizeBytes,
             0,
             string.Empty,
-            "manifest-ref"),
+            string.Empty),
         Manifest = new InstallationManifest(
             InstallationManifestSchema.Version,
             packageId,

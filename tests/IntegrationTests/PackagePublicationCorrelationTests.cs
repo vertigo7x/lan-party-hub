@@ -4,6 +4,7 @@ using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
 using LANPartyHub.Server.Infrastructure.Persistence;
 using LANPartyHub.Shared.Contracts;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace LANPartyHub.IntegrationTests;
@@ -37,6 +38,12 @@ public sealed class PackagePublicationCorrelationTests
     /// because both live in the same scope of correlation (AD-15).
     /// </summary>
     private const string PublishPackageCategory = "LANPartyHub.Server.Application.Packages.PublishPackage";
+
+    /// <summary>
+    /// Category of the log of the endpoint de administración de los paquetes. El rechazo
+    /// lo anota este componente, y es el que nombra el campo que falla (AD-15).
+    /// </summary>
+    private const string PackagesCategory = "LANPartyHub.Server.Packages";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -122,11 +129,90 @@ public sealed class PackagePublicationCorrelationTests
     }
 
     /// <summary>
+    /// The rejection of the publication names the CONCRETE FIELD that fails, and the log
+    /// carries that field as a structured datum and not as a text to interpret
+    /// (AC8, AD-15, AD-25).
+    ///
+    /// <para>
+    /// El campo que se anota es el NOMBRE del campo --"license",
+    /// "distributionRestrictions", "sizeBytes" -- y no el mensaje de la excepción: un
+    /// texto libre obliga a quien lee el registro a interpretarlo, y el nombre de un
+    /// campo no (AD-25).
+    /// </para>
+    /// </summary>
+    /// <param name="license">License that the videogame carries.</param>
+    /// <param name="distributionRestrictions">Restrictions of distribution that the videogame carries.</param>
+    /// <param name="expectedField">Name of the field that the rejection has to name.</param>
+    [Theory]
+    [InlineData("", "Solo para el evento", "license")]
+    [InlineData("Propietaria", "", "distributionRestrictions")]
+    public async Task The_rejection_names_the_concrete_field_in_the_log(
+        string license,
+        string distributionRestrictions,
+        string expectedField)
+    {
+        await using var capture = await ConsoleLogCapture.StartAsync();
+
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using (var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken))
+        {
+            using var client = host.CreateClient();
+
+            var packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e56";
+            var bytes = WritePackageBytes(dataDirectory, packageId, "contenido");
+            var gameId = await RegisterGameAsync(client, dataDirectory, license, distributionRestrictions);
+
+            using var response = await client.PostAsync(
+                PackagesEndpoint.Route,
+                BuildBody(BuildValidRequest(packageId, bytes.LongLength, gameId)),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        }
+
+        // El rechazo anota el campo que falla como un dato estructurado del registro
+        // (AC8, AD-15).
+        var entry = Assert.Single(
+            capture.Entries,
+            candidate => LogEntries.HasCategory(candidate, PackagesCategory)
+                && LogEntries.StateFields(candidate).Any(field =>
+                    field.Name == "Field"
+                    && field.Value.GetString() == expectedField));
+
+        // Y lo que anota es el NOMBRE del campo, no el texto de la excepción (AD-25).
+        var annotated = LogEntries
+            .StateFields(entry)
+            .Single(field => field.Name == "Field")
+            .Value
+            .GetString();
+
+        Assert.Equal(expectedField, annotated);
+        Assert.DoesNotContain(" ", annotated, StringComparison.Ordinal);
+        Assert.DoesNotContain("El cuerpo", annotated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Falta", annotated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Registers a videogame in the catalog and returns its identifier.
+    ///
+    /// <para>
+    /// El registro exige la licencia y las restricciones de distribución, porque FR-1 las
+    /// hace metadata obligatorios del videogame (Story 2.1). El alta se hace con valores
+    /// válidos y el test vacía el campo en la fila ya persistida, que es el estado que la
+    /// publicación bloquea (AC1 de esta historia).
+    /// </para>
     /// </summary>
     /// <param name="client">Client of the host.</param>
+    /// <param name="dataDirectory">Folder of the data of the host.</param>
+    /// <param name="license">License of the videogame.</param>
+    /// <param name="distributionRestrictions">Restrictions of distribution of the videogame.</param>
     /// <returns>The identifier of the videogame.</returns>
-    private static async Task<string> RegisterGameAsync(HttpClient client)
+    private static async Task<string> RegisterGameAsync(
+        HttpClient client,
+        string dataDirectory = "",
+        string license = "Propietaria",
+        string distributionRestrictions = "Solo para el evento")
     {
         var request = new GameRequest
         {
@@ -165,7 +251,40 @@ public sealed class PackagePublicationCorrelationTests
 
         Assert.NotNull(descriptor);
 
-        return descriptor!.GameId;
+        BlankPersistedField(dataDirectory, "GAME", descriptor!.GameId, "license", license);
+        BlankPersistedField(dataDirectory, "GAME", descriptor.GameId, "distributionRestrictions", distributionRestrictions);
+
+        return descriptor.GameId;
+    }
+
+    /// <summary>
+    /// Empties a field of a persisted row of the server, so the state that the block of
+    /// the publication rejects is reachable (AC1).
+    /// </summary>
+    /// <param name="dataDirectory">Folder of the data of the host.</param>
+    /// <param name="table">Name of the table.</param>
+    /// <param name="key">Value of the key of the row.</param>
+    /// <param name="column">Name of the column to empty.</param>
+    /// <param name="value">Value that the column holds when the test does not empty it.</param>
+    private static void BlankPersistedField(
+        string dataDirectory,
+        string table,
+        string key,
+        string column,
+        string value)
+    {
+        if (!string.IsNullOrEmpty(value) || string.IsNullOrEmpty(dataDirectory))
+        {
+            return;
+        }
+
+        using var connection = OpenDatabase(dataDirectory);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"UPDATE {table} SET {column} = '' WHERE gameId = $key";
+        command.Parameters.AddWithValue("$key", key);
+
+        command.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -212,7 +331,7 @@ public sealed class PackagePublicationCorrelationTests
                 sizeBytes,
                 0,
                 string.Empty,
-                "manifest-ref"),
+                string.Empty),
             Manifest = new InstallationManifest(
                 1,
                 packageId,
@@ -233,6 +352,21 @@ public sealed class PackagePublicationCorrelationTests
     /// <returns>The content of the request.</returns>
     private static StringContent BuildBody<T>(T request) =>
         new(JsonSerializer.Serialize(request, SerializerOptions), System.Text.Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// Opens the database of the server.
+    /// </summary>
+    /// <param name="dataDirectory">Folder of the data of the host.</param>
+    /// <returns>The open connection.</returns>
+    private static SqliteConnection OpenDatabase(string dataDirectory)
+    {
+        var connection = new SqliteConnection(
+            $"Data Source={Path.Combine(dataDirectory, DataDirectory.CatalogDatabaseFileName)}");
+
+        connection.Open();
+
+        return connection;
+    }
 
     private static string CreateTemporaryDataDirectory() =>
         Directory.CreateTempSubdirectory("lan-party-hub-server-").FullName;
