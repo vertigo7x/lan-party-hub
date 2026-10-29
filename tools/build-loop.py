@@ -1149,6 +1149,12 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
         _log(f"resuming: pull request #{existing_pr[0]} is already open and the spec is done")
     else:
+        # The story is built on the current main, not on the main it started
+        # with: the policy and the tooling of the project are part of what the
+        # skill reads when it renders its workflow.
+        if not is_base_ancestor():
+            rebase_onto_main()
+            spec = find_spec(story)
         session_id = ""
         for attempt in range(1, args.max_attempts + 1):
             status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
