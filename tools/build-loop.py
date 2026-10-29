@@ -770,20 +770,79 @@ def build_intent(story: Story) -> str:
 
 
 def run_skill(
-    story: Story, log_dir: Path, timeout_minutes: float, model: str, agent: str = ""
-) -> CommandResult:
-    intent = build_intent(story)
-    prompt = f"bmad-build-auto {intent}"
-    log_path = log_dir / "skill.log"
+    story: Story,
+    log_dir: Path,
+    timeout_minutes: float,
+    model: str,
+    agent: str = "",
+    session_id: str = "",
+) -> tuple[CommandResult, str]:
+    """Run the skill and return its result plus the opencode session id.
+
+    The session id is what makes a story resumable: a run that ends without a
+    spec has usually exhausted its context, and continuing the same session
+    picks the work up where it stopped instead of starting over.
+    """
+    if session_id:
+        prompt = (
+            f"Continua la historia {story.short_id} desde donde la dejaste y termina el workflow "
+            "del skill: spec, implementacion, revision en cuatro capas, verificacion y commit. "
+            "No pidas decisiones a una persona y no esperes aprobaciones."
+        )
+    else:
+        prompt = f"bmad-build-auto {build_intent(story)}"
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    json_log = log_dir / "skill.jsonl"
+    text_log = log_dir / "skill.log"
     _log(f"running the bmad-build-auto skill for story {story.short_id}")
-    _log(f"log: {log_path}")
-    argv = ["opencode", "run", "--dangerously-skip-permissions"]
+    _log(f"log: {text_log}")
+
+    argv = ["opencode", "run", "--format", "json", "--dangerously-skip-permissions"]
     if model:
         argv.extend(["--model", model])
     if agent:
         argv.extend(["--agent", agent])
+    if session_id:
+        argv.extend(["--session", session_id])
     argv.append(prompt)
-    return run_command(argv, log_path=log_path, timeout=timeout_minutes * 60)
+
+    result = run_command(argv, log_path=json_log, timeout=timeout_minutes * 60)
+    discovered, transcript = parse_skill_output(json_log)
+    text_log.write_text(transcript, encoding="utf-8")
+    return result, discovered or session_id
+
+
+def parse_skill_output(path: Path) -> tuple[str, str]:
+    """The session id and a readable transcript out of the json event stream."""
+    session_id = ""
+    lines: list[str] = []
+    if not path.exists():
+        return session_id, ""
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw.startswith("{"):
+            continue
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        session_id = session_id or str(event.get("sessionID", ""))
+        kind = event.get("type", "")
+        part = event.get("part") or {}
+        if kind == "text":
+            text = str(part.get("text", "")).strip()
+            if text:
+                lines.append(text)
+        elif kind == "tool":
+            tool = str(part.get("tool", ""))
+            state = str(part.get("state", ""))
+            status = (state.get("status") if isinstance(state, dict) else "") or ""
+            detail = ""
+            if isinstance(state, dict):
+                detail = str(state.get("title", "") or state.get("output", "") or "")
+            lines.append(f"[{tool}] {status} {detail}".strip()[:400])
+    return session_id, "\n".join(lines) + "\n"
 
 
 def log_tail(path: Path | None, lines: int = 15) -> str:
@@ -931,24 +990,35 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
         _log(f"resuming: pull request #{existing_pr[0]} is already open and the spec is done")
     else:
-        skill_result = run_skill(story, log_dir, args.timeout_minutes, args.model, args.agent)
-        _log(f"the skill finished with exit code {skill_result.code}")
-        if not skill_result.ok:
-            raise DriverError(
-                f"the bmad-build-auto run failed with exit code {skill_result.code}; "
-                f"read {skill_result.log}"
+        session_id = ""
+        for attempt in range(1, args.max_attempts + 1):
+            skill_result, session_id = run_skill(
+                story, log_dir, args.timeout_minutes, args.model, args.agent, session_id
             )
-        main_after = git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
-        if main_after != main_before:
+            _log(f"the skill finished with exit code {skill_result.code}")
+            if not skill_result.ok:
+                raise DriverError(
+                    f"the bmad-build-auto run failed with exit code {skill_result.code}; "
+                    f"read {skill_result.log}"
+                )
+            main_after = git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
+            if main_after != main_before:
+                raise DriverError(
+                    "main moved while the skill ran: the story must not touch main, so the loop stops"
+                )
+            spec = find_spec(story)
+            if spec is not None:
+                break
+            if attempt < args.max_attempts and session_id:
+                _log(
+                    f"the run left no spec; continuing the session {session_id} "
+                    f"(attempt {attempt + 1} of {args.max_attempts})"
+                )
+                continue
             raise DriverError(
-                "main moved while the skill ran: the story must not touch main, so the loop stops"
-            )
-        spec = find_spec(story)
-        if spec is None:
-            raise DriverError(
-                f"the skill wrote no spec for story {story.short_id}; "
+                f"the skill wrote no spec for story {story.short_id} after {attempt} attempts; "
                 f"read {log_dir / 'skill.log'} before retrying.\n"
-                f"Last lines of the skill log:\n{log_tail(skill_result.log)}"
+                f"Last lines of the skill log:\n{log_tail(log_dir / 'skill.log')}"
             )
 
     meta = read_frontmatter(spec)
@@ -1241,6 +1311,24 @@ deferred:
         # The squashed commit message.
         messages = parse_commit_messages("abc123\x1ffeat: the subject\n\nthe body.\n\x1e")
         check(messages == ["feat: the subject\n\nthe body."], "parse_commit_messages lost a commit message")
+
+        # The skill event stream: the session id and a readable transcript.
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "skill.jsonl"
+            events.write_text(
+                '{"type":"step_start","sessionID":"ses_fixture","part":{}}\n'
+                '{"type":"text","sessionID":"ses_fixture","part":{"text":"hola"}}\n'
+                '{"type":"tool","sessionID":"ses_fixture","part":{"tool":"bash",'
+                '"state":{"status":"completed","title":"dotnet build"}}}\n'
+                "not json\n",
+                encoding="utf-8",
+            )
+            session_id, transcript = parse_skill_output(events)
+            check(session_id == "ses_fixture", "the session id is not read from the event stream")
+            check("hola" in transcript, "the transcript does not carry the text of the run")
+            check("bash" in transcript, "the transcript does not carry the tool calls")
+            check(parse_skill_output(Path(temporary) / "missing.jsonl") == ("", ""),
+                  "a missing event stream does not degrade quietly")
         subject, commit_body = select_commit_message(
             ["feat: the subject\n\nthe body.", "chore(sprint): mark story 7.3 as done"]
         )
@@ -1369,6 +1457,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--agent", default="", help="the opencode agent the skill runs on")
     parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=3,
+        help="how many times the skill may run for one story, continuing the same session",
+    )
+    parser.add_argument(
         "--no-merge",
         action="store_true",
         help="open the pull request but stop before merging it",
@@ -1384,6 +1478,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--timeout-minutes must be greater than zero")
     if args.verification_timeout_minutes <= 0:
         parser.error("--verification-timeout-minutes must be greater than zero")
+    if args.max_attempts < 1:
+        parser.error("--max-attempts must be at least one")
     if args.story and not re.fullmatch(r"\d+\.\d+", args.story):
         parser.error("--story must be given as N.M")
     return args
