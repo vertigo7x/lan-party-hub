@@ -171,6 +171,9 @@ _bmad/render/*
 _bmad/**/*.tmp
 _bmad/**/*.log
 
+# ── Bucle de construcción desatendido (logs locales) ─────────────
+.build-loop/
+
 # ── Backups, temporales y varios ────────────────────────────────
 *~
 *.bak

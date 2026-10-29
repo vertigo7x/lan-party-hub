@@ -7,7 +7,7 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 
 ## Policy
 
-- One branch per story, PR with review before merging; never push straight to `main`.
+- One branch per story, PR reviewed by the skill's four layers plus the four project verifications and merged automatically by `tools/build-loop.py`; never push straight to `main`.
 - Never add client authentication or authorization: the LAN is trusted by design, the only client gating is version compatibility (FR-4, AD-6). Package trust is a separate concern — signatures, not sessions.
 - Cap automated fix/review cycles at two per story, then escalate; never reopen a closed finding without new evidence (`docs/plan.md` §8).
 - Do not change a shared contract without checking its consumers first (`docs/plan.md`).
@@ -44,5 +44,19 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 
 - Se invoca por historia (`bmad-build-auto "<intent de la historia>"`); una invocación es una historia, y el bucle es externo.
 - La política que lo gobierna —dos ciclos de corrección y revisión, los cuatro comandos de verificación, la rama por historia desde `main`— vive en `_bmad/custom/bmad-build-auto.toml`, en la capa de equipo.
-- **Puerta de fusión**: el bucle se detiene al terminar cada historia. La siguiente parte de `main` y solo cuando la persona ha revisado y fusionado el PR anterior.
+- **Puerta de fusión**: la historia anterior tiene que estar fusionada en `main` antes de empezar la siguiente. La puerta sigue en pie; desde el 2026-10-29 la satisface el driver `tools/build-loop.py` en vez de una persona.
 - `bmad-build-auto` no aparece en `_bmad/_config/bmad-help.csv`: es un skill de proyecto (`.agents/skills/`), no de un módulo BMAD.
+
+## Bucle desatendido (build-loop)
+
+`tools/build-loop.py` es el driver que recorre el backlog entero sin atención humana: crea la rama de cada historia, lanza `bmad-build-auto`, vuelve a pasar los cuatro comandos de verificación, abre el PR y lo fusiona con squash.
+
+```powershell
+uv run tools/build-loop.py            # recorre el backlog entero
+uv run tools/build-loop.py --dry-run  # imprime el plan y no toca nada
+uv run tools/build-loop.py --self-test # comprueba el driver y sale
+```
+
+- Las puertas antes de fusionar son cuatro: spec en `done` y que pertenezca a la historia, ningún hallazgo de severidad bloqueante diferido, máximo dos ciclos de corrección y revisión, y las verificaciones en verde (el autotest del driver más los cuatro comandos del proyecto). El bucle se detiene en la primera que falle.
+- La revisión humana previa a la fusión se sustituyó por la revisión de cuatro capas del propio skill más los cuatro comandos del proyecto. `main` sigue entrando solo por squash de un PR, nunca por push directo.
+- Procedimiento, puertas, motivos de parada y cómo reanudarlo: `docs/unattended-loop.md`. Ese documento y `_bmad/custom/bmad-build-auto.toml` son la fuente duradera de la política: el bloque `bmad:context` de este fichero se regenera en cada refresco.

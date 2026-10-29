@@ -5,31 +5,39 @@
 #
 # Merge rules (from the skill's customize.toml):
 #   strings replace, lists append, tables merge key by key,
-#   arrays of tables merge by id.
+#   arrays of tables merge by `id`.
 #
 # Why this file exists: the shipped `bmad-build-auto` is generic. This project
-# has a stricter policy than the skill's defaults (branch per story, human
-# review before merge, two fix/review cycles per story), and the skill must
+# has a stricter policy than the skill's defaults (branch per story, a review
+# gate before the merge, two fix/review cycles per story), and the skill must
 # carry those rules as facts for the whole unattended run.
+#
+# This policy was changed on 2026-10-29: the merge is now automatic. The
+# human review of every pull request was replaced by the skill's own
+# four-layer review plus the four project verifications, both re-run by
+# `tools/build-loop.py` before the merge. The operating procedure lives in
+# `docs/unattended-loop.md`.
 
 [workflow]
 
 # Facts kept in context for the whole run.
 persistent_facts = [
-  "Politica del repositorio LAN Party Hub, vigente para toda la historia de este run: una rama por historia (`story/<numero>-<slug>`) creada desde `main` ya actualizado con las historias anteriores; PR con revision humana antes de fusionar; nunca push directo a `main`; nunca fusionar a `main` de forma automatica; nunca anadir atribucion de IA a los commits.",
-  "Puerta de fusion: el bucle automatico es autonomo DENTRO de una historia y se detiene al terminar cada una. La siguiente historia no empieza hasta que la persona ha revisado y fusionado en `main` el PR de la historia anterior. Si al arrancar este run el PR de la historia anterior sigue abierto o sin fusionar, HALT con estado `blocked` y condicion `previous story not merged into main`.",
+  "Politica del repositorio LAN Party Hub, vigente para toda la historia de este run: una rama por historia (`story/<epica>-<historia>-<slug>`) creada desde `main` ya actualizado con las historias anteriores; la revision que precede a la fusion es la automatica de las cuatro capas del propio skill, no una revision humana; el bucle externo `tools/build-loop.py` abre el PR y lo fusiona; nunca push directo a `main`; nunca fusionar a `main` desde la rama de la historia; nunca anadir atribucion de IA a los commits.",
+  "Reparto de responsabilidades: este skill es el dueno del codigo (planifica, implementa, revisa en cuatro capas, parchea, verifica y deja un commit en la rama) pero NO es el dueno del control de versiones: no hace push, no abre PR y no fusiona. Eso es tarea del driver externo `tools/build-loop.py`, que ademas vuelve a pasar los cuatro comandos de verificacion del proyecto antes de abrir el PR. La historia siguiente no se planifica hasta que el PR de esta historia esta fusionado en `main`.",
+  "Puerta de fusion: la historia anterior debe estar ya fusionada en `main` antes de empezar la siguiente. Si al arrancar este run la historia anterior sigue sin fusionar, HALT con estado `blocked` y condicion `previous story not merged into main`. El driver externo satisface esta puerta fusionando el PR de la historia anterior antes de lanzar la siguiente.",
   "Limite de ciclos de correccion y revision: como maximo DOS ciclos automaticos por historia (docs/plan.md seccion 8). Si el workflow propone un tercer ciclo, HALT con estado `blocked` y condicion `project cycle cap reached` en lugar de continuar. No reabrir un hallazgo ya resuelto sin evidencia nueva.",
+  "Una historia no puede declararse completada con un hallazgo de severidad bloqueante sin resolver: si el triage deja diferido un hallazgo `high` (equivalente a S0/S1 en la escala de docs/plan.md seccion 8), HALT con estado `blocked` y condicion `blocking severity finding deferred`. Un hallazgo `high (unverified)` viene de un `maybe-false`, no de un defecto confirmado: no bloquea, pero el driver lo copia al cuerpo del PR.",
   "Verificacion obligatoria antes de cerrar la historia, los cuatro en verde: `dotnet build LANPartyHub.sln`; `dotnet test LANPartyHub.sln`; `powershell -NoProfile -File tools/check-encoding.ps1`; `powershell -NoProfile -File tools/check-epics.ps1`.",
   "Documentacion y explicaciones en espanol; identificadores, nombres de tipo, miembros, contratos tecnicos y comentarios de codigo en ingles. Identificadores opacos UUID v7, fechas en UTC, `sizeBytes` en bytes exactos.",
   "Fuentes de verdad: la espina de arquitectura `_bmad-output/planning-artifacts/architecture/architecture-lan-party-hub-2026-10-26/ARCHITECTURE-SPINE.md` (AD-1..AD-34) manda en las decisiones tecnicas, y el backlog `_bmad-output/planning-artifacts/epics/epics-lan-party-hub-2026-10-26/epics.md` manda en el alcance. Léelos antes de tocar un contrato o una entidad.",
-  "Los diferidos se registran en la lista `deferred:` del frontmatter del propio spec de la historia, no en `deferred-work.md`.",
+  "Los diferidos se registran en la lista `deferred:` del frontmatter del propio spec de la historia, no en `deferred-work.md`. Cada diferido lleva su severidad (`high`, `medium` o `low`): un diferido sin severidad bloquea la fusion automatica.",
   "El MVP no es P2P: ninguna dependencia de MonoTorrent ni de biblioteca de transferencia P2P, y ninguna referencia al vocabulario de peer, swarm, tracker o seeding en el dominio.",
 ]
 
 # Extra instructions to run after config is loaded and before step 01.
 activation_steps_append = [
-  "Antes del paso 01, comprueba que el arbol de trabajo esta limpio y que la rama actual corresponde a la historia de este run. Si el arbol esta sucio, HALT con estado `blocked` y condicion `dirty working tree`.",
+  "Antes del paso 01, comprueba que el arbol de trabajo esta limpio y que la rama actual corresponde a la historia de este run. Si el arbol esta sucio, HALT con estado `blocked` y condicion `dirty working tree`. No cambies de rama, no crees ramas, no hagas push, no abras PR y no fusiones en ningun punto del run: la rama la creo el driver externo para esta historia y el push, el PR y el merge son suyos.",
 ]
 
 # Instruction run by HALT after writing the terminal result.
-on_complete = "Publica en el chat el hash del commit, la rama, el story key y el resultado de los cuatro comandos de verificacion, y detente. No hagas push ni abras PR. La historia siguiente no se planifica hasta que la persona haya revisado y fusionado en `main` el PR de esta historia: ese es el punto de control humano del bucle."
+on_complete = "Publica en el chat el hash del commit, la rama, el story key y el resultado de los cuatro comandos de verificacion, y detente. No hagas push, no abras PR y no fusiones: el driver externo `tools/build-loop.py` se encarga del push, del PR y del merge. La historia siguiente no se planifica hasta que el PR de esta historia este fusionado en `main`: ese es el punto de control del bucle, y ahora lo ejecuta el driver en vez de una persona."
