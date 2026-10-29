@@ -1,0 +1,36 @@
+{
+  "story": "2-3-control-de-la-publicaci\u00f3n-por-parte-del-organizador",
+  "base": "468040cdf23ff434cac56de780ce19d4b2e0f5fa",
+  "risk": [
+    "persistencia"
+  ],
+  "paths": [
+    ".build-lite/plans/2-3.md",
+    "README.md",
+    "_bmad-output/implementation-artifacts/spec-2-3-control-de-la-publicacion-por-parte-del-organizador.md",
+    "_bmad-output/implementation-artifacts/sprint-status.yaml",
+    "_bmad-output/planning-artifacts/architecture/architecture-lan-party-hub-2026-10-26/ARCHITECTURE-SPINE.md",
+    "docs/estrategia-pruebas.md",
+    "src/Server/Application/Packages/ListPackages.cs",
+    "src/Server/Application/Packages/WithdrawGame.cs",
+    "src/Server/Application/Ports/IPackageRepository.cs",
+    "src/Server/Domain/Packages/PackageDomainExceptions.cs",
+    "src/Server/Infrastructure/Persistence/CatalogDbContext.cs",
+    "src/Server/Infrastructure/Persistence/Entities/CatalogVersionEntity.cs",
+    "src/Server/Infrastructure/Persistence/Entities/PackageDescriptorEntity.cs",
+    "src/Server/Infrastructure/Persistence/Migrations/20261029195500_CatalogVersionAndWithdrawal.Designer.cs",
+    "src/Server/Infrastructure/Persistence/Migrations/20261029195500_CatalogVersionAndWithdrawal.cs",
+    "src/Server/Infrastructure/Persistence/Migrations/CatalogDbContextModelSnapshot.cs",
+    "src/Server/Infrastructure/Persistence/PackageRepository.cs",
+    "src/Server/Presentation/Packages/PackagesViewModel.cs",
+    "src/Server/Presentation/Packages/PackagesWindow.cs",
+    "src/Server/Presentation/ServerApp.cs",
+    "src/Server/Program.cs",
+    "tests/IntegrationTests/CatalogWithdrawalTests.cs",
+    "tests/IntegrationTests/PackagePublicationTests.cs",
+    "tests/IntegrationTests/ServerStartupTests.cs",
+    "tests/UnitTests/CatalogWithdrawalTests.cs",
+    "tests/UnitTests/PackagePresentationTests.cs",
+    "tests/UnitTests/PackagePublicationDomainTests.cs"
+  ]
+}
