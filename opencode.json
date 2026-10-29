@@ -6,15 +6,20 @@
     },
     "general": {
       "steps": 40,
+      "model": "minimax-coding-plan/MiniMax-M3.1-Flash",
       "permission": {
         "external_directory": "allow"
       }
     },
     "openai-reviewer": {
       "steps": 30,
+      "model": "minimax-coding-plan/MiniMax-M3.1-Flash",
       "permission": {
         "external_directory": "allow"
       }
+    },
+    "minimax-executor": {
+      "steps": 30
     }
   }
 }
