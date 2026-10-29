@@ -105,14 +105,21 @@ def phase_command(agent: str, model: str, prompt: str) -> list[str]:
     ]
 
 
-def run_phase(name: str, agent: str, model: str, prompt: str, log_dir: Path, retries: int = PHASE_MAX_ATTEMPTS):
+def run_phase(
+    name: str,
+    model: str,
+    prompt: str,
+    log_dir: Path,
+    timeout_minutes: int,
+    retries: int = PHASE_MAX_ATTEMPTS,
+):
     """Run a bounded provider phase; a retry is technical only, never a new loop."""
     for attempt in range(1, retries + 1):
         log(f"{name}: attempt {attempt} of {retries}")
         result = legacy.run_command(
-            phase_command(agent, model, prompt),
+            phase_command("build", model, prompt),
             log_path=log_dir / f"{name}-{attempt}.jsonl",
-            timeout=45 * 60,
+            timeout=timeout_minutes * 60,
         )
         if result.ok:
             return result
@@ -194,7 +201,7 @@ def verify_or_repair(story, log_dir: Path, repair_available: bool = True) -> boo
     if not repair_available:
         raise legacy.DriverError(f"verification failed after the repair budget was spent: {', '.join(failed)}")
     evidence = "; ".join(failed)
-    run_phase("repair", "minimax-executor", IMPLEMENT_MODEL, repair_prompt(story, evidence), log_dir)
+    run_phase("repair", IMPLEMENT_MODEL, repair_prompt(story, evidence), log_dir, timeout_minutes=30)
     second = run_verifications(log_dir / "after-repair")
     failed = [label for label, result in second if not result.ok]
     if failed:
@@ -237,11 +244,11 @@ def process_story(story, args: argparse.Namespace) -> None:
         base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
 
     if not plan.exists():
-        run_phase("plan", "general", PLAN_MODEL, plan_prompt(story, plan), log_dir)
+        run_phase("plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=10)
     if not plan.exists() or not plan.read_text(encoding="utf-8", errors="replace").strip():
         raise legacy.DriverError(f"planner did not create {relative(plan)}")
 
-    run_phase("implementation", "minimax-executor", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir)
+    run_phase("implementation", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir, timeout_minutes=30)
     commit_story(story)
     repair_used = verify_or_repair(story, log_dir)
     commit_story(story)
@@ -253,14 +260,14 @@ def process_story(story, args: argparse.Namespace) -> None:
     diff_file = log_dir / "review.diff"
     write_diff(base, diff_file)
     if risk.required:
-        result = run_phase("review", "openai-reviewer", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir)
+        result = run_phase("review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10)
         blocking = review_result(result.log or Path())
         if blocking:
             if repair_used:
                 raise legacy.DriverError(
                     "the focused review found a blocker after the single repair budget was spent: " + blocking
                 )
-            run_phase("review-repair", "minimax-executor", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir)
+            run_phase("review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30)
             commit_story(story)
             verify_or_repair(story, log_dir / "after-review-repair", repair_available=False)
 
@@ -312,8 +319,8 @@ def self_test() -> int:
     risk = classify_risk(["src/Shared/Contracts/InstallationManifest.cs"])
     if not risk.required or "contrato compartido" not in risk.reasons:
         failures.append("shared contracts were not classified as sensitive")
-    command = phase_command("general", PLAN_MODEL, "plan")
-    if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "general", "--model"]:
+    command = phase_command("build", PLAN_MODEL, "plan")
+    if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "build", "--model"]:
         failures.append("phase command is malformed")
     if PHASE_MAX_ATTEMPTS != 2:
         failures.append("phase retry budget is not fixed at two technical attempts")
