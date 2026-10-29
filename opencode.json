@@ -5,17 +5,24 @@
       "steps": 40
     },
     "general": {
-      "steps": 40
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "external_directory",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ]
     },
     "openai-reviewer": {
-      "steps": 30
+      "steps": 30,
+      "permissions": [
+        {
+          "action": "external_directory",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ]
     }
-  },
-  "permissions": [
-    {
-      "action": "external_directory",
-      "resource": "*",
-      "effect": "allow"
-    }
-  ]
+  }
 }
