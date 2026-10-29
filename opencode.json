@@ -10,5 +10,12 @@
     "openai-reviewer": {
       "steps": 30
     }
-  }
+  },
+  "permissions": [
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "allow"
+    }
+  ]
 }

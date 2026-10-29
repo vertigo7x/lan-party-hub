@@ -26,7 +26,7 @@ persistent_facts = [
   "Reparto de responsabilidades: este skill es el dueno del codigo (planifica, implementa, revisa en cuatro capas, parchea, verifica y deja un commit en la rama) pero NO es el dueno del control de versiones: no hace push, no abre PR y no fusiona. Eso es tarea del driver externo `tools/build-loop.py`, que ademas vuelve a pasar los cuatro comandos de verificacion del proyecto antes de abrir el PR. La historia siguiente no se planifica hasta que el PR de esta historia esta fusionado en `main`.",
   "Este run es desatendido: NO pidas decisiones a una persona, NO esperes aprobaciones y NO preguntes nada. Si el diseño está abierto, resuélvelo con la espina de arquitectura y con los AC de la historia, y deja la decisión escrita en el spec. Si de verdad no se puede decidir con la evidencia disponible, HALT con estado `blocked` y una condición concreta, y sigue.",
   "No enumeres el árbol de ficheros ni leas los artefactos de planeamiento en crudo: carga el contexto de la épica compilado (`epic-<N>-context.md`), que es lo que exige el paso 01, y excluye siempre `bin/` y `obj/` al buscar ficheros. Si el run se queda sin contexto, no abandones la historia: deja el spec escrito en el disco con lo que tengas y termina; el driver continúa la misma sesión.",
-  "El diff de la revisión es `git diff <baseline_revision>` (todo el cambio de la historia desde su base), NUNCA `git diff --cached`: el trabajo de la historia puede estar commiteado, porque el driver commitea el trabajo pendiente para que no se pierda. Un diff staged vacío significa que has calculado mal el diff.",
+  "El diff de la revisión se escribe DENTRO del proyecto, en `.build-loop/diffs/<historia>.diff`, NUNCA en el directorio temporal del sistema: leer de fuera del workspace pide un permiso que en un run desatendido no tiene quién lo conceda, y el revisor se queda colgado esperando la respuesta. El diff de la revisión es `git diff <baseline_revision>` (todo el cambio de la historia desde su base), NUNCA `git diff --cached`: el trabajo de la historia puede estar commiteado, porque el driver commitea el trabajo pendiente para que no se pierda. Un diff staged vacío significa que has calculado mal el diff.",
   "Puerta de fusion: la historia anterior debe estar ya fusionada en `main` antes de empezar la siguiente. Si al arrancar este run la historia anterior sigue sin fusionar, HALT con estado `blocked` y condicion `previous story not merged into main`. El driver externo satisface esta puerta fusionando el PR de la historia anterior antes de lanzar la siguiente.",
   "Limite de ciclos de correccion y revision: como maximo DOS ciclos automaticos por historia (docs/plan.md seccion 8). Si el workflow propone un tercer ciclo, HALT con estado `blocked` y condicion `project cycle cap reached` en lugar de continuar. No reabrir un hallazgo ya resuelto sin evidencia nueva.",
   "Una historia no puede declararse completada con un hallazgo de severidad bloqueante sin resolver: si el triage deja diferido un hallazgo `high` (equivalente a S0/S1 en la escala de docs/plan.md seccion 8), HALT con estado `blocked` y condicion `blocking severity finding deferred`. Un hallazgo `high (unverified)` viene de un `maybe-false`, no de un defecto confirmado: no bloquea, pero el driver lo copia al cuerpo del PR.",
@@ -65,7 +65,7 @@ If you have zero findings, re-check and keep thinking; do not stop with an empty
 
 CONTENT: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
@@ -83,7 +83,7 @@ claims_file (leave unread until your instructions call for it): {claims_file}
 
 Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
@@ -99,7 +99,7 @@ Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it 
 
 Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
@@ -117,7 +117,7 @@ You are an intent-alignment auditor. You have no other context about how this ch
 
 The diff is the unified diff at `{diff_file}`. Read that file — it is the change under review.
 
-READING RULES, THEY ARE NOT OPTIONAL: read the diff with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never list the directory that contains the diff: the temporary directory holds unrelated artefacts and listing it buries the request in noise. If the path does not read directly because it is in the short 8.3 form, resolve it first with `Resolve-Path` and read the resolved path.
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Your task is strictly descriptive — do not prescribe additional work. Report: (1) the defensible readings of the intent, enumerated; (2) which reading this diff implements; (3) where the readings and the diff diverge — specifically, which surface the intent's expectations live at versus which surface the diff's changes and its tests exercise.
 
