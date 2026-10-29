@@ -1204,15 +1204,17 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         git("checkout", "-b", story.branch, f"origin/{BASE_BRANCH}")
         spec = find_spec(story)
 
-    if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
-        _log(f"resuming: pull request #{existing_pr[0]} is already open and the spec is done")
+    # The story is built on the current main, not on the main it started
+    # with: the policy and the tooling of the project are part of what the
+    # skill reads when it renders its workflow.
+    if not is_base_ancestor():
+        rebase_onto_main()
+        spec = find_spec(story)
+
+    status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
+    if status == "done":
+        _log("the spec is done: going straight to the gate, without running the skill again")
     else:
-        # The story is built on the current main, not on the main it started
-        # with: the policy and the tooling of the project are part of what the
-        # skill reads when it renders its workflow.
-        if not is_base_ancestor():
-            rebase_onto_main()
-            spec = find_spec(story)
         session_id = load_session_id(story)
         if session_id:
             _log(f"resuming the session {session_id} of a previous run")
