@@ -40,23 +40,23 @@ Desktop platform to distribute, install and launch games over a managed LAN. Pla
 
 ## Modo automático (bucle de historias)
 
-`bmad-build-auto` ejecuta una historia sin intervención humana: planifica, implementa con un subagente, revisa con cuatro capas, parchea, verifica y commitea localmente. No hace push ni fusiona.
+`tools/build-lite.py` es el camino predeterminado para una historia sin intervención humana: prepara un plan breve, implementa con presupuesto acotado, ejecuta verificaciones deterministas y solo revisa con IA los cambios sensibles. Abre el PR y lo fusiona con squash cuando todas las puertas pasan.
 
-- Se invoca por historia (`bmad-build-auto "<intent de la historia>"`); una invocación es una historia, y el bucle es externo.
-- La política que lo gobierna —dos ciclos de corrección y revisión, los cuatro comandos de verificación, la rama por historia desde `main`— vive en `_bmad/custom/bmad-build-auto.toml`, en la capa de equipo.
-- **Puerta de fusión**: la historia anterior tiene que estar fusionada en `main` antes de empezar la siguiente. La puerta sigue en pie; desde el 2026-10-29 la satisface el driver `tools/build-loop.py` en vez de una persona.
-- `bmad-build-auto` no aparece en `_bmad/_config/bmad-help.csv`: es un skill de proyecto (`.agents/skills/`), no de un módulo BMAD.
+- Se invoca por historia (`uv run tools/build-lite.py --story N.M`) o para el backlog entero; una historia se termina y fusiona antes de empezar la siguiente.
+- El presupuesto máximo es un plan, una implementación, una reparación dirigida y una revisión focalizada solo cuando cambia contrato, persistencia, red, instalación, seguridad o firma.
+- **Puerta de fusión**: la historia anterior tiene que estar fusionada en `main` antes de empezar la siguiente. Las verificaciones de build, tests, codificación y backlog son obligatorias.
+- `bmad-build-auto` y `tools/build-loop.py` permanecen como contingencia para recuperar el flujo histórico, no como predeterminado.
 
-## Bucle desatendido (build-loop)
+## Bucle desatendido (Build Lite)
 
-`tools/build-loop.py` es el driver que recorre el backlog entero sin atención humana: crea la rama de cada historia, lanza `bmad-build-auto`, vuelve a pasar los cuatro comandos de verificación, abre el PR y lo fusiona con squash.
+`tools/build-lite.py` recorre el backlog sin atención humana: crea o retoma la rama de cada historia, ejecuta las fases con presupuesto fijo, vuelve a pasar las verificaciones, abre el PR y lo fusiona con squash.
 
 ```powershell
-uv run tools/build-loop.py            # recorre el backlog entero
-uv run tools/build-loop.py --dry-run  # imprime el plan y no toca nada
-uv run tools/build-loop.py --self-test # comprueba el driver y sale
+uv run tools/build-lite.py             # recorre el backlog entero
+uv run tools/build-lite.py --dry-run   # imprime el plan y no toca nada
+uv run tools/build-lite.py --self-test # comprueba el driver y sale
 ```
 
-- Las puertas antes de fusionar son cuatro: spec en `done` y que pertenezca a la historia, ningún hallazgo de severidad bloqueante diferido, máximo dos ciclos de corrección y revisión, y las verificaciones en verde (el autotest del driver más los cuatro comandos del proyecto). El bucle se detiene en la primera que falle.
-- La revisión humana previa a la fusión se sustituyó por la revisión de cuatro capas del propio skill más los cuatro comandos del proyecto. `main` sigue entrando solo por squash de un PR, nunca por push directo.
-- Procedimiento, puertas, motivos de parada y cómo reanudarlo: `docs/unattended-loop.md`. Ese documento y `_bmad/custom/bmad-build-auto.toml` son la fuente duradera de la política: el bloque `bmad:context` de este fichero se regenera en cada refresco.
+- Las puertas antes de fusionar son verificaciones en verde, una reparación dirigida como máximo y, para cambios sensibles, ningún S0/S1 confirmado abierto. El bucle se detiene en la primera que falle.
+- La revisión humana previa a la fusión se sustituye por verificaciones deterministas y una revisión focalizada proporcional al riesgo. `main` sigue entrando solo por squash de un PR, nunca por push directo.
+- Procedimiento, puertas, motivos de parada y cómo reanudarlo: `docs/unattended-loop.md`. El bloque `bmad:context` de este fichero se regenera en cada refresco.
