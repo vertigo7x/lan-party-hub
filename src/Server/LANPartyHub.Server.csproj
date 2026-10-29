@@ -48,6 +48,18 @@
   </ItemGroup>
 
   <!--
+    AD-2: the signature of the installation manifest is Ed25519 over its canonical form,
+    and the BCL of .NET 10 does not bring a public Ed25519 API, so the cryptography comes
+    from BouncyCastle. The package enters isolated behind the port of signing
+    (IManifestSigner), so its types never leave src/Server/Infrastructure/Signing and the
+    use cases never know the library. The version is verified in the local NuGet cache and
+    compiles against net10.0.
+  -->
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+
+  <!--
     AD-17: the configuration file that sits next to the binary is optional and carries the
     lowest priority of the three configuration sources (flags > env > file). It is copied to
     the output by the web SDK default, which already includes appsettings.json as Content

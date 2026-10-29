@@ -1,11 +1,13 @@
 using Avalonia;
 using LANPartyHub.Server.Application.Catalog;
+using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
 using LANPartyHub.Server.Infrastructure.Logging;
 using LANPartyHub.Server.Infrastructure.Networking;
 using LANPartyHub.Server.Infrastructure.Persistence;
+using LANPartyHub.Server.Infrastructure.Signing;
 using LANPartyHub.Server.Presentation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -198,6 +200,15 @@ public partial class Program
         builder.Services.AddScoped<ModifyGame>();
         builder.Services.AddScoped<ListGames>();
 
+        // AD-1, AD-2, AD-7: the module of the distribution of packages of the server. The
+        // signature is Ed25519 over the canonical form of the manifest, and the adapter
+        // that holds the key is the only one that knows the cryptography: the use case
+        // depends on the port and never on it.
+        builder.Services.AddScoped<IPackageRepository, PackageRepository>();
+        builder.Services.AddScoped<IPackageContentStore, PackageContentStore>();
+        builder.Services.AddSingleton<IManifestSigner, Ed25519ManifestSigner>();
+        builder.Services.AddScoped<PublishPackage>();
+
         var app = builder.Build();
 
         // AD-15: the effective configuration is published, because it is the surface the
@@ -251,6 +262,9 @@ public partial class Program
 
         // AD-5, AD-34: the administration of the videogames of the catalog.
         GamesEndpoint.Map(app);
+
+        // AD-5, AD-7: the administration of the publication of the packages.
+        PackagesEndpoint.Map(app);
 
         return app;
     }

@@ -131,6 +131,48 @@ public static class ErrorCatalog
     /// <summary>The videogame does not carry its distribution restrictions (AD-1, FR-1).</summary>
     public const string GameDistributionRestrictionsMissingCode = "GAME_DISTRIBUTION_RESTRICTIONS_MISSING";
 
+    /// <summary>
+    /// The body of the publication does not carry the data of the package or its
+    /// installation manifest (AD-5).
+    /// </summary>
+    public const string PackagePayloadMissingCode = "PACKAGE_PAYLOAD_MISSING";
+
+    /// <summary>
+    /// The videogame whose package is being published does not carry the license that the
+    /// catalog demands before publishing (AD-7, FR-1, NFR-8).
+    /// </summary>
+    public const string PackageLicenseMissingCode = "PACKAGE_LICENSE_MISSING";
+
+    /// <summary>
+    /// The videogame whose package is being published does not carry the restrictions of
+    /// distribution, and the catalog forbids publishing a package without them
+    /// (AD-7, FR-1, NFR-8).
+    /// </summary>
+    public const string PackageDistributionRestrictionsMissingCode = "PACKAGE_DISTRIBUTION_RESTRICTIONS_MISSING";
+
+    /// <summary>
+    /// The publication names a videogame that is not in the catalog of the event (AD-22).
+    /// </summary>
+    public const string PackageGameNotFoundCode = "PACKAGE_GAME_NOT_FOUND";
+
+    /// <summary>
+    /// The publication names a package that is already published: a published package is
+    /// immutable, and changing its content requires publishing a new version (AD-7).
+    /// </summary>
+    public const string PackageAlreadyPublishedCode = "PACKAGE_ALREADY_PUBLISHED";
+
+    /// <summary>
+    /// The manifest of the package declares an operation that is outside the closed set of
+    /// the operations of AD-7. There is no operation that runs arbitrary commands.
+    /// </summary>
+    public const string ManifestOperationNotAllowedCode = "MANIFEST_OPERATION_NOT_ALLOWED";
+
+    /// <summary>
+    /// The bytes of the package are missing, or their size does not match the size that
+    /// the manifest declares (AD-2, AD-7).
+    /// </summary>
+    public const string PackageContentMismatchCode = "PACKAGE_CONTENT_MISMATCH";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -283,6 +325,41 @@ public static class ErrorCatalog
             "Faltan las restricciones de distribución del videojuego",
             "El registro del videojuego no lleva las restricciones de distribución que el catálogo exige.",
             "Rellena las restricciones de distribución del videojuego y vuelve a guardarlo."),
+        new(
+            PackagePayloadMissingCode,
+            "La petición no lleva los datos del paquete",
+            "El cuerpo de la publicación no lleva el descriptor del paquete ni su manifiesto de instalación.",
+            "Añade el descriptor del paquete y su manifiesto al cuerpo de la petición y vuelve a intentarlo."),
+        new(
+            PackageLicenseMissingCode,
+            "Falta la licencia del videojuego del paquete",
+            "El registro del videojuego no lleva la licencia que el catálogo exige para publicar su paquete.",
+            "Rellena la licencia del videojuego y vuelve a publicar el paquete: no se ha escrito ninguna fila."),
+        new(
+            PackageDistributionRestrictionsMissingCode,
+            "Faltan las restricciones de distribución del videojuego del paquete",
+            "El registro del videojuego no lleva las restricciones de distribución que el catálogo exige para publicar su paquete.",
+            "Rellena las restricciones de distribución del videojuego y vuelve a publicar el paquete: no se ha escrito ninguna fila."),
+        new(
+            PackageGameNotFoundCode,
+            "El videojuego del paquete no está en el catálogo",
+            "El identificador del videojuego de la publicación no corresponde a ningún videogame registrado.",
+            "Revisa el identificador del videojuego y vuelve a intentarlo: no se ha escrito ninguna fila."),
+        new(
+            PackageAlreadyPublishedCode,
+            "El paquete ya está publicado",
+            "Ya existe un paquete publicado con ese identificador, y un paquete publicado es inmutable.",
+            "Publica el cambio como una versión nueva del paquete: la fila existente no se ha modificado."),
+        new(
+            ManifestOperationNotAllowedCode,
+            "El manifiesto declara una operación que no está permitida",
+            "El manifiesto declara una operación fuera del conjunto cerrado de extract, createDirectory, copyFile, writeConfig, setLaunchConfig y verify.",
+            "Corrige el manifiesto y usa solo las operaciones permitidas: no se ha escrito ninguna fila."),
+        new(
+            PackageContentMismatchCode,
+            "El contenido del paquete no coincide con lo declarado",
+            "Los bytes del paquete no existen o su tamaño no coincide con el tamaño que declara el manifiesto.",
+            "Revisa la ruta del paquete y su tamaño en bytes exactos, y vuelve a publicarlo: no se ha escrito ninguna fila."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

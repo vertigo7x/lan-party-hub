@@ -150,6 +150,12 @@ public sealed class GameFormViewModel
     /// The names of the fields that FR-1 declares obligatory. The view marks exactly these
     /// ones (AC4).
     /// </summary>
+    /// <remarks>
+    /// The license and the restrictions of distribution are **not** in this list: NFR-8
+    /// makes them obligatory before publishing a package, not before registering the
+    /// videogame, and the publication is the moment in which the catalog demands them
+    /// (AC1 of the story of the publication).
+    /// </remarks>
     public static IReadOnlyList<string> RequiredFieldNames =>
     [
         GameRegistration.FieldNames.Name,
@@ -167,8 +173,6 @@ public sealed class GameFormViewModel
         GameRegistration.FieldNames.InstallationType,
         GameRegistration.FieldNames.LaunchConfiguration,
         GameRegistration.FieldNames.Dependencies,
-        GameRegistration.FieldNames.License,
-        GameRegistration.FieldNames.DistributionRestrictions,
     ];
 
     /// <summary>

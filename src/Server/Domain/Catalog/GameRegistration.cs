@@ -173,8 +173,17 @@ public sealed class GameRegistration
         _launchArguments = RequireOptionalItems(launchArguments);
         _launchWorkingDirectory = RequireText(launchWorkingDirectory, FieldNames.LaunchConfiguration);
         _dependencies = RequireItems(dependencies, FieldNames.Dependencies);
-        _license = RequireText(license, FieldNames.License);
-        _distributionRestrictions = RequireText(distributionRestrictions, FieldNames.DistributionRestrictions);
+
+        // NFR-8: the license and the restrictions of distribution are obligatory before
+        // PUBLISHING a package, not before registering the videogame. The administrator
+        // can register a videogame whose license is still unknown, and the publication is
+        // the moment in which the catalog demands them, naming the one that is missing
+        // (AC1 of the story of the publication).
+        //
+        // The two texts are still trimmed, and an absent one is an empty text, so that
+        // the check of the publication has a single shape to look at.
+        _license = RequireOptionalText(license);
+        _distributionRestrictions = RequireOptionalText(distributionRestrictions);
 
         if (sizeBytes <= 0)
         {
@@ -313,6 +322,17 @@ public sealed class GameRegistration
 
         return value.Trim();
     }
+
+    /// <summary>
+    /// Requires a text that is mandatory before publishing but not before registering the
+    /// videogame. A text that is empty, or that holds only white space, is an empty text,
+    /// and it is the publication that rejects it, naming the concrete field (NFR-8,
+    /// AC1).
+    /// </summary>
+    /// <param name="value">Value of the field.</param>
+    /// <returns>The trimmed value of the field, or an empty text when it is absent.</returns>
+    private static string RequireOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
     /// <summary>
     /// Requires a mandatory collection. A collection that is empty, that holds an absent

@@ -158,4 +158,49 @@ public sealed class ErrorCatalogTests
         Assert.NotNull(entries);
         Assert.True(entries!.IsReadOnly);
     }
+
+    [Fact]
+    public void The_codes_of_the_publication_have_their_own_entry_of_three_parts()
+    {
+        string[] codes =
+        [
+            ErrorCatalog.PackagePayloadMissingCode,
+            ErrorCatalog.PackageLicenseMissingCode,
+            ErrorCatalog.PackageDistributionRestrictionsMissingCode,
+            ErrorCatalog.PackageGameNotFoundCode,
+            ErrorCatalog.PackageAlreadyPublishedCode,
+            ErrorCatalog.PackageContentMismatchCode,
+            ErrorCatalog.ManifestOperationNotAllowedCode,
+        ];
+
+        foreach (var code in codes)
+        {
+            Assert.Contains(code, ErrorCatalog.Codes);
+
+            Assert.True(ErrorCatalog.TryGet(code, out var entry));
+            Assert.NotNull(entry);
+            Assert.False(string.IsNullOrWhiteSpace(entry!.Message));
+            Assert.False(string.IsNullOrWhiteSpace(entry.Cause));
+            Assert.False(string.IsNullOrWhiteSpace(entry.NextStep));
+        }
+    }
+
+    [Fact]
+    public void The_two_blocks_of_the_publication_are_two_different_codes()
+    {
+        // The two absences are counted apart, so that the metric of errors per code
+        // distinguishes the missing license from the missing restrictions of
+        // distribution (AD-15, AD-25).
+        Assert.NotEqual(
+            ErrorCatalog.PackageLicenseMissingCode,
+            ErrorCatalog.PackageDistributionRestrictionsMissingCode);
+
+        Assert.NotEqual(
+            ErrorCatalog.PackageLicenseMissingCode,
+            ErrorCatalog.GameLicenseMissingCode);
+
+        Assert.NotEqual(
+            ErrorCatalog.PackageDistributionRestrictionsMissingCode,
+            ErrorCatalog.GameDistributionRestrictionsMissingCode);
+    }
 }

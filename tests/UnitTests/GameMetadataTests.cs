@@ -36,14 +36,28 @@ public sealed class GameMetadataTests
     [InlineData("operatingSystem")]
     [InlineData("distributionType")]
     [InlineData("installationType")]
-    [InlineData("license")]
-    [InlineData("distributionRestrictions")]
     public void Every_mandatory_text_names_the_field_that_fails(string fieldName)
     {
         var exception = Assert.Throws<GameMetadataMissingException>(
             () => Create(fieldName: fieldName));
 
         Assert.Equal(fieldName, exception.FieldName);
+    }
+
+    [Theory]
+    [InlineData("license")]
+    [InlineData("distributionRestrictions")]
+    public void The_license_and_the_restrictions_are_not_mandatory_before_registering_the_videogame(string fieldName)
+    {
+        // NFR-8: the license and the restrictions of distribution are obligatory before
+        // PUBLISHING a package, not before registering the videogame. The videogame can
+        // be registered without them, and the publication is the moment in which the
+        // catalog demands them, naming the one that is missing.
+        var registration = Create(fieldName: fieldName);
+
+        Assert.Equal(string.Empty, fieldName == GameRegistration.FieldNames.License
+            ? registration.License
+            : registration.DistributionRestrictions);
     }
 
     [Fact]
