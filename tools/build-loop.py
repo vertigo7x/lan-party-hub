@@ -814,6 +814,12 @@ def run_skill(
             )
     else:
         prompt = f"bmad-build-auto {build_intent(story)}"
+        if spec_path is not None and spec_status != "done":
+            prompt += (
+                f" El spec de esta historia ya esta en {spec_path.relative_to(REPO_ROOT).as_posix()} "
+                f"con status `{spec_status or 'draft'}`: retomalo desde el paso del skill que le "
+                "corresponde en vez de empezar de cero."
+            )
 
     log_dir.mkdir(parents=True, exist_ok=True)
     json_log = log_dir / f"skill-{attempt}.jsonl"
@@ -1006,7 +1012,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
     # The reuse decision needs the story branch checked out: the spec of an
     # interrupted attempt only exists in that branch, and whether it is
     # committed there is what tells an interrupted story from an abandoned one.
-    spec: Path | None = None
+    spec: Path | None = find_spec(story)
     reuse = False
     if branch_exists(story.branch):
         git("checkout", story.branch)
@@ -1019,6 +1025,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
             spec = None
     else:
         git("checkout", "-b", story.branch, BASE_BRANCH)
+        spec = find_spec(story)
 
     if existing_pr and spec and str(read_frontmatter(spec).get("status", "")).lower() == "done":
         _log(f"resuming: pull request #{existing_pr[0]} is already open and the spec is done")
