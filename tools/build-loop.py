@@ -54,6 +54,8 @@ EPICS_FILE = REPO_ROOT / "_bmad-output/planning-artifacts/epics/epics-lan-party-
 SPRINT_STATUS_FILE = REPO_ROOT / "_bmad-output/implementation-artifacts/sprint-status.yaml"
 ARTIFACTS_DIR = REPO_ROOT / "_bmad-output/implementation-artifacts"
 DEFAULT_LOG_DIR = REPO_ROOT / ".build-loop/logs"
+DIFF_DIR = REPO_ROOT / ".build-loop/diffs"
+SESSION_DIR = REPO_ROOT / ".build-loop/sessions"
 
 BRANCH_PREFIX = "story"
 BASE_BRANCH = "main"
@@ -892,6 +894,21 @@ def build_intent(story: Story) -> str:
     )
 
 
+def load_session_id(story: Story) -> str:
+    """The opencode session of a story, kept across restarts of the loop."""
+    path = SESSION_DIR / f"{story.label}.session"
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def save_session_id(story: Story, session_id: str) -> None:
+    if not session_id:
+        return
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    (SESSION_DIR / f"{story.label}.session").write_text(session_id, encoding="utf-8")
+
+
 def run_skill(
     story: Story,
     log_dir: Path,
@@ -936,6 +953,7 @@ def run_skill(
             )
 
     log_dir.mkdir(parents=True, exist_ok=True)
+    DIFF_DIR.mkdir(parents=True, exist_ok=True)
     json_log = log_dir / f"skill-{attempt}.jsonl"
     text_log = log_dir / f"skill-{attempt}.log"
     _log(f"running the bmad-build-auto skill for story {story.short_id} (attempt {attempt})")
@@ -1155,7 +1173,9 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
         if not is_base_ancestor():
             rebase_onto_main()
             spec = find_spec(story)
-        session_id = ""
+        session_id = load_session_id(story)
+        if session_id:
+            _log(f"resuming the session {session_id} of a previous run")
         for attempt in range(1, args.max_attempts + 1):
             status = str(read_frontmatter(spec).get("status", "")).lower() if spec else ""
             skill_result, session_id = run_skill(
@@ -1171,6 +1191,7 @@ def process_story(story: Story, args: argparse.Namespace, log_dir: Path) -> Stor
                 stall_timeout_minutes=args.stall_timeout_minutes,
             )
             _log(f"the skill finished with exit code {skill_result.code}")
+            save_session_id(story, session_id)
             if skill_result.code == 125:
                 _log(
                     f"the run stalled; continuing the session {session_id} "
