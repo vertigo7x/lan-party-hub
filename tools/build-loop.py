@@ -273,23 +273,24 @@ def run_command(
 OPENCODE_LOG_DIR = Path.home() / ".local" / "share" / "opencode" / "log"
 
 
-def progress_signature(log_path: Path) -> tuple:
-    """A fingerprint of the activity of the run, children included.
+def run_log_signature(started_at: float) -> tuple:
+    """A fingerprint of the activity of the opencode process of the run.
 
     The parent session goes silent while its review subagents work: the
     children write to their own sessions, so the parent's event stream alone
-    is not a signal of life. The opencode log carries the activity of every
-    session of the process, so it is part of the fingerprint.
+    is not a signal of life. The opencode log of the process carries the
+    activity of every one of its sessions, so it is part of the fingerprint.
+
+    Only the per process log files count. The shared `opencode.log` carries
+    the activity of every other opencode session of the machine, including the
+    one the operator is typing in, and a heartbeat from the operator would
+    hide a dead run.
     """
-    try:
-        size = log_path.stat().st_size
-    except OSError:
-        size = 0
     newest_mtime = 0.0
     newest_size = 0
     if OPENCODE_LOG_DIR.is_dir():
         try:
-            candidates = list(OPENCODE_LOG_DIR.glob("*.log"))
+            candidates = list(OPENCODE_LOG_DIR.glob("2026-*.log"))
         except OSError:
             candidates = []
         for candidate in candidates:
@@ -297,10 +298,12 @@ def progress_signature(log_path: Path) -> tuple:
                 stat = candidate.stat()
             except OSError:
                 continue
+            if stat.st_mtime < started_at:
+                continue
             if stat.st_mtime > newest_mtime:
                 newest_mtime = stat.st_mtime
                 newest_size = stat.st_size
-    return (size, round(newest_mtime, 3), newest_size)
+    return (round(newest_mtime, 3), newest_size)
 
 
 def run_command_watched(
@@ -330,7 +333,7 @@ def run_command_watched(
             stdin=subprocess.DEVNULL,
         )
         code = 0
-        signature = progress_signature(log_path)
+        signature = (log_path.stat().st_size if log_path.exists() else 0, run_log_signature(started))
         last_change = time.time()
         while True:
             try:
@@ -346,7 +349,10 @@ def run_command_watched(
                     pass
                 code = 124
                 break
-            current = progress_signature(log_path)
+            current = (
+                log_path.stat().st_size if log_path.exists() else 0,
+                run_log_signature(started),
+            )
             if current != signature:
                 signature = current
                 last_change = time.time()
@@ -1372,12 +1378,14 @@ def preflight(args: argparse.Namespace) -> None:
     if (REPO_ROOT / ".git/rebase-merge").exists() or (REPO_ROOT / ".git/rebase-apply").exists():
         raise DriverError("the repository is in the middle of a rebase")
     # The driver must run the copy of itself that is on `main`: a story branch
-    # carries the copy it was created with, which is older.
-    current = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    if current != BASE_BRANCH:
+    # carries the copy it was created with, which is older. The branch does
+    # not have to be `main` (a worktree may hold it), but the code does.
+    local_blob = git("hash-object", "--path=tools/build-loop.py", "tools/build-loop.py").stdout.strip()
+    main_blob = git("rev-parse", f"origin/{BASE_BRANCH}:tools/build-loop.py", check=False).stdout.strip()
+    if local_blob != main_blob:
         raise DriverError(
-            f"the driver must be launched from '{BASE_BRANCH}', not from '{current}': a story "
-            "branch carries an outdated copy of the driver"
+            f"the driver you are running is not the one on '{BASE_BRANCH}': check out the branch or "
+            "the worktree that holds it before launching the loop"
         )
     if args.model:
         models = run_command(("opencode", "models"), timeout=120)
@@ -1731,7 +1739,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-attempts",
         type=int,
-        default=8,
+        default=20,
         help="how many times the skill may run for one story, continuing the same session",
     )
     parser.add_argument(

@@ -59,14 +59,16 @@ Launch a context-free subagent with this prompt:
 
 Conduct a review of CONTENT.
 Look for what's missing, not only what's wrong.
-Compute your finding floor N from the diff file's size: N = min(floor(sqrt(kB) + 1), 10), where kB is the file's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.
+Compute your finding floor N from the size of the change: N = min(floor(sqrt(kB) + 1), 10), where kB is the size in kilobytes of the unified diff. Get it with `(Get-Item {diff_file}).Length / 1KB`. State the arithmetic in one line, then find at least N issues to fix or improve.
 Output a Markdown list of findings only — no severity, priority, or ranking.
 If the content is empty, stop and say so.
 If you have zero findings, re-check and keep thinking; do not stop with an empty list.
 
-CONTENT: the unified diff at `{diff_file}`. Read that file — it is the content under review.
+CONTENT: the change under review. Its unified diff is at `{diff_file}`.
 
-READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
+DO NOT READ THE WHOLE DIFF. This layer looks for what is MISSING, and that is visible in what the story asks for against what the change touches, not in reading every line of the change. Read the first three hundred lines of the diff for the list of changed files (the `+++` lines), and read the spec of the story under review: the newest file matching `_bmad-output/implementation-artifacts/spec-*.md`. Then open only the hunks of the files whose tasks or acceptance criteria are not obviously covered. A review of a four hundred kilobyte diff read end to end costs more than the change is worth.
+
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
@@ -116,9 +118,11 @@ You are an intent-alignment auditor. You have no other context about how this ch
 
 {verbatim_intent}
 
-The diff is the unified diff at `{diff_file}`. Read that file — it is the change under review.
+The diff is the unified diff at `{diff_file}`.
 
-READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines, and keep going until you have covered it. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
+DO NOT READ THE WHOLE DIFF. Your task is to compare the intent against the SURFACE of the change, and the surface is the list of files the change touches and the hunks of the files the intent names. Read the first three hundred lines of the diff for the list of changed files (the `+++` lines), and open only the hunks of the files the intent or the spec mention explicitly.
+
+READING RULES, THEY ARE NOT OPTIONAL: the diff lives INSIDE the project, under `.build-loop/diffs/`; read it from there with the read tool using offset and limit, in slices of at most 400 lines. Never read anything outside the project: a read outside the workspace asks for a permission that nobody grants in an unattended run, and the review hangs waiting for the answer.
 
 Your task is strictly descriptive — do not prescribe additional work. Report: (1) the defensible readings of the intent, enumerated; (2) which reading this diff implements; (3) where the readings and the diff diverge — specifically, which surface the intent's expectations live at versus which surface the diff's changes and its tests exercise.
 
