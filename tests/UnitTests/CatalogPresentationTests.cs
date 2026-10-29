@@ -165,11 +165,17 @@ public sealed class CatalogPresentationTests
     {
         // Los campos obligatorios de FR-1 son los que el catálogo exige, y el formulario
         // marca exactamente esos (AC4).
+        //
+        // La licencia y las restricciones de distribución SON metadata obligatorios del
+        // videogame: el registro las exige y el formulario las marca (FR-1, NFR-8). La
+        // historia de la publicación las vuelve a exigir al publicar el paquete, que es
+        // una segunda comprobación distinta (AC1 de esa historia).
         Assert.Equal(17, GameFormViewModel.RequiredFieldNames.Count);
         Assert.Contains("name", GameFormViewModel.RequiredFieldNames);
+        Assert.Contains("dependencies", GameFormViewModel.RequiredFieldNames);
+        Assert.DoesNotContain("gameId", GameFormViewModel.RequiredFieldNames);
         Assert.Contains("license", GameFormViewModel.RequiredFieldNames);
         Assert.Contains("distributionRestrictions", GameFormViewModel.RequiredFieldNames);
-        Assert.DoesNotContain("gameId", GameFormViewModel.RequiredFieldNames);
     }
 
     [Fact]

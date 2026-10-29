@@ -1,7 +1,9 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Server.Application.Catalog;
+using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Presentation.Catalog;
+using LANPartyHub.Server.Presentation.Packages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LANPartyHub.Server.Presentation;
@@ -53,10 +55,25 @@ public sealed class ServerApp : Avalonia.Application
             var registerGame = scope.ServiceProvider.GetRequiredService<RegisterGame>();
             var modifyGame = scope.ServiceProvider.GetRequiredService<ModifyGame>();
             var listGames = scope.ServiceProvider.GetRequiredService<ListGames>();
+            var publishPackage = scope.ServiceProvider.GetRequiredService<PublishPackage>();
+            var listPackages = scope.ServiceProvider.GetRequiredService<ListPackages>();
 
             var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames);
 
             desktop.MainWindow = window;
+
+            // The section of the packages is reachable from the window of the catalog: the
+            // organizer publishes the package of a videogame that is already in the
+            // catalog (AD-1, AC1).
+            window.Opened += async (_, _) =>
+            {
+                var packages = new PackagesWindow(
+                    new PackagesViewModel(),
+                    publishPackage,
+                    listPackages);
+
+                await packages.ShowDialog(window).ConfigureAwait(true);
+            };
 
             desktop.ShutdownRequested += (_, _) => scope.Dispose();
         }

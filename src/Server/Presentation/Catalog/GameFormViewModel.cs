@@ -150,6 +150,12 @@ public sealed class GameFormViewModel
     /// The names of the fields that FR-1 declares obligatory. The view marks exactly these
     /// ones (AC4).
     /// </summary>
+    /// <remarks>
+    /// The license and the restrictions of distribution ARE obligatory metadata of the
+    /// videogame, so the registration demands them and the form marks them (FR-1,
+    /// NFR-8). The story of the publication demands them AGAIN when the package is
+    /// published, which is a second and different check (AC1 of that story).
+    /// </remarks>
     public static IReadOnlyList<string> RequiredFieldNames =>
     [
         GameRegistration.FieldNames.Name,
