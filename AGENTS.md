@@ -64,3 +64,7 @@ uv run tools/build-lite.py --self-test # comprueba el driver y sale
 ## Excepción para workers de Build Lite
 
 Cuando un prompt empieza exactamente con `BUILD_LITE_WORKER:`, es una fase ya acotada y autorizada por `tools/build-lite.py`. **No cargues ningún skill, incluido `bmad-build`**: ejecuta solo el encargo del prompt usando las herramientas de repositorio necesarias, sin crear specs, replanificar ni iniciar otro workflow. Esta excepción solo evita la recursión dentro del worker; el proceso padre conserva sus puertas de plan, verificación, PR y merge.
+
+## Worktree canónico
+
+Usa exclusivamente `C:\PROJECTS\lan-party-hub` para todo el trabajo, incluidos logs de Build Lite. No crees ni cambies a worktrees temporales salvo que el usuario lo solicite expresamente.
