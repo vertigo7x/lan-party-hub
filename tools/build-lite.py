@@ -110,7 +110,7 @@ def classify_risk(paths: Sequence[str]) -> Risk:
 def phase_command(agent: str, model: str, prompt: str) -> list[str]:
     return [
         "opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", agent,
-        "--model", model, prompt,
+        "--model", model, f"BUILD_LITE_WORKER:\n{prompt}",
     ]
 
 
@@ -357,6 +357,8 @@ def self_test() -> int:
     command = phase_command("build", PLAN_MODEL, "plan")
     if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "build", "--model"]:
         failures.append("phase command is malformed")
+    if command[-1] != "BUILD_LITE_WORKER:\nplan":
+        failures.append("phase command is missing the Build Lite worker marker")
     if PHASE_MAX_ATTEMPTS != 2:
         failures.append("phase retry budget is not fixed at two technical attempts")
     if blocking_review_line("OK\n"):
