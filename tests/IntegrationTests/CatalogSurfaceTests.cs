@@ -5,6 +5,7 @@ using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Infrastructure.Persistence.Entities;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Host;
@@ -325,6 +326,192 @@ public sealed class CatalogSurfaceTests : IDisposable
         Assert.Equal("Conectar al servidor", viewModel.EmptyCatalogActionText);
     }
 
+    [Fact]
+    public async Task The_ficha_of_a_published_videogame_shows_its_exact_values()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var viewModel = await SynchronizeAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal("Counter-Strike 2", detail!.Name);
+        Assert.Equal("1.0.0", detail.Version);
+        Assert.Equal("Windows", detail.OperatingSystem);
+        Assert.Equal("Propietaria", detail.License);
+        Assert.Equal(["DirectX 12"], detail.Requirements);
+        Assert.Equal(1, detail.MinPlayers);
+        Assert.Equal(4, detail.MaxPlayers);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_videogame_without_installation_is_available()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var viewModel = await SynchronizeAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.Available, detail!.ViewState);
+        Assert.Equal(StateDisplayMap.GetText(CatalogViewState.Available), detail.ViewStateText);
+        Assert.Equal("disponible", detail.ViewStateText);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_videogame_with_an_older_installation_is_outdated()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        // La instalación validada del cliente es de una versión ANTERIOR a la publicada.
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "0.9.0",
+            InstallationState.Installed);
+
+        await ApplyInstallationsAsync(viewModel, databasePath);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.InstalledOutdatedVersion, detail!.ViewState);
+        Assert.Equal(
+            StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion),
+            detail.ViewStateText);
+        Assert.Equal("instalado con versión desactualizada", detail.ViewStateText);
+        Assert.Equal("0.9.0", detail.InstalledVersion);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_videogame_with_an_up_to_date_installation_is_not_outdated()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "1.0.0",
+            InstallationState.Installed);
+
+        await ApplyInstallationsAsync(viewModel, databasePath);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.NotEqual(CatalogViewState.InstalledOutdatedVersion, detail!.ViewState);
+        Assert.Equal("1.0.0", detail.InstalledVersion);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_client_with_an_outdated_snapshot_is_synchronizing()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "0.9.0",
+            InstallationState.Installed);
+
+        await ApplyInstallationsAsync(viewModel, databasePath);
+
+        // El servidor publica una versión MAYOR que la del snapshot que el cliente tiene:
+        // el cliente todavía no conoce el estado real del juego (AC3, AR-5).
+        var published = await ReadServerCatalogVersionAsync(host);
+
+        viewModel.ApplySnapshot(
+            CreateSnapshotFrom(viewModel, published - 1),
+            synchronized: true,
+            snapshotCatalogVersion: published - 1,
+            serverCatalogVersion: published);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.Synchronizing, detail!.ViewState);
+        Assert.Equal(StateDisplayMap.GetText(CatalogViewState.Synchronizing), detail.ViewStateText);
+        Assert.Equal("sincronizando", detail.ViewStateText);
+    }
+
+    [Fact]
+    public async Task The_synchronization_remembers_the_version_that_the_server_publishes()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var state = await SynchronizeStateAsync(host);
+
+        // La versión del servidor es la que dice si el snapshot del cliente está
+        // desactualizado (AC3, AR-5).
+        Assert.NotNull(state.ServerCatalogVersion);
+        Assert.Equal(state.Snapshot!.CatalogVersion, state.ServerCatalogVersion);
+        Assert.True(state.Synchronized);
+    }
+
     /// <summary>
     /// Synchronizes the real client over a real <c>state.sqlite</c> and builds the
     /// surface over the snapshot that the client applied.
@@ -336,6 +523,33 @@ public sealed class CatalogSurfaceTests : IDisposable
     /// </param>
     /// <returns>The view model of the surface.</returns>
     private async Task<CatalogSurfaceViewModel> SynchronizeAsync(
+        TestServer host,
+        bool connected = true)
+    {
+        var state = await SynchronizeStateAsync(host, connected);
+
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(
+            state.Snapshot,
+            state.Synchronized,
+            state.Snapshot?.CatalogVersion,
+            state.ServerCatalogVersion);
+
+        return viewModel;
+    }
+
+    /// <summary>
+    /// Synchronizes the real client over a real <c>state.sqlite</c> and returns the state
+    /// of the synchronization.
+    /// </summary>
+    /// <param name="host">Host of the event server.</param>
+    /// <param name="connected">
+    /// Whether the server is reachable. When it is not, the client falls back to the last
+    /// snapshot that it applied.
+    /// </param>
+    /// <returns>The state of the synchronization.</returns>
+    private async Task<CatalogSyncState> SynchronizeStateAsync(
         TestServer host,
         bool connected = true)
     {
@@ -385,13 +599,165 @@ public sealed class CatalogSurfaceTests : IDisposable
             applier,
             NullLogger<CatalogSyncService>.Instance);
 
-                var state = await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+        return await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Synchronizes the real client over a real <c>state.sqlite</c> and returns the
+    /// surface and the path of the database, so the test can register an installation in
+    /// the real file of the client (AC3, AD-22).
+    /// </summary>
+    /// <param name="host">Host of the event server.</param>
+    /// <returns>The view model of the surface and the path of the database.</returns>
+    private async Task<(CatalogSurfaceViewModel ViewModel, string DatabasePath)> SynchronizeWithDatabaseAsync(
+        TestServer host)
+    {
+        var dataFolder = CreateTemporaryDataDirectory();
+        var databasePath = Path.Combine(dataFolder, ClientDataLayout.StateDatabaseFileName);
+
+        var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .Options;
+
+        await using var context = new ClientStateDbContext(options);
+
+        await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+
+        var store = new CatalogSnapshotStore(context);
+
+        var applier = new CatalogSnapshotApplier(
+            store,
+            NullLogger<CatalogSnapshotApplier>.Instance);
+
+        using var correlation = new ClientCorrelationFactory(NullLoggerFactory.Instance);
+
+        correlation.Open("0193f2a1b2c34d4e5f60718293a4b5c6");
+
+        using var httpClient = new HttpClient(
+            new CorrelationHeadersHandler(correlation)
+            {
+                InnerHandler = new HttpClientHandler(),
+            })
+        {
+            BaseAddress = new Uri($"http://{host.BoundAddress}:{host.Port}"),
+        };
+
+        var service = new CatalogSyncService(
+            new CatalogHttpClient(httpClient),
+            store,
+            new UnreachableNotifier(),
+            applier,
+            NullLogger<CatalogSyncService>.Instance);
+
+        var state = await service.SynchronizeAsync(TestContext.Current.CancellationToken);
 
         var viewModel = new CatalogSurfaceViewModel();
 
-        viewModel.ApplySnapshot(state.Snapshot, state.Synchronized);
+        viewModel.ApplySnapshot(
+            state.Snapshot,
+            state.Synchronized,
+            state.Snapshot?.CatalogVersion,
+            state.ServerCatalogVersion);
 
-        return viewModel;
+        return (viewModel, databasePath);
+    }
+
+    /// <summary>
+    /// Registers an installation of the client in the real <c>state.sqlite</c>, so the
+    /// ficha derives the badge of the view state from a real local state (AC3, AD-22).
+    /// </summary>
+    /// <param name="databasePath">Path of the file of the client.</param>
+    /// <param name="gameId">Identifier of the game that is installed.</param>
+    /// <param name="installedVersion">Version that is installed.</param>
+    /// <param name="validationState">State of the installation.</param>
+    /// <returns>A task that completes when the installation has been registered.</returns>
+    private static async Task RegisterInstallationAsync(
+        string databasePath,
+        string gameId,
+        string installedVersion,
+        InstallationState validationState)
+    {
+        var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .Options;
+
+        await using var context = new ClientStateDbContext(options);
+
+        // La ruta de la instalación es local y NUNCA sale del cliente (AD-22).
+        context.Installations.Add(new ClientInstallationEntity
+        {
+            GameId = gameId,
+            InstalledVersion = installedVersion,
+            ValidationState = validationState.ToString(),
+            InstallPath = Path.Combine("C:", "juegos", gameId),
+            InstallDirectoryId = "0193f2a1b2c34d4e5f60718293a4b5c6",
+        });
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Reads the installations that the client registered and hands them to the surface,
+    /// exactly as the composition of the client does (AC3).
+    /// </summary>
+    /// <param name="viewModel">View model of the surface.</param>
+    /// <param name="databasePath">Path of the file of the client.</param>
+    /// <returns>A task that completes when the installations have been applied.</returns>
+    private static async Task ApplyInstallationsAsync(
+        CatalogSurfaceViewModel viewModel,
+        string databasePath)
+    {
+        var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .Options;
+
+        await using var context = new ClientStateDbContext(options);
+
+        var store = new CatalogSnapshotStore(context);
+
+        var installations = await store
+            .LoadInstalledGamesAsync(TestContext.Current.CancellationToken);
+
+        viewModel.ApplyInstallations(
+            installations
+                .Select(installation => new InstalledGameView(
+                    installation.GameId,
+                    installation.InstalledVersion,
+                    installation.ValidationState))
+                .ToArray());
+    }
+
+    /// <summary>
+    /// Builds a snapshot with the videogames that the surface is showing.
+    /// </summary>
+    /// <param name="viewModel">View model of the surface.</param>
+    /// <param name="catalogVersion">Version of the catalog of the snapshot.</param>
+    /// <returns>The snapshot of the catalog.</returns>
+    private static CatalogSnapshot CreateSnapshotFrom(
+        CatalogSurfaceViewModel viewModel,
+        long catalogVersion) =>
+        new(catalogVersion, viewModel.Games.ToArray(), []);
+
+    /// <summary>
+    /// Reads the version of the catalog that the real server publishes (AC3, AR-5).
+    /// </summary>
+    /// <param name="host">Host of the event server.</param>
+    /// <returns>The version of the catalog of the server.</returns>
+    private static async Task<long> ReadServerCatalogVersionAsync(TestServer host)
+    {
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(host.DataDirectory, DataDirectory.CatalogDatabaseFileName)};Pooling=False")
+            .Options;
+
+        await using var context = new CatalogDbContext(options);
+
+        var row = await context.CatalogVersions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(row);
+
+        return row!.CatalogVersion;
     }
 
     /// <summary>

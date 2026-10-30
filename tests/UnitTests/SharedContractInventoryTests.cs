@@ -21,6 +21,7 @@ public sealed class SharedContractInventoryTests
         "OperationOutcome",
         "StateDisplayMap",
         "CatalogViewState",
+        "CatalogVersionOrder",
         "ClientStateChanged",
         "DownloadProgressUpdated",
         "InstallationProgressUpdated",
@@ -74,6 +75,7 @@ public sealed class SharedContractInventoryTests
     [InlineData("OperationOutcome")]
     [InlineData("StateDisplayMap")]
     [InlineData("CatalogViewState")]
+    [InlineData("CatalogVersionOrder")]
     [InlineData("ClientStateChanged")]
     [InlineData("DownloadProgressUpdated")]
     [InlineData("InstallationProgressUpdated")]
@@ -102,10 +104,10 @@ public sealed class SharedContractInventoryTests
     }
 
     [Fact]
-    public void Shared_declares_twenty_one_contracts()
+    public void Shared_declares_twenty_two_contracts()
     {
-        Assert.Equal(21, RequiredContractTypes.Length);
-        Assert.Equal(21, PublicTopLevelTypes(SharedAssembly).Count);
+        Assert.Equal(22, RequiredContractTypes.Length);
+        Assert.Equal(22, PublicTopLevelTypes(SharedAssembly).Count);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure.Networking;
@@ -27,6 +28,7 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
     private readonly ClientStateDbContext _context;
     private readonly CatalogHubClient _hubClient;
     private readonly ILogger<CatalogSyncComposition> _logger;
+    private readonly CatalogSnapshotStore _store;
     private readonly Lock _gate = new();
 
     private CatalogSyncState? _lastState;
@@ -89,6 +91,8 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
             store,
             loggerFactory.CreateLogger<CatalogSnapshotApplier>());
 
+        _store = store;
+
         Service = new CatalogSyncService(
             snapshotClient,
             store,
@@ -99,6 +103,32 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
 
     /// <summary>The use case of the synchronization of the catalog.</summary>
     public CatalogSyncService Service { get; }
+
+    /// <summary>
+    /// Reads the installations that the client registered, which the ficha del videojuego
+    /// consumes to derive the badge of the view state (AC3).
+    ///
+    /// <para>
+    /// The reading is LOCAL and it does NOT ask the server: the installations belong to the
+    /// client and the path of the installation never leaves it (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The installations that the client registered.</returns>
+    public async Task<IReadOnlyList<InstalledGameView>> LoadInstallationsAsync(
+        CancellationToken cancellationToken)
+    {
+        var installations = await _store
+            .LoadInstalledGamesAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return installations
+            .Select(installation => new InstalledGameView(
+                installation.GameId,
+                installation.InstalledVersion,
+                installation.ValidationState))
+            .ToArray();
+    }
 
     /// <summary>
     /// Starts the synchronization: it subscribes to the trigger of a change of the catalog

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -22,6 +23,11 @@ namespace LANPartyHub.Client.Presentation.Catalog;
 /// <para>
 /// While there is no card to show the grid shows the SKELETONS of the cards with the real
 /// proportion of the grid, and never a «cargando» spinner (AC6, UX-DR-28).
+/// </para>
+/// <para>
+/// The card is PULSABLE and a click on it ALWAYS means the same thing: it opens the ficha
+/// del videojuego. The card does NOT carry secondary actions, because the click has to
+/// mean always the same (AC1, UX-DR-10, UX-DR-27).
 /// </para>
 /// </summary>
 public sealed class CatalogGrid : UserControl
@@ -113,6 +119,12 @@ public sealed class CatalogGrid : UserControl
             }
         };
     }
+
+    /// <summary>
+    /// Raised when the player presses a card of the grid, which opens the ficha del
+    /// videojuego (AC1, UX-DR-10, UX-DR-27).
+    /// </summary>
+    public event Action<GameDescriptor>? GamePressed;
 
     /// <summary>
     /// Fills the grid with the videogames of the current page (AC5, AC6).
@@ -216,11 +228,16 @@ public sealed class CatalogGrid : UserControl
     /// lines breaks the grid (DESIGN). The cover keeps the proportion of the skeleton, so
     /// the grid does NOT change its shape when the cards arrive (AC6).
     /// </para>
+    /// <para>
+    /// The card is a BUTTON: the click on it always opens the ficha del videojuego and the
+    /// card carries NO secondary action, because the click has to mean always the same
+    /// thing (AC1, UX-DR-10, UX-DR-27).
+    /// </para>
     /// </summary>
     /// <param name="game">Videogame of the card.</param>
     /// <param name="width">Width of the card, in pixels.</param>
     /// <returns>The control of the card.</returns>
-    private static Border BuildCard(GameDescriptor game, double width)
+    private Border BuildCard(GameDescriptor game, double width)
     {
         var coverWidth = width;
 
@@ -232,6 +249,7 @@ public sealed class CatalogGrid : UserControl
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 1,
             FontWeight = FontWeight.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Left,
         };
 
         var meta = new TextBlock
@@ -243,6 +261,7 @@ public sealed class CatalogGrid : UserControl
             MaxLines = 1,
             FontSize = 12,
             Opacity = 0.7,
+            HorizontalAlignment = HorizontalAlignment.Left,
         };
 
         var content = new StackPanel
@@ -272,12 +291,28 @@ public sealed class CatalogGrid : UserControl
             },
         };
 
+        var button = new Button
+        {
+            Width = coverWidth,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = content,
+        };
+
+        // El nombre accesible de la tarjeta es el nombre del juego: el color y el
+        // hover nunca son la única señal (DESIGN).
+        AutomationProperties.SetName(button, game.Name);
+
+        button.Click += (_, _) => GamePressed?.Invoke(game);
+
         return new Border
         {
             Width = coverWidth,
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(0, 0, 0, 8),
-            Child = content,
+            Child = button,
         };
     }
 }
