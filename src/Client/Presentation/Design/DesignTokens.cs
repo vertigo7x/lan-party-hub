@@ -47,6 +47,18 @@ public static class DesignTokens
     /// <summary>Height of the badge of the state, in pixels.</summary>
     public const double StatusBadgeHeight = 20;
 
+    /// <summary>
+    /// Height of the field of text of the interface, in pixels. The height is FIXED so the
+    /// focus does not deform the grid (AC2, UX-DR-9).
+    /// </summary>
+    public const double FieldInputHeight = 36;
+
+    /// <summary>
+    /// Thickness of the border of the focused field, in pixels. The focus does NOT change
+    /// the height of the field: the border grows inside the fixed height (AC2, UX-DR-9).
+    /// </summary>
+    public const double FieldInputFocusBorderThickness = 2;
+
     /// <summary>Radius of the badge of the state, in pixels.</summary>
     public const double StatusBadgeRadius = 9999;
 
@@ -58,6 +70,12 @@ public static class DesignTokens
 
     /// <summary>Blue of the progress: the state «sincronizando» (AC3, DESIGN).</summary>
     public static readonly Color StateProgress = Color.FromRgb(0x5B, 0x8C, 0xFF);
+
+    /// <summary>
+    /// Blue of the action: the primary action and the focus of the focused field (AC2,
+    /// DESIGN).
+    /// </summary>
+    public static readonly Color AccentAction = Color.FromRgb(0x5B, 0x8C, 0xFF);
 
     /// <summary>Green of the LAN: the state «disponible» (AC3, DESIGN).</summary>
     public static readonly Color StateSuccess = Color.FromRgb(0x4D, 0xD8, 0xA4);

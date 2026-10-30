@@ -25,6 +25,7 @@ public sealed class App : Avalonia.Application
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
+    private ConnectionSurfaceViewModel? _connectionViewModel;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -79,9 +80,15 @@ public sealed class App : Avalonia.Application
 
             // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
             // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
-            // manualmente» (AC3, UX-DR-30).
+            // manualmente» (AC3, UX-DR-30). La vía manual es PERMANENTE y equivalente: el
+            // campo de la dirección vive en la superficie en todos los estados y «Enter»
+            // confirma la conexión (AC1, AC2).
             var connectionViewModel = new ConnectionSurfaceViewModel();
-            var connectionSurface = new ConnectionSurface(connectionViewModel);
+            _connectionViewModel = connectionViewModel;
+
+            var connectionSurface = new ConnectionSurface(
+                connectionViewModel,
+                ConnectManuallyAsync);
 
             // El descubrimiento NO bloquea el arranque: la superficie se abre de inmediato
             // y el resultado llega cuando la búsqueda termina (AC1, AC3).
@@ -170,6 +177,40 @@ public sealed class App : Avalonia.Application
         {
             // La búsqueda no puede impedir que el jugador use la vía manual (AC4).
             viewModel.ApplyDiscovery(DiscoveryResult.Blocked());
+        }
+    }
+
+    /// <summary>
+    /// Connects with the server of the event at the address that the player typed and hands
+    /// the result to the surface of the connection (AC1, AC3).
+    ///
+    /// <para>
+    /// The connection NEVER kills the client: an address that does not answer ends the
+    /// attempt as disconnected and the surface shows the three part message of the error
+    /// (AC3, UX-DR-36).
+    /// </para>
+    /// </summary>
+    /// <param name="address">Text of the address, in the form <c>host:puerto</c>.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the connection has been attempted.</returns>
+    private async Task ConnectManuallyAsync(string? address, CancellationToken cancellationToken)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var attempt = await _connection.ConnectionService
+                .ConnectAsync(address, cancellationToken)
+                .ConfigureAwait(true);
+
+            _connectionViewModel?.ApplyConnection(attempt);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La conexión no puede impedir que el jugador vuelva a intentarlo (AC3).
         }
     }
 

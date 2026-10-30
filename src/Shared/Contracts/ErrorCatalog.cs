@@ -198,6 +198,12 @@ public static class ErrorCatalog
     /// </summary>
     public const string PackageBodyMalformedCode = "PACKAGE_BODY_MALFORMED";
 
+    /// <summary>
+    /// The address of the event server typed by the player does not have the shape
+    /// <c>host:puerto</c> that the manual way of connecting expects (AC3, AD-3).
+    /// </summary>
+    public const string ServerAddressInvalidCode = "SERVER_ADDRESS_INVALID";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -395,6 +401,11 @@ public static class ErrorCatalog
             "El cuerpo de la publicación no se puede leer",
             "El cuerpo de la petición no es un JSON válido o alguno de sus campos no tiene la forma que el contrato declara.",
             "Revisa el JSON del cuerpo de la publicación y los campos que el contrato declara, y vuelve a intentarlo."),
+        new(
+            ServerAddressInvalidCode,
+            "La dirección del servidor no es válida",
+            "El valor escrito no tiene la forma 'host:puerto' con un puerto entre 1 y 65535.",
+            "Escribe la dirección del servidor con su puerto, por ejemplo '192.168.1.20:5177', y vuelve a intentarlo."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",
