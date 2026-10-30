@@ -97,6 +97,11 @@ def changed_paths(base: str) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def implementation_paths(paths: Sequence[str]) -> list[str]:
+    """Exclude Build Lite bookkeeping when deciding whether work can be resumed."""
+    return [path for path in paths if not path.replace("\\", "/").startswith(".build-lite/")]
+
+
 def classify_risk(paths: Sequence[str]) -> Risk:
     reasons: list[str] = []
     for path in paths:
@@ -277,7 +282,10 @@ def process_story(story, args: argparse.Namespace) -> None:
     if not is_complete_plan(plan):
         raise legacy.DriverError(f"planner did not create {relative(plan)}")
 
-    run_phase("implementation", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir, timeout_minutes=30)
+    if implementation_paths(changed_paths(base)):
+        log("reusing preserved implementation work; proceeding to verification")
+    else:
+        run_phase("implementation", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir, timeout_minutes=30)
     commit_story(story)
     repair_used = verify_or_repair(story, log_dir)
     commit_story(story)
@@ -375,6 +383,10 @@ def self_test() -> int:
     if not is_complete_plan(self_test_plan):
         failures.append("a complete plan was rejected")
     self_test_plan.unlink(missing_ok=True)
+    if implementation_paths([".build-lite/plans/3-1.md"]):
+        failures.append("Build Lite bookkeeping was parsed as implementation work")
+    if implementation_paths([".build-lite/plans/3-1.md", "src/Server/Program.cs"]) != ["src/Server/Program.cs"]:
+        failures.append("preserved implementation work was not detected")
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")
