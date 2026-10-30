@@ -60,3 +60,7 @@ uv run tools/build-lite.py --self-test # comprueba el driver y sale
 - Las puertas antes de fusionar son verificaciones en verde, una reparación dirigida como máximo y, para cambios sensibles, ningún S0/S1 confirmado abierto. El bucle se detiene en la primera que falle.
 - La revisión humana previa a la fusión se sustituye por verificaciones deterministas y una revisión focalizada proporcional al riesgo. `main` sigue entrando solo por squash de un PR, nunca por push directo.
 - Procedimiento, puertas, motivos de parada y cómo reanudarlo: `docs/unattended-loop.md`. El bloque `bmad:context` de este fichero se regenera en cada refresco.
+
+## Excepción para workers de Build Lite
+
+Cuando un prompt empieza exactamente con `BUILD_LITE_WORKER:`, es una fase ya acotada y autorizada por `tools/build-lite.py`. **No cargues ningún skill, incluido `bmad-build`**: ejecuta solo el encargo del prompt usando las herramientas de repositorio necesarias, sin crear specs, replanificar ni iniciar otro workflow. Esta excepción solo evita la recursión dentro del worker; el proceso padre conserva sus puertas de plan, verificación, PR y merge.
