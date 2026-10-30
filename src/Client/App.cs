@@ -3,9 +3,11 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
+using LANPartyHub.Client.Presentation.Connection;
 
 namespace LANPartyHub.Client;
 
@@ -22,6 +24,7 @@ public sealed class App : Avalonia.Application
     private readonly ClientSettings? _settings;
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
+    private readonly ConnectionComposition? _connection;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -36,11 +39,20 @@ public sealed class App : Avalonia.Application
     /// Composition of the synchronization of the catalog, or <c>null</c> when the client
     /// was not able to open it.
     /// </param>
-    public App(ClientSettings? settings, string? startupError, CatalogSyncComposition? catalogSync = null)
+    /// <param name="connection">
+    /// Composition of the discovery of the event server, or <c>null</c> when the client was
+    /// not able to open it.
+    /// </param>
+    public App(
+        ClientSettings? settings,
+        string? startupError,
+        CatalogSyncComposition? catalogSync = null,
+        ConnectionComposition? connection = null)
     {
         _settings = settings;
         _startupError = startupError;
         _catalogSync = catalogSync;
+        _connection = connection;
     }
 
     /// <inheritdoc />
@@ -65,11 +77,21 @@ public sealed class App : Avalonia.Application
             // publica (AC3, AD-26).
             _ = LoadInstallationsAsync(catalogSurface);
 
+            // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
+            // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
+            // manualmente» (AC3, UX-DR-30).
+            var connectionViewModel = new ConnectionSurfaceViewModel();
+            var connectionSurface = new ConnectionSurface(connectionViewModel);
+
+            // El descubrimiento NO bloquea el arranque: la superficie se abre de inmediato
+            // y el resultado llega cuando la búsqueda termina (AC1, AC3).
+            _ = DiscoverServersAsync(connectionViewModel);
+
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
             // goes to the log.
             var window = _startupError is null
-                ? (Window)new MainWindow(_settings, SynchronizeNowAsync, catalogSurface)
+                ? (Window)new MainWindow(_settings, SynchronizeNowAsync, catalogSurface, connectionSurface)
                 : new StartupErrorWindow(_startupError);
 
             desktop.MainWindow = window;
@@ -111,6 +133,43 @@ public sealed class App : Avalonia.Application
             // La lectura de las instalaciones es LOCAL y su fallo NO puede impedir que el
             // jugador abra el catálogo: la ficha se abre y la insignia sale del estado que
             // el servidor publica (AC3, AD-26).
+        }
+    }
+
+    /// <summary>
+    /// Searches the servers of the event and hands them to the surface of the connection
+    /// (AC1, AC3, AC4).
+    ///
+    /// <para>
+    /// The search NEVER kills the client: a network that blocks the discovery ends the
+    /// search as blocked and the manual address stays operative (AC4, AD-3).
+    /// </para>
+    /// </summary>
+    /// <param name="viewModel">View model of the surface of the connection.</param>
+    /// <returns>A task that completes when the search has been attempted.</returns>
+    private async Task DiscoverServersAsync(ConnectionSurfaceViewModel viewModel)
+    {
+        if (_connection is null)
+        {
+            // Sin composición de descubrimiento la superficie se queda en su estado vacío,
+            // que ofrece la dirección manual (AC3, AC4).
+            viewModel.ApplyDiscovery(DiscoveryResult.Empty());
+
+            return;
+        }
+
+        try
+        {
+            var result = await _connection.Service
+                .DiscoverAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+
+            viewModel.ApplyDiscovery(result);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La búsqueda no puede impedir que el jugador use la vía manual (AC4).
+            viewModel.ApplyDiscovery(DiscoveryResult.Blocked());
         }
     }
 

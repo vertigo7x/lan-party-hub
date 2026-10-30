@@ -5,6 +5,7 @@ using Avalonia.Media;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Presentation.Catalog;
+using LANPartyHub.Client.Presentation.Connection;
 
 namespace LANPartyHub.Client.Presentation;
 
@@ -41,10 +42,15 @@ public sealed class MainWindow : Window
     /// Surface of the catalog of the player, or <c>null</c> when the window is built
     /// without it.
     /// </param>
+    /// <param name="connectionSurface">
+    /// Surface of the connection of the player, or <c>null</c> when the window is built
+    /// without it.
+    /// </param>
     public MainWindow(
         ClientSettings? settings = null,
         Func<Task>? onSynchronizeNow = null,
-        CatalogSurface? catalogSurface = null)
+        CatalogSurface? catalogSurface = null,
+        ConnectionSurface? connectionSurface = null)
     {
         Title = "LAN Party Hub";
         Width = 1280;
@@ -124,6 +130,14 @@ public sealed class MainWindow : Window
         if (catalogSurface is not null)
         {
             layout.Children.Add(catalogSurface);
+        }
+
+        // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
+        // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
+        // manualmente» (AC3, UX-DR-30).
+        if (connectionSurface is not null)
+        {
+            layout.Children.Add(connectionSurface);
         }
 
         Content = layout;

@@ -37,6 +37,7 @@ public static class Program
         ILoggerFactory? loggerFactory = null;
         IClientCorrelationScope? correlationScope = null;
         CatalogSyncComposition? catalogSync = null;
+        ConnectionComposition? connection = null;
 
         try
         {
@@ -59,7 +60,13 @@ public static class Program
             // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
             catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory);
 
-            BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync)
+            // AD-3: la composición del descubrimiento vive mientras vive la ventana del
+            // jugador, porque la superficie de Conexión consume su resultado. Un fallo al
+            // abrirla NO impide que el cliente arranque: la vía manual sigue operativa
+            // (AC4).
+            connection = OpenConnection(loggerFactory);
+
+            BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
                 .StartWithClassicDesktopLifetime(args);
 
             return 0;
@@ -86,17 +93,21 @@ public static class Program
         }
     }
 
-/// <summary>Builds the Avalonia application builder of the client.</summary>
-/// <param name="settings">Settings of the client, or <c>null</c> when there are none.</param>
-/// <param name="startupError">Message of a failure of the startup, or <c>null</c> when the startup succeeded.</param>
-/// <param name="catalogSync">
-/// Composition of the synchronization of the catalog, or <c>null</c> when there is none.
-/// </param>
+    /// <summary>Builds the Avalonia application builder of the client.</summary>
+    /// <param name="settings">Settings of the client, or <c>null</c> when there are none.</param>
+    /// <param name="startupError">Message of a failure of the startup, or <c>null</c> when the startup succeeded.</param>
+    /// <param name="catalogSync">
+    /// Composition of the synchronization of the catalog, or <c>null</c> when there is none.
+    /// </param>
+    /// <param name="connection">
+    /// Composition of the discovery of the event server, or <c>null</c> when there is none.
+    /// </param>
     public static AppBuilder BuildAvaloniaApp(
         ClientSettings? settings = null,
         string? startupError = null,
-        CatalogSyncComposition? catalogSync = null) =>
-        AppBuilder.Configure(() => new App(settings, startupError, catalogSync)).UsePlatformDetect();
+        CatalogSyncComposition? catalogSync = null,
+        ConnectionComposition? connection = null) =>
+        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -323,6 +334,43 @@ public static class Program
                     "No se pudo abrir la sincronización del catálogo: el cliente sigue arrancando sin ella.");
 
             composition?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            composition = null;
+        }
+
+        return composition;
+    }
+
+    /// <summary>
+    /// Opens the composition of the discovery of the event server (AD-3, AC4).
+    ///
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arranque: el descubrimiento
+    /// automático es una de las dos vías de conexión y la dirección manual es la otra, que
+    /// sigue operativa siempre (AC4, AD-3).
+    /// </para>
+    /// </summary>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static ConnectionComposition? OpenConnection(ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        ConnectionComposition? composition = null;
+
+        try
+        {
+            composition = new ConnectionComposition(loggerFactory);
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede descubrir servidores, pero sigue siendo un cliente que
+            // arranca: la dirección manual es la vía permanente y equivalente (AC4, AD-3).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.Connection")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir el descubrimiento por mDNS: el cliente sigue arrancando con la dirección manual.");
 
             composition = null;
         }
