@@ -5,6 +5,7 @@ using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
+using LANPartyHub.Client.Presentation.Catalog;
 
 namespace LANPartyHub.Client;
 
@@ -50,11 +51,18 @@ public sealed class App : Avalonia.Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // La superficie del catálogo filtra sobre el snapshot que el cliente ya
+            // sincronizó, así que se construye con su propio view model y se enlaza al
+            // estado de la sincronización (AC1, AC2, AC3).
+            var catalogSurface = new CatalogSurface(
+                new CatalogSurfaceViewModel(),
+                () => _ = SynchronizeNowAsync());
+
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
             // goes to the log.
             var window = _startupError is null
-                ? (Window)new MainWindow(_settings, SynchronizeNowAsync)
+                ? (Window)new MainWindow(_settings, SynchronizeNowAsync, catalogSurface)
                 : new StartupErrorWindow(_startupError);
 
             desktop.MainWindow = window;

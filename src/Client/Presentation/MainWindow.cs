@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Presentation.Catalog;
 
 namespace LANPartyHub.Client.Presentation;
 
@@ -24,6 +25,7 @@ namespace LANPartyHub.Client.Presentation;
 public sealed class MainWindow : Window
 {
     private readonly CatalogSyncBanner? _banner;
+    private readonly CatalogSurface? _catalogSurface;
 
     /// <summary>
     /// Creates the main window of the client.
@@ -35,11 +37,18 @@ public sealed class MainWindow : Window
     /// Action that the player triggers with «Sincronizar ahora», or <c>null</c> when the
     /// window is built without the synchronization of the catalog.
     /// </param>
-    public MainWindow(ClientSettings? settings = null, Func<Task>? onSynchronizeNow = null)
+    /// <param name="catalogSurface">
+    /// Surface of the catalog of the player, or <c>null</c> when the window is built
+    /// without it.
+    /// </param>
+    public MainWindow(
+        ClientSettings? settings = null,
+        Func<Task>? onSynchronizeNow = null,
+        CatalogSurface? catalogSurface = null)
     {
         Title = "LAN Party Hub";
-        Width = 640;
-        Height = 360;
+        Width = 1280;
+        Height = 800;
 
         var installDirectory = new TextBox
         {
@@ -85,6 +94,8 @@ public sealed class MainWindow : Window
 
         _banner = banner;
 
+        _catalogSurface = catalogSurface;
+
         var content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -108,6 +119,13 @@ public sealed class MainWindow : Window
 
         layout.Children.Add(content);
 
+        // La superficie del catálogo vive DEBAJO del aviso de sincronización: el aviso no
+        // bloquea la navegación y la superficie del catálogo tampoco (AC3, UX-DR-32).
+        if (catalogSurface is not null)
+        {
+            layout.Children.Add(catalogSurface);
+        }
+
         Content = layout;
     }
 
@@ -123,6 +141,10 @@ public sealed class MainWindow : Window
     public void ShowSyncState(CatalogSyncState state)
     {
         ArgumentNullException.ThrowIfNull(state);
+
+        // La superficie del catálogo filtra sobre el snapshot que el cliente aplicó, así
+        // que recibe el estado de la sincronización aunque el aviso no exista (AC3).
+        _catalogSurface?.ApplySyncState(state);
 
         if (_banner is null)
         {
