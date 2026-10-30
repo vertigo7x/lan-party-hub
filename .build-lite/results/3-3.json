@@ -1,0 +1,29 @@
+{
+  "story": "3-3-ficha-del-videojuego-con-su-estado-de-vista",
+  "base": "4d50350f6decc8c548a0149da7378de448df80df",
+  "risk": [
+    "red o host",
+    "contrato compartido"
+  ],
+  "paths": [
+    ".build-lite/plans/3-3.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Catalog/CatalogViewStateResolver.cs",
+    "src/Client/Application/CatalogSync/CatalogSyncService.cs",
+    "src/Client/Host/CatalogSyncComposition.cs",
+    "src/Client/Presentation/Catalog/CatalogGrid.cs",
+    "src/Client/Presentation/Catalog/CatalogSurface.cs",
+    "src/Client/Presentation/Catalog/CatalogSurfaceViewModel.cs",
+    "src/Client/Presentation/Catalog/GameDetailView.cs",
+    "src/Client/Presentation/Catalog/GameDetailViewModel.cs",
+    "src/Client/Presentation/Design/DesignTokens.cs",
+    "src/Client/Presentation/Formatting/SizeFormatter.cs",
+    "src/Shared/Contracts/CatalogVersionOrder.cs",
+    "tests/IntegrationTests/CatalogSurfaceTests.cs",
+    "tests/UnitTests/CatalogSurfaceTests.cs",
+    "tests/UnitTests/CatalogVersionOrderTests.cs",
+    "tests/UnitTests/CatalogViewStateResolverTests.cs",
+    "tests/UnitTests/GameDetailViewModelTests.cs",
+    "tests/UnitTests/SharedContractInventoryTests.cs"
+  ]
+}
