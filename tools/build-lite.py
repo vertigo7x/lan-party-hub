@@ -34,6 +34,7 @@ PLAN_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash"
 IMPLEMENT_MODEL = "minimax-coding-plan/MiniMax-M3"
 REVIEW_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash"
 PHASE_MAX_ATTEMPTS = 2
+IMPLEMENTATION_MAX_ATTEMPTS = 1
 
 
 def load_legacy():
@@ -285,7 +286,14 @@ def process_story(story, args: argparse.Namespace) -> None:
     if implementation_paths(changed_paths(base)):
         log("reusing preserved implementation work; proceeding to verification")
     else:
-        run_phase("implementation", IMPLEMENT_MODEL, implementation_prompt(story, plan), log_dir, timeout_minutes=30)
+        run_phase(
+            "implementation",
+            IMPLEMENT_MODEL,
+            implementation_prompt(story, plan),
+            log_dir,
+            timeout_minutes=30,
+            retries=IMPLEMENTATION_MAX_ATTEMPTS,
+        )
     commit_story(story)
     repair_used = verify_or_repair(story, log_dir)
     commit_story(story)
@@ -369,6 +377,8 @@ def self_test() -> int:
         failures.append("phase command is missing the Build Lite worker marker")
     if PHASE_MAX_ATTEMPTS != 2:
         failures.append("phase retry budget is not fixed at two technical attempts")
+    if IMPLEMENTATION_MAX_ATTEMPTS != 1:
+        failures.append("implementation retry budget is not fixed at one attempt")
     if blocking_review_line("OK\n"):
         failures.append("an OK review was parsed as blocking")
     if not blocking_review_line("note\nBLOCKING: an S1 is proven\n"):
