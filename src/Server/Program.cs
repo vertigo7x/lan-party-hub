@@ -6,6 +6,7 @@ using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
 using LANPartyHub.Server.Infrastructure.Logging;
 using LANPartyHub.Server.Infrastructure.Networking;
+using LANPartyHub.Server.Infrastructure.Notifications;
 using LANPartyHub.Server.Infrastructure.Persistence;
 using LANPartyHub.Server.Infrastructure.Signing;
 using LANPartyHub.Server.Presentation;
@@ -200,6 +201,13 @@ public partial class Program
         builder.Services.AddScoped<ModifyGame>();
         builder.Services.AddScoped<ListGames>();
 
+        // AD-5, AD-26: la sincronización del catálogo. El snapshot completo se lee por
+        // REST y el trigger de la resincronización viaja por el hub; el módulo depende
+        // del port del repositorio y del port de la notificación, nunca de sus
+        // adaptadores (AD-1).
+        builder.Services.AddScoped<ICatalogSnapshotRepository, CatalogSnapshotRepository>();
+        builder.Services.AddScoped<GetCatalogSnapshot>();
+
         // AD-1, AD-2, AD-7: the module of the distribution of packages of the server. The
         // signature is Ed25519 over the canonical form of the manifest, and the adapter
         // that holds the key is the only one that knows the cryptography: the use case
@@ -210,6 +218,13 @@ public partial class Program
         builder.Services.AddScoped<PublishPackage>();
         builder.Services.AddScoped<ListPackages>();
         builder.Services.AddScoped<WithdrawGame>();
+
+        // AD-5, AD-26: el hub del estado del cliente es el ÚNICO canal de push del
+        // servidor al cliente. El trigger de la resincronización del catálogo es el
+        // único evento servidor a cliente que viaja por él en esta historia, y lleva
+        // solo la versión del catálogo (AD-29).
+        builder.Services.AddSignalR();
+        builder.Services.AddScoped<ICatalogChangeNotifier, CatalogChangeNotifier>();
 
         var app = builder.Build();
 
@@ -267,6 +282,13 @@ public partial class Program
 
         // AD-5, AD-7: the administration of the publication of the packages.
         PackagesEndpoint.Map(app);
+
+        // AD-5, AD-26: la superficie del cliente que publica el snapshot completo del
+        // catálogo, y el hub del estado del cliente, que es el canal de push del servidor
+        // al cliente.
+        CatalogEndpoint.Map(app);
+
+        app.MapHub<CatalogHub>(CatalogHub.Route);
 
         return app;
     }

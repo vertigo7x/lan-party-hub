@@ -25,6 +25,7 @@ public sealed class ClientStartupTests : IDisposable
         "CLIENT_INSTALLATION",
         "DOWNLOAD_OPERATION",
         "DOWNLOAD_PROGRESS",
+        "CATALOG_SNAPSHOT",
     ];
 
     private static readonly string[] ServerTables =
@@ -71,7 +72,7 @@ public sealed class ClientStartupTests : IDisposable
     }
 
     [Fact]
-    public async Task The_startup_creates_the_four_tables_of_the_erd_of_the_client()
+    public async Task The_startup_creates_the_five_tables_of_the_erd_of_the_client()
     {
         var dataFolder = CreateTemporaryDataFolder();
 
@@ -94,6 +95,7 @@ public sealed class ClientStartupTests : IDisposable
         "gameId,installedVersion,validationState,installPath,installDirectoryId")]
     [InlineData("DOWNLOAD_OPERATION", "operationId,packageId,state,transferEngine")]
     [InlineData("DOWNLOAD_PROGRESS", "operationId,bytesPersisted,totalBytes")]
+    [InlineData("CATALOG_SNAPSHOT", "id,catalogVersion,synchronizedAt,payload")]
     public async Task The_columns_of_the_table_keep_the_name_and_the_order_of_the_erd(
         string table,
         string expectedColumns)
@@ -147,13 +149,22 @@ public sealed class ClientStartupTests : IDisposable
         var dataFolder = CreateTemporaryDataFolder();
 
         await StartClientAsync(dataFolder);
+
+        var afterFirstStartup = ReadNames(
+            DatabasePath(dataFolder),
+            "SELECT MigrationId FROM __EFMigrationsHistory");
+
         await StartClientAsync(dataFolder);
 
         var appliedMigrations = ReadNames(
             DatabasePath(dataFolder),
             "SELECT MigrationId FROM __EFMigrationsHistory");
 
-        Assert.Single(appliedMigrations);
+        // El segundo arranque NO aplica ninguna migración nueva: la historia de las
+        // migraciones es la misma después del segundo arranque que después del primero
+        // (AD-11).
+        Assert.NotEmpty(afterFirstStartup);
+        Assert.Equal(afterFirstStartup, appliedMigrations);
     }
 
     [Fact]

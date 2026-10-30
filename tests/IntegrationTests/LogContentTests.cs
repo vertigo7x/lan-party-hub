@@ -74,6 +74,11 @@ public sealed class LogContentTests : IDisposable
         "Reason",
         "PersistedOffset",
         "EffectiveOffset",
+        "CatalogVersion",
+        "Games",
+        "Packages",
+        "WithdrawnOperations",
+        "WithdrawnInstallations",
     ];
 
     /// <summary>

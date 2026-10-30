@@ -26,6 +26,7 @@ public sealed class SharedContractInventoryTests
         "InstallationProgressUpdated",
         "ClientErrorReported",
         "CatalogChanged",
+        "CatalogSnapshot",
         "ClientRegistrationView",
         "TrustAnchor",
         "PackageDescriptor",
@@ -78,6 +79,7 @@ public sealed class SharedContractInventoryTests
     [InlineData("InstallationProgressUpdated")]
     [InlineData("ClientErrorReported")]
     [InlineData("CatalogChanged")]
+    [InlineData("CatalogSnapshot")]
     [InlineData("ClientRegistrationView")]
     [InlineData("TrustAnchor")]
     [InlineData("PackageDescriptor")]
@@ -100,10 +102,10 @@ public sealed class SharedContractInventoryTests
     }
 
     [Fact]
-    public void Shared_declares_twenty_contracts()
+    public void Shared_declares_twenty_one_contracts()
     {
-        Assert.Equal(20, RequiredContractTypes.Length);
-        Assert.Equal(20, PublicTopLevelTypes(SharedAssembly).Count);
+        Assert.Equal(21, RequiredContractTypes.Length);
+        Assert.Equal(21, PublicTopLevelTypes(SharedAssembly).Count);
     }
 
     [Fact]

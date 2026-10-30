@@ -282,8 +282,51 @@ public sealed class CatalogWithdrawalTests
     }
 
     /// <summary>
-    /// Withdraws a videogame through the REAL use case, resolved from the container of
-    /// the host (AD-1).
+    /// The withdrawn videogame leaves the snapshot without deleting any row: the mark of
+    /// the withdrawal lives in the package, so the snapshot keeps only the videogames that
+    /// have a package that is not withdrawn (AC5, AD-26, AD-34).
+    /// </summary>
+    [Fact]
+    public async Task The_withdrawn_videogame_leaves_the_snapshot_without_deleting_its_rows()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        var gameId = await RegisterGameAsync(client);
+        await PublishPackageAsync(client, dataDirectory, gameId);
+
+        await using (var scope = host.Application.Services.CreateAsyncScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<ICatalogSnapshotRepository>();
+
+            var before = await repository.ReadSnapshotAsync(TestContext.Current.CancellationToken);
+
+            Assert.Contains(before.Games, game => game.GameId == gameId);
+        }
+
+        await WithdrawAsync(host, gameId);
+
+        await using (var scope = host.Application.Services.CreateAsyncScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<ICatalogSnapshotRepository>();
+
+            var after = await repository.ReadSnapshotAsync(TestContext.Current.CancellationToken);
+
+            // El juego retirado sale del snapshot, pero su fila sobrevive (AC5, AD-26).
+            Assert.DoesNotContain(after.Games, game => game.GameId == gameId);
+            Assert.Empty(after.Packages);
+        }
+
+        Assert.Equal(1, ReadRowCount(dataDirectory, "GAME"));
+        Assert.Equal(1, ReadRowCount(dataDirectory, "PACKAGE_DESCRIPTOR"));
+    }
+
+    /// <summary>
+    /// Withdraws a videogame through the REAL use case, resolved from the container of the
+    /// host (AD-1).
     /// </summary>
     /// <param name="host">The real host.</param>
     /// <param name="gameId">Identifier of the videogame to withdraw.</param>

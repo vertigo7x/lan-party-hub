@@ -33,6 +33,13 @@ public sealed class ServerCorrelationTests
     /// </summary>
     private const string RegisterGameCategory = "LANPartyHub.Server.Application.Catalog.RegisterGame";
 
+    /// <summary>
+    /// Category of the log of the middleware of the correlation. The entry of the
+    /// middleware is observed by this category and not by the one of the use case that
+    /// serves the request, because both live in the same scope of correlation (AD-15).
+    /// </summary>
+    private const string CorrelationMiddlewareCategory = "LANPartyHub.Server.Infrastructure.Http.CorrelationMiddleware";
+
     [Fact]
     public async Task A_request_with_the_two_headers_is_correlated_and_its_log_entry_carries_them()
     {
@@ -59,7 +66,9 @@ public sealed class ServerCorrelationTests
 
         var entry = Assert.Single(
             capture.Entries,
-            candidate => LogEntries.IsProduct(candidate) && LogEntries.HasScope(candidate, OperationId, ClientId));
+            candidate => LogEntries.IsProduct(candidate)
+                && LogEntries.HasCategory(candidate, CorrelationMiddlewareCategory)
+                && LogEntries.HasScope(candidate, OperationId, ClientId));
 
         var scope = LogEntries.CorrelationScope(entry, ClientId);
 
@@ -218,7 +227,9 @@ public sealed class ServerCorrelationTests
 
         var entry = Assert.Single(
             capture.Entries,
-            candidate => LogEntries.IsProduct(candidate) && LogEntries.HasScope(candidate, null, ClientId));
+            candidate => LogEntries.IsProduct(candidate)
+                && LogEntries.HasCategory(candidate, CorrelationMiddlewareCategory)
+                && LogEntries.HasScope(candidate, null, ClientId));
 
         var scope = LogEntries.CorrelationScope(entry, ClientId);
 

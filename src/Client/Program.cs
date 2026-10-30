@@ -36,6 +36,7 @@ public static class Program
     {
         ILoggerFactory? loggerFactory = null;
         IClientCorrelationScope? correlationScope = null;
+        CatalogSyncComposition? catalogSync = null;
 
         try
         {
@@ -52,7 +53,14 @@ public static class Program
 
             var startup = StartClientAsync(args, correlationScope, loggerFactory).GetAwaiter().GetResult();
 
-            BuildAvaloniaApp(startup.Settings).StartWithClassicDesktopLifetime(args);
+            // AD-5, AD-26: la composición de la sincronización del catálogo vive mientras
+            // vive la ventana del jugador, porque la sincronización tiene que reaccionar al
+            // disparo del hub mientras el cliente corre. Se abre DESPUÉS del startup, que
+            // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
+            catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory);
+
+            BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync)
+                .StartWithClassicDesktopLifetime(args);
 
             return 0;
         }
@@ -72,16 +80,23 @@ public static class Program
         }
         finally
         {
+            catalogSync?.DisposeAsync().AsTask().GetAwaiter().GetResult();
             correlationScope?.Dispose();
             loggerFactory?.Dispose();
         }
     }
 
-    /// <summary>Builds the Avalonia application builder of the client.</summary>
-    /// <param name="settings">Settings of the client, or <c>null</c> when there are none.</param>
-    /// <param name="startupError">Message of a failure of the startup, or <c>null</c> when the startup succeeded.</param>
-    public static AppBuilder BuildAvaloniaApp(ClientSettings? settings = null, string? startupError = null) =>
-        AppBuilder.Configure(() => new App(settings, startupError)).UsePlatformDetect();
+/// <summary>Builds the Avalonia application builder of the client.</summary>
+/// <param name="settings">Settings of the client, or <c>null</c> when there are none.</param>
+/// <param name="startupError">Message of a failure of the startup, or <c>null</c> when the startup succeeded.</param>
+/// <param name="catalogSync">
+/// Composition of the synchronization of the catalog, or <c>null</c> when there is none.
+/// </param>
+    public static AppBuilder BuildAvaloniaApp(
+        ClientSettings? settings = null,
+        string? startupError = null,
+        CatalogSyncComposition? catalogSync = null) =>
+        AppBuilder.Configure(() => new App(settings, startupError, catalogSync)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -250,6 +265,69 @@ public static class Program
                 $"El cliente no pudo arrancar: {exception.Message}",
                 exception);
         }
+    }
+
+    /// <summary>
+    /// Opens the composition of the synchronization of the catalog (AD-5, AD-26).
+    ///
+    /// <para>
+    /// The composition is opened only when the client knows the address of the event
+    /// server: sin servidor no hay catálogo que sincronizar, y el cliente conserva el
+    /// último catálogo que aplicó (AC3).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arranque: la ventana se
+    /// abre sin el aviso del catálogo, porque la sincronización es un complemento del
+    /// cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static CatalogSyncComposition? OpenCatalogSync(
+        ClientStartupResult startup,
+        IClientCorrelationScope correlationScope,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(correlationScope);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (string.IsNullOrWhiteSpace(startup.ServerAddress))
+        {
+            return null;
+        }
+
+        CatalogSyncComposition? composition = null;
+
+        try
+        {
+            composition = new CatalogSyncComposition(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                startup.StateDatabasePath,
+                correlationScope,
+                loggerFactory);
+
+            composition.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede sincronizar el catálogo, pero sigue siendo un cliente
+            // que arranca: la ventana se abre y el aviso de la sincronización pendiente
+            // aparece cuando la sincronización se intente de nuevo (AC3).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.CatalogSync")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir la sincronización del catálogo: el cliente sigue arrancando sin ella.");
+
+            composition?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            composition = null;
+        }
+
+        return composition;
     }
 
     /// <summary>

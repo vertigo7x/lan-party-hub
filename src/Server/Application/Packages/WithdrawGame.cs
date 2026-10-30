@@ -30,12 +30,14 @@ public sealed class WithdrawGame
 {
     private readonly IGameRepository _gameRepository;
     private readonly IPackageRepository _packageRepository;
+    private readonly ICatalogChangeNotifier _catalogChangeNotifier;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<WithdrawGame> _logger;
 
     /// <summary>Creates the use case of the withdrawal of a videogame.</summary>
     /// <param name="gameRepository">Port of the repository of the videogames.</param>
     /// <param name="packageRepository">Port of the repository of the published packages.</param>
+    /// <param name="catalogChangeNotifier">Port of the notification of a change of the catalog.</param>
     /// <param name="logger">Log of the use case.</param>
     /// <param name="timeProvider">
     /// Source of the instant of the withdrawal. It defaults to the real one and it exists
@@ -44,15 +46,18 @@ public sealed class WithdrawGame
     public WithdrawGame(
         IGameRepository gameRepository,
         IPackageRepository packageRepository,
+        ICatalogChangeNotifier catalogChangeNotifier,
         ILogger<WithdrawGame> logger,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(gameRepository);
         ArgumentNullException.ThrowIfNull(packageRepository);
+        ArgumentNullException.ThrowIfNull(catalogChangeNotifier);
         ArgumentNullException.ThrowIfNull(logger);
 
         _gameRepository = gameRepository;
         _packageRepository = packageRepository;
+        _catalogChangeNotifier = catalogChangeNotifier;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
     }
@@ -88,6 +93,14 @@ public sealed class WithdrawGame
 
         var result = await _packageRepository
             .WithdrawGameAsync(gameId, withdrawnAt, cancellationToken)
+            .ConfigureAwait(false);
+
+        // La marca ya está confirmada cuando el repositorio termina: la versión del
+        // catálogo creció en la MISMA transacción que la marca (AD-26). El disparo se
+        // emite DESPUÉS del commit, de modo que el cliente que lo recibe y lee el snapshot
+        // encuentra el juego ya retirado del catálogo (AD-5, AD-26).
+        await _catalogChangeNotifier
+            .NotifyAsync(result.CatalogVersion, cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogInformation(

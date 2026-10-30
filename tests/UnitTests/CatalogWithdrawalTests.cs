@@ -112,6 +112,7 @@ public sealed class CatalogWithdrawalTests
         var useCase = new WithdrawGame(
             games,
             packages,
+            new RecordingCatalogChangeNotifier(),
             NullLogger<WithdrawGame>.Instance,
             new FixedTimeProvider());
 
@@ -137,6 +138,7 @@ public sealed class CatalogWithdrawalTests
         var useCase = new WithdrawGame(
             games,
             new RecordingPackageRepository(),
+            new RecordingCatalogChangeNotifier(),
             NullLogger<WithdrawGame>.Instance,
             new FixedTimeProvider());
 
@@ -159,6 +161,7 @@ public sealed class CatalogWithdrawalTests
         var useCase = new WithdrawGame(
             games,
             packages,
+            new RecordingCatalogChangeNotifier(),
             NullLogger<WithdrawGame>.Instance,
             new FixedTimeProvider());
 
@@ -178,6 +181,7 @@ public sealed class CatalogWithdrawalTests
         var useCase = new WithdrawGame(
             new StubGameRepository(holdsGame: true),
             packages,
+            new RecordingCatalogChangeNotifier(),
             NullLogger<WithdrawGame>.Instance,
             new FixedTimeProvider());
 
