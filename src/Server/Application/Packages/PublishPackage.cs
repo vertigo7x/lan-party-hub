@@ -37,6 +37,7 @@ public sealed class PublishPackage
     private readonly IPackageRepository _packageRepository;
     private readonly IPackageContentStore _contentStore;
     private readonly IManifestSigner _signer;
+    private readonly ICatalogChangeNotifier _catalogChangeNotifier;
     private readonly ILogger<PublishPackage> _logger;
 
     /// <summary>Creates the use case of the publication of a package.</summary>
@@ -44,24 +45,28 @@ public sealed class PublishPackage
     /// <param name="packageRepository">Port of the repository of the published packages.</param>
     /// <param name="contentStore">Port of the reading of the bytes of the packages.</param>
     /// <param name="signer">Port of the signature of the installation manifest.</param>
+    /// <param name="catalogChangeNotifier">Port of the notification of a change of the catalog.</param>
     /// <param name="logger">Log of the use case.</param>
     public PublishPackage(
         IGameRepository gameRepository,
         IPackageRepository packageRepository,
         IPackageContentStore contentStore,
         IManifestSigner signer,
+        ICatalogChangeNotifier catalogChangeNotifier,
         ILogger<PublishPackage> logger)
     {
         ArgumentNullException.ThrowIfNull(gameRepository);
         ArgumentNullException.ThrowIfNull(packageRepository);
         ArgumentNullException.ThrowIfNull(contentStore);
         ArgumentNullException.ThrowIfNull(signer);
+        ArgumentNullException.ThrowIfNull(catalogChangeNotifier);
         ArgumentNullException.ThrowIfNull(logger);
 
         _gameRepository = gameRepository;
         _packageRepository = packageRepository;
         _contentStore = contentStore;
         _signer = signer;
+        _catalogChangeNotifier = catalogChangeNotifier;
         _logger = logger;
     }
 
@@ -236,6 +241,18 @@ public sealed class PublishPackage
                     signature,
                     _signer.GetKeyId()),
                 cancellationToken)
+            .ConfigureAwait(false);
+
+        // La escritura ya está confirmada cuando el repositorio termina: la versión del
+        // catálogo creció en la MISMA transacción que la publicación (AD-26). El disparo
+        // se emite DESPUÉS del commit, de modo que el cliente que lo recibe y lee el
+        // snapshot encuentra el cambio que la versión anuncia (AD-5, AD-26).
+        var catalogVersion = await _packageRepository
+            .GetCatalogVersionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        await _catalogChangeNotifier
+            .NotifyAsync(catalogVersion, cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogInformation(

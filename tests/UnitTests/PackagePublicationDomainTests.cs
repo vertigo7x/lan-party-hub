@@ -562,6 +562,7 @@ public sealed class PackagePublicationDomainTests
             repository,
             contentStore,
             signer,
+            new RecordingCatalogChangeNotifier(),
             NullLogger<PublishPackage>.Instance);
 
         var bytes = contentStore.Bytes;

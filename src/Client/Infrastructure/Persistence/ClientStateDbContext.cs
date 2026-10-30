@@ -9,7 +9,7 @@ namespace LANPartyHub.Client.Infrastructure.Persistence;
 ///
 /// <para>
 /// The client owns exactly one SQLite file, <c>state.sqlite</c>, and its schema is the one of
-/// the ERD of the spine: four tables with the exact name and the exact order of their
+/// the ERD of the spine: five tables with the exact name and the exact order of their
 /// columns. The mapping is explicit for every entity, so the schema is not the result of a
 /// convention that could change with the version of EF Core.
 /// </para>
@@ -39,6 +39,9 @@ public sealed class ClientStateDbContext : DbContext
 
     /// <summary>Rows of the <c>DOWNLOAD_PROGRESS</c> table.</summary>
     public DbSet<DownloadProgressEntity> DownloadProgresses => Set<DownloadProgressEntity>();
+
+    /// <summary>Rows of the <c>CATALOG_SNAPSHOT</c> table.</summary>
+    public DbSet<CatalogSnapshotEntity> CatalogSnapshots => Set<CatalogSnapshotEntity>();
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -90,6 +93,17 @@ public sealed class ClientStateDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.OperationId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CatalogSnapshotEntity>(entity =>
+        {
+            entity.ToTable("CATALOG_SNAPSHOT");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("id").IsRequired();
+            entity.Property(e => e.CatalogVersion).HasColumnName("catalogVersion").IsRequired();
+            entity.Property(e => e.SynchronizedAt).HasColumnName("synchronizedAt").IsRequired();
+            entity.Property(e => e.Payload).HasColumnName("payload").IsRequired();
         });
     }
 }

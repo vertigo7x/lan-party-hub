@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Application;
+using LANPartyHub.Client.Application.CatalogSync;
 
 namespace LANPartyHub.Client.Presentation;
 
@@ -14,14 +15,27 @@ namespace LANPartyHub.Client.Presentation;
 /// directory that the rule of extraction confines (AD-9, AC4). The rest of the settings
 /// surface (the connection, the theme and the log of diagnostics) belongs to Epic 11.
 /// </para>
+/// <para>
+/// The window carries the notice of the pending synchronization of the catalog (AC3,
+/// UX-DR-32). The notice is a discreet bar that does NOT block the navigation: the
+/// surfaces of the window stay usable while the catalog is pending.
+/// </para>
 /// </summary>
 public sealed class MainWindow : Window
 {
-    /// <summary>Creates the main window of the client.</summary>
+    private readonly CatalogSyncBanner? _banner;
+
+    /// <summary>
+    /// Creates the main window of the client.
+    /// </summary>
     /// <param name="settings">
     /// Settings of the client, or <c>null</c> when the window is built without them.
     /// </param>
-    public MainWindow(ClientSettings? settings = null)
+    /// <param name="onSynchronizeNow">
+    /// Action that the player triggers with «Sincronizar ahora», or <c>null</c> when the
+    /// window is built without the synchronization of the catalog.
+    /// </param>
+    public MainWindow(ClientSettings? settings = null, Func<Task>? onSynchronizeNow = null)
     {
         Title = "LAN Party Hub";
         Width = 640;
@@ -57,7 +71,21 @@ public sealed class MainWindow : Window
             }
         };
 
-        Content = new StackPanel
+        // El aviso del catálogo desactualizado vive ENCIMA del contenido y no bloquea la
+        // navegación: no es un modal, no desactiva las superficies y no roba el foco
+        // (AC3, UX-DR-32).
+        var banner = onSynchronizeNow is null
+            ? null
+            : new CatalogSyncBanner(onSynchronizeNow);
+
+        if (banner is not null)
+        {
+            banner.Hide();
+        }
+
+        _banner = banner;
+
+        var content = new StackPanel
         {
             Margin = new Thickness(16),
             Spacing = 8,
@@ -70,5 +98,44 @@ public sealed class MainWindow : Window
                 status,
             },
         };
+
+        var layout = new StackPanel { Spacing = 0 };
+
+        if (banner is not null)
+        {
+            layout.Children.Add(banner);
+        }
+
+        layout.Children.Add(content);
+
+        Content = layout;
+    }
+
+    /// <summary>
+    /// Shows the state of the synchronization of the catalog in the notice of the window.
+    ///
+    /// <para>
+    /// Un catálogo al día oculta el aviso y un catálogo pendiente lo muestra. El aviso NO
+    /// bloquea la navegación en ninguno de los dos casos (AC3, UX-DR-32).
+    /// </para>
+    /// </summary>
+    /// <param name="state">State of the synchronization of the catalog.</param>
+    public void ShowSyncState(CatalogSyncState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (_banner is null)
+        {
+            return;
+        }
+
+        if (state.Synchronized)
+        {
+            _banner.Hide();
+
+            return;
+        }
+
+        _banner.Show(state);
     }
 }

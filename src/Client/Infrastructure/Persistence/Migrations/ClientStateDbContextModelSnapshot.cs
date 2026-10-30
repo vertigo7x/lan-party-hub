@@ -16,6 +16,32 @@ namespace LANPartyHub.Client.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
+            modelBuilder.Entity("LANPartyHub.Client.Infrastructure.Persistence.Entities.CatalogSnapshotEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<long>("CatalogVersion")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("catalogVersion");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("SynchronizedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("synchronizedAt");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CATALOG_SNAPSHOT", (string)null);
+                });
+
             modelBuilder.Entity("LANPartyHub.Client.Infrastructure.Persistence.Entities.ClientIdentityEntity", b =>
                 {
                     b.Property<string>("ClientId")

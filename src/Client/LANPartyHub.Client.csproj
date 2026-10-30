@@ -17,6 +17,16 @@
   </ItemGroup>
 
   <!--
+    AD-5, AD-26: the client listens to the hub /hubs/client-state, the only channel of push
+    from the server to the client. The event CatalogChanged is the trigger of the
+    resynchronization of the catalog and it carries only the version of the catalog.
+    The package is pinned to the same version as the server and as the spine.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+  </ItemGroup>
+
+  <!--
     AD-11, AD-17: the client owns exactly one SQLite file (state.sqlite) and applies versioned
     EF Core migrations at startup. EF Core and its SQLite provider always share the same
     version, so the three packages are pinned to the same version as the server and as the
