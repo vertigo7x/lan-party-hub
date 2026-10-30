@@ -23,6 +23,12 @@ namespace LANPartyHub.Client.Presentation.Catalog;
 /// The pagination is EXPLICIT: the grid pages by fixed scrolls and the catalog never
 /// scrolls infinitely, so the player can come back to the same position (AC5, UX-DR-27).
 /// </para>
+/// <para>
+/// A click on a card ALWAYS opens the ficha del videojuego, and the card carries NO
+/// secondary action, so the click means always the same thing (AC1, UX-DR-10, UX-DR-27).
+/// The surface holds the game that is open and derives the view state of the ficha with
+/// the rule of the Application layer (AC3).
+/// </para>
 /// </summary>
 public sealed class CatalogSurfaceViewModel
 {
@@ -71,6 +77,10 @@ public sealed class CatalogSurfaceViewModel
     private int _currentPage = 1;
     private bool _synchronized = true;
     private bool _loading = true;
+    private GameDescriptor? _selectedGame;
+    private long? _snapshotCatalogVersion;
+    private long? _serverCatalogVersion;
+    private IReadOnlyList<InstalledGameView> _installations = [];
 
     /// <summary>
     /// Creates the view model of the surface of the catalog.
@@ -89,6 +99,12 @@ public sealed class CatalogSurfaceViewModel
     /// the state of the synchronization changed.
     /// </summary>
     public event Action? Changed;
+
+    /// <summary>
+    /// Raised when the player presses a card of the grid, which opens the ficha del
+    /// videojuego (AC1, UX-DR-10, UX-DR-27).
+    /// </summary>
+    public event Action<GameDescriptor>? GamePressed;
 
     /// <summary>
     /// Text that the player typed in the search field (AC1, UX-DR-9).
@@ -246,10 +262,39 @@ public sealed class CatalogSurfaceViewModel
     /// </summary>
     /// <param name="snapshot">Snapshot that the client applied, or <c>null</c>.</param>
     /// <param name="synchronized">Whether the server is connected.</param>
-    public void ApplySnapshot(CatalogSnapshot? snapshot, bool synchronized)
+    public void ApplySnapshot(CatalogSnapshot? snapshot, bool synchronized) =>
+        ApplySnapshot(snapshot, synchronized, snapshot?.CatalogVersion, null);
+
+    /// <summary>
+    /// Replaces the snapshot that the surface shows, with the version that the server
+    /// publishes (AC1, AC2, AC3).
+    ///
+    /// <para>
+    /// The version of the server is what says whether the snapshot that the client holds is
+    /// OUTDATED: a client whose snapshot is older than the version that the server
+    /// publishes shows the badge «sincronizando» (AC3, AR-5).
+    /// </para>
+    /// </summary>
+    /// <param name="snapshot">Snapshot that the client applied, or <c>null</c>.</param>
+    /// <param name="synchronized">Whether the server is connected.</param>
+    /// <param name="snapshotCatalogVersion">
+    /// Version of the snapshot that the client applied, or <c>null</c> when it has none.
+    /// </param>
+    /// <param name="serverCatalogVersion">
+    /// Version of the catalog that the server publishes, or <c>null</c> when the client
+    /// does not know it.
+    /// </param>
+    public void ApplySnapshot(
+        CatalogSnapshot? snapshot,
+        bool synchronized,
+        long? snapshotCatalogVersion,
+        long? serverCatalogVersion)
     {
         _synchronized = synchronized;
         _loading = false;
+
+        _snapshotCatalogVersion = snapshotCatalogVersion;
+        _serverCatalogVersion = serverCatalogVersion;
 
         _games.Clear();
         _games.AddRange(snapshot?.Games ?? []);
@@ -267,7 +312,120 @@ public sealed class CatalogSurfaceViewModel
             _selectedCategory = null;
         }
 
+        // La ficha abierta se resuelve de nuevo contra el snapshot que llega: un snapshot
+        // nuevo puede cambiar la versión publicada del juego y la insignia se deriva de
+        // ella (AC2, AC3).
+        if (_selectedGame is not null)
+        {
+            _selectedGame = _games.FirstOrDefault(game =>
+                string.Equals(game.GameId, _selectedGame.GameId, StringComparison.Ordinal));
+        }
+
         Refilter();
+    }
+
+    /// <summary>
+    /// Replaces the installations that the client registered, which the ficha reads to
+    /// derive the badge of the view state (AC3).
+    ///
+    /// <para>
+    /// The reading is LOCAL: the installations belong to the client and the ficha never
+    /// goes back to the server for them (AD-5, AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="installations">Installations that the client registered.</param>
+    public void ApplyInstallations(IReadOnlyList<InstalledGameView> installations)
+    {
+        _installations = installations ?? [];
+
+        if (_selectedGame is not null)
+        {
+            _selectedGame = _games.FirstOrDefault(game =>
+                string.Equals(game.GameId, _selectedGame.GameId, StringComparison.Ordinal))
+                ?? _selectedGame;
+        }
+    }
+
+    /// <summary>
+    /// The game whose ficha is open, or <c>null</c> when no ficha is open (AC1).
+    /// </summary>
+    public GameDescriptor? SelectedGame => _selectedGame;
+
+    /// <summary>
+    /// Whether the ficha of a videogame is open (AC1).
+    /// </summary>
+    public bool IsGameDetailOpen => _selectedGame is not null;
+
+    /// <summary>
+    /// Opens the ficha of a videogame (AC1, UX-DR-10).
+    ///
+    /// <para>
+    /// A click on a card ALWAYS opens the ficha, and the card carries NO secondary action,
+    /// so the click means always the same thing (AC1, UX-DR-10, UX-DR-27).
+    /// </para>
+    /// </summary>
+    /// <param name="game">Videogame that the player pressed.</param>
+    public void OpenGameDetail(GameDescriptor game)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+
+        _selectedGame = game;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Closes the ficha of a videogame (AC1).
+    /// </summary>
+    public void CloseGameDetail()
+    {
+        if (_selectedGame is null)
+        {
+            return;
+        }
+
+        _selectedGame = null;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Builds the view model of the ficha of the game that is open, or <c>null</c> when no
+    /// ficha is open (AC1, AC2, AC3).
+    /// </summary>
+    /// <returns>The view model of the ficha, or <c>null</c>.</returns>
+    public GameDetailViewModel? BuildGameDetail()
+    {
+        if (_selectedGame is null)
+        {
+            return null;
+        }
+
+        var installation = _installations.FirstOrDefault(candidate =>
+            string.Equals(candidate.GameId, _selectedGame.GameId, StringComparison.Ordinal));
+
+        var viewState = CatalogViewStateResolver.Resolve(
+            _selectedGame,
+            _snapshotCatalogVersion,
+            _serverCatalogVersion,
+            installation);
+
+        return new GameDetailViewModel(
+            _selectedGame,
+            viewState,
+            installation?.InstalledVersion);
+    }
+
+    /// <summary>
+    /// Notifies that the player pressed a card of the grid, so the surface opens the
+    /// ficha del videojuego (AC1, UX-DR-10).
+    /// </summary>
+    /// <param name="game">Videogame that the player pressed.</param>
+    public void NotifyGamePressed(GameDescriptor game)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+
+        GamePressed?.Invoke(game);
     }
 
     /// <summary>

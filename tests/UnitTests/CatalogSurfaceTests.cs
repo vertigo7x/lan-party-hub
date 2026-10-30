@@ -4,7 +4,6 @@ using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Shared.Contracts;
 using Xunit;
-
 namespace LANPartyHub.UnitTests;
 
 /// <summary>
@@ -393,6 +392,115 @@ public sealed class CatalogSurfaceTests
 
         Assert.Equal(2, viewModel.Games.Count);
         Assert.False(viewModel.IsServerConnected);
+    }
+
+    [Fact]
+    public void A_press_on_a_card_opens_the_ficha_of_the_videogame()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true);
+
+        Assert.False(viewModel.IsGameDetailOpen);
+
+        var game = viewModel.Games[0];
+
+        viewModel.OpenGameDetail(game);
+
+        Assert.True(viewModel.IsGameDetailOpen);
+        Assert.Same(game, viewModel.SelectedGame);
+    }
+
+    [Fact]
+    public void The_ficha_of_the_surface_carries_the_exact_values_of_the_videogame()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true);
+
+        var game = viewModel.Games.Single(candidate => candidate.Name == "Minecraft");
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal("Minecraft", detail!.Name);
+        Assert.Equal("1.0.0", detail.Version);
+        Assert.Equal("Windows", detail.OperatingSystem);
+    }
+
+    [Fact]
+    public void The_ficha_of_the_surface_is_closed_when_the_player_closes_it()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true);
+
+        viewModel.OpenGameDetail(viewModel.Games[0]);
+
+        viewModel.CloseGameDetail();
+
+        Assert.False(viewModel.IsGameDetailOpen);
+        Assert.Null(viewModel.BuildGameDetail());
+    }
+
+    [Fact]
+    public void The_surface_notifies_the_press_of_a_card()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true);
+
+        GameDescriptor? pressed = null;
+
+        viewModel.GamePressed += game => pressed = game;
+
+        var game = viewModel.Games[0];
+
+        viewModel.NotifyGamePressed(game);
+
+        Assert.Same(game, pressed);
+    }
+
+    [Fact]
+    public void The_ficha_of_the_surface_shows_the_badge_of_the_outdated_installation()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true);
+
+        viewModel.ApplyInstallations(
+        [
+            new InstalledGameView(viewModel.Games[0].GameId, "0.9.0", InstallationState.Installed),
+        ]);
+
+        viewModel.OpenGameDetail(viewModel.Games[0]);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.InstalledOutdatedVersion, detail!.ViewState);
+        Assert.Equal(
+            StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion),
+            detail.ViewStateText);
+    }
+
+    [Fact]
+    public void The_ficha_of_the_surface_shows_the_badge_of_the_synchronizing_client()
+    {
+        var viewModel = new CatalogSurfaceViewModel();
+
+        // El snapshot del cliente es ANTERIOR a la versión que publica el servidor (AC3).
+        viewModel.ApplySnapshot(CreateSnapshot(), synchronized: true, 4, 5);
+
+        viewModel.OpenGameDetail(viewModel.Games[0]);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.Synchronizing, detail!.ViewState);
+        Assert.Equal(StateDisplayMap.GetText(CatalogViewState.Synchronizing), detail.ViewStateText);
     }
 
     /// <summary>

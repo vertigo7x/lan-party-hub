@@ -58,6 +58,13 @@ public sealed class App : Avalonia.Application
                 new CatalogSurfaceViewModel(),
                 () => _ = SynchronizeNowAsync());
 
+            // Las instalaciones que el cliente registró son LOCALES: la ficha del
+            // videojuego las lee para derivar la insignia de su estado de vista, y la
+            // lectura NO va al servidor (AC3, AD-22). La lectura NO bloquea el arranque:
+            // la ficha se abre igual y su insignia sale del estado que el servidor
+            // publica (AC3, AD-26).
+            _ = LoadInstallationsAsync(catalogSurface);
+
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
             // goes to the log.
@@ -76,6 +83,35 @@ public sealed class App : Avalonia.Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Reads the installations that the client registered and hands them to the surface of
+    /// the catalog (AC3).
+    ///
+    /// <param name="catalogSurface">Surface of the catalog of the player.</param>
+    /// <returns>A task that completes when the installations have been read.</returns>
+    private async Task LoadInstallationsAsync(CatalogSurface catalogSurface)
+    {
+        if (_catalogSync is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var installations = await _catalogSync
+                .LoadInstallationsAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+
+            catalogSurface.ApplyInstallations(installations);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La lectura de las instalaciones es LOCAL y su fallo NO puede impedir que el
+            // jugador abra el catálogo: la ficha se abre y la insignia sale del estado que
+            // el servidor publica (AC3, AD-26).
+        }
     }
 
     /// <summary>

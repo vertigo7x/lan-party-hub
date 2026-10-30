@@ -101,7 +101,8 @@ public sealed class CatalogSyncService
                 _timeProvider.GetUtcNow(),
                 outcome.WithdrawnOperations,
                 outcome.WithdrawnInstallations,
-                snapshot);
+                snapshot,
+                snapshot.CatalogVersion);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -123,8 +124,7 @@ public sealed class CatalogSyncService
                     .ConfigureAwait(false),
                 await _store
                     .LoadAsync(cancellationToken)
-                    .ConfigureAwait(false));
-        }
+                    .ConfigureAwait(false));        }
     }
 }
 
@@ -152,13 +152,24 @@ public sealed class CatalogSyncService
 /// working over it (AC3, UX-DR-32).
 /// </para>
 /// </param>
+/// <param name="ServerCatalogVersion">
+/// Version of the catalog that the server publishes, or <c>null</c> when the client does
+/// NOT know it, which happens when the server did not answer.
+///
+/// <para>
+/// The version of the server is what says whether the snapshot that the client holds is
+/// OUTDATED: a client whose snapshot is older than the version that the server publishes
+/// shows the badge «sincronizando» (AC3, AR-5).
+/// </para>
+/// </param>
 public sealed record CatalogSyncState(
     long CatalogVersion,
     bool Synchronized,
     DateTimeOffset? LastSynchronizedAt,
     IReadOnlyList<WithdrawnOperation> WithdrawnOperations,
     IReadOnlyList<WithdrawnInstallation> WithdrawnInstallations,
-    CatalogSnapshot? Snapshot)
+    CatalogSnapshot? Snapshot,
+    long? ServerCatalogVersion)
 {
     /// <summary>
     /// Builds the state of a client whose catalog is up to date.
@@ -168,14 +179,23 @@ public sealed record CatalogSyncState(
     /// <param name="withdrawnOperations">Operations that terminate with the withdrawal.</param>
     /// <param name="withdrawnInstallations">Installations that are conserved.</param>
     /// <param name="snapshot">Snapshot that was applied.</param>
+    /// <param name="serverCatalogVersion">Version of the catalog that the server publishes.</param>
     /// <returns>The state of the synchronized client.</returns>
     public static CatalogSyncState UpToDate(
         long catalogVersion,
         DateTimeOffset synchronizedAt,
         IReadOnlyList<WithdrawnOperation> withdrawnOperations,
         IReadOnlyList<WithdrawnInstallation> withdrawnInstallations,
-        CatalogSnapshot? snapshot) =>
-        new(catalogVersion, true, synchronizedAt, withdrawnOperations, withdrawnInstallations, snapshot);
+        CatalogSnapshot? snapshot,
+        long? serverCatalogVersion = null) =>
+        new(
+            catalogVersion,
+            true,
+            synchronizedAt,
+            withdrawnOperations,
+            withdrawnInstallations,
+            snapshot,
+            serverCatalogVersion ?? snapshot?.CatalogVersion);
 
     /// <summary>
     /// Builds the state of a client whose catalog is pending of synchronization (AC3).
@@ -185,10 +205,15 @@ public sealed record CatalogSyncState(
     /// <param name="snapshot">
     /// Last snapshot that the client applied, or <c>null</c> when it never applied one.
     /// </param>
+    /// <param name="serverCatalogVersion">
+    /// Version of the catalog that the server publishes, or <c>null</c> when the client
+    /// does not know it.
+    /// </param>
     /// <returns>The state of the pending client.</returns>
     public static CatalogSyncState Pending(
         long catalogVersion,
         DateTimeOffset? lastSynchronizedAt,
-        CatalogSnapshot? snapshot = null) =>
-        new(catalogVersion, false, lastSynchronizedAt, [], [], snapshot);
+        CatalogSnapshot? snapshot = null,
+        long? serverCatalogVersion = null) =>
+        new(catalogVersion, false, lastSynchronizedAt, [], [], snapshot, serverCatalogVersion);
 }

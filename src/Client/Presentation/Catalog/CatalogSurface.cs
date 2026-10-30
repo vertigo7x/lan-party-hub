@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
@@ -19,6 +20,10 @@ namespace LANPartyHub.Client.Presentation.Catalog;
 /// The surface NEVER leaves the player to reverse a search: «Quitar filtros» restores the
 /// query and the category in place (AC3, UX-DR-28).
 /// </para>
+/// <para>
+/// A click on a card ALWAYS opens the ficha del videojuego, and the card carries NO
+/// secondary action, so the click means always the same thing (AC1, UX-DR-10, UX-DR-27).
+/// </para>
 /// </summary>
 public sealed class CatalogSurface : UserControl
 {
@@ -32,6 +37,9 @@ public sealed class CatalogSurface : UserControl
     private readonly TextBlock _pageText;
     private readonly Button _previous;
     private readonly Button _next;
+    private readonly ContentControl _detail;
+
+    private string? _openGameId;
 
     /// <summary>
     /// Creates the surface of the catalog.
@@ -71,6 +79,14 @@ public sealed class CatalogSurface : UserControl
         _next = new Button { Content = "Siguiente" };
         _pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
 
+        // La ficha vive en la MISMA superficie que la rejilla: el clic en la tarjeta abre
+        // la ficha y las acciones secundarias viven en ella, de modo que el clic significa
+        // siempre lo mismo (AC1, UX-DR-10, UX-DR-27).
+        _detail = new ContentControl
+        {
+            IsVisible = false,
+        };
+
         _search.TextChanged += (_, _) => _viewModel.SearchText = _search.Text ?? string.Empty;
 
         _category.SelectionChanged += (_, _) =>
@@ -82,6 +98,13 @@ public sealed class CatalogSurface : UserControl
 
         _previous.Click += (_, _) => _viewModel.GoBack();
         _next.Click += (_, _) => _viewModel.GoForward();
+
+        // Un clic en la tarjeta abre la ficha del videojuego (AC1, UX-DR-10).
+        _grid.GamePressed += game =>
+        {
+            _viewModel.NotifyGamePressed(game);
+            _viewModel.OpenGameDetail(game);
+        };
 
         Content = new StackPanel
         {
@@ -117,6 +140,7 @@ public sealed class CatalogSurface : UserControl
                     },
                 },
                 _grid,
+                _detail,
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -150,8 +174,20 @@ public sealed class CatalogSurface : UserControl
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        _viewModel.ApplySnapshot(state.Snapshot, state.Synchronized);
+        _viewModel.ApplySnapshot(
+            state.Snapshot,
+            state.Synchronized,
+            state.Snapshot?.CatalogVersion,
+            state.ServerCatalogVersion);
     }
+
+    /// <summary>
+    /// Replaces the installations that the client registered, which the ficha reads to
+    /// derive the badge of the view state (AC3).
+    ///
+    /// <param name="installations">Installations that the client registered.</param>
+    public void ApplyInstallations(IReadOnlyList<InstalledGameView> installations) =>
+        _viewModel.ApplyInstallations(installations);
 
     /// <summary>
     /// Reverses the filters of a search without results, without leaving the surface
@@ -163,6 +199,44 @@ public sealed class CatalogSurface : UserControl
 
         _search.Text = string.Empty;
         _category.SelectedItem = null;
+    }
+
+    /// <summary>
+    /// Paints the ficha of the videogame that is open (AC1, AC2, AC3).
+    ///
+    /// <para>
+    /// The control of la ficha se RECONSTRUYE solo cuando cambia el juego que está
+    /// abierto: un redibujado de la superficie no puede tirar la ficha del jugador ni
+    /// reconstruir su árbol de controles en cada fotograma (AC1).
+    /// </para>
+    /// </summary>
+    /// <param name="detail">View model of the ficha, or <c>null</c> when no ficha is open.</param>
+    private void RenderDetail(GameDetailViewModel? detail)
+    {
+        if (detail is null)
+        {
+            _detail.Content = null;
+            _detail.IsVisible = false;
+
+            _openGameId = null;
+
+            return;
+        }
+
+        if (!string.Equals(_openGameId, detail.GameId, StringComparison.Ordinal))
+        {
+            _openGameId = detail.GameId;
+
+            _detail.Content = new GameDetailView(detail);
+        }
+        else if (_detail.Content is GameDetailView open)
+        {
+            // La ficha abierta se REPINTA con el estado nuevo: un snapshot que cambia la
+            // versión publicada del juego cambia su insignia (AC3).
+            open.Update(detail);
+        }
+
+        _detail.IsVisible = true;
     }
 
     /// <summary>
@@ -209,6 +283,10 @@ public sealed class CatalogSurface : UserControl
             _viewModel.Games,
             _viewModel.ShowsSkeletons,
             _viewModel.IsCatalogEmpty || _viewModel.ShowsNoResults ? _emptyText.Text : null);
+
+        var detail = _viewModel.BuildGameDetail();
+
+        RenderDetail(detail);
 
         _previous.IsEnabled = _viewModel.CanGoBack;
         _next.IsEnabled = _viewModel.CanGoForward;
