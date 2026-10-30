@@ -61,6 +61,16 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />
   </ItemGroup>
 
+  <!--
+    AD-3: the client discovers the event server with the browse of mDNS over UDP 5353, the
+    service type is _lanpartyhub._tcp (RFC 6762/6763). The package is pinned to the same
+    version as the server and as the spine, and its types stay inside the infrastructure
+    layer: the use case of the discovery only knows the port that this layer declares.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Haukcode.Mdns" Version="1.0.22" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Shared\LANPartyHub.Shared.csproj" />
   </ItemGroup>
