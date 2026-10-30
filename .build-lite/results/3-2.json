@@ -1,0 +1,22 @@
+{
+  "story": "3-2-b\u00fasqueda-filtrado-y-categorizaci\u00f3n-del-cat\u00e1logo",
+  "base": "6196e932ec39fc0c10536ea90440b72740c0f8bb",
+  "risk": [
+    "red o host"
+  ],
+  "paths": [
+    ".build-lite/plans/3-2.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Catalog/CatalogFilter.cs",
+    "src/Client/Application/CatalogSync/CatalogSyncService.cs",
+    "src/Client/Host/CatalogSyncComposition.cs",
+    "src/Client/Presentation/Catalog/CatalogCardSkeleton.cs",
+    "src/Client/Presentation/Catalog/CatalogGrid.cs",
+    "src/Client/Presentation/Catalog/CatalogSurface.cs",
+    "src/Client/Presentation/Catalog/CatalogSurfaceViewModel.cs",
+    "src/Client/Presentation/MainWindow.cs",
+    "tests/IntegrationTests/CatalogSurfaceTests.cs",
+    "tests/UnitTests/CatalogFilterTests.cs",
+    "tests/UnitTests/CatalogSurfaceTests.cs"
+  ]
+}

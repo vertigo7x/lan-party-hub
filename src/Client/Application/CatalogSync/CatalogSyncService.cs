@@ -100,7 +100,8 @@ public sealed class CatalogSyncService
                 outcome.CatalogVersion,
                 _timeProvider.GetUtcNow(),
                 outcome.WithdrawnOperations,
-                outcome.WithdrawnInstallations);
+                outcome.WithdrawnInstallations,
+                snapshot);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -119,6 +120,9 @@ public sealed class CatalogSyncService
                 appliedVersion,
                 await _store
                     .GetLastSynchronizedAtAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                await _store
+                    .LoadAsync(cancellationToken)
                     .ConfigureAwait(false));
         }
     }
@@ -137,12 +141,24 @@ public sealed class CatalogSyncService
 /// Installations of games that were withdrawn from the catalog, conserved with their derived
 /// view state.
 /// </param>
+/// <param name="Snapshot">
+/// The snapshot of the catalog that the client has applied, or <c>null</c> when the client
+/// never applied one.
+///
+/// <para>
+/// The snapshot travels with the state because the surface of the catalog filters over
+/// it (AC1, AC2). With the server down the state carries the LAST snapshot that was
+/// applied, so the player keeps seeing the catalog that he had and the search keeps
+/// working over it (AC3, UX-DR-32).
+/// </para>
+/// </param>
 public sealed record CatalogSyncState(
     long CatalogVersion,
     bool Synchronized,
     DateTimeOffset? LastSynchronizedAt,
     IReadOnlyList<WithdrawnOperation> WithdrawnOperations,
-    IReadOnlyList<WithdrawnInstallation> WithdrawnInstallations)
+    IReadOnlyList<WithdrawnInstallation> WithdrawnInstallations,
+    CatalogSnapshot? Snapshot)
 {
     /// <summary>
     /// Builds the state of a client whose catalog is up to date.
@@ -151,22 +167,28 @@ public sealed record CatalogSyncState(
     /// <param name="synchronizedAt">Instant of the successful synchronization.</param>
     /// <param name="withdrawnOperations">Operations that terminate with the withdrawal.</param>
     /// <param name="withdrawnInstallations">Installations that are conserved.</param>
+    /// <param name="snapshot">Snapshot that was applied.</param>
     /// <returns>The state of the synchronized client.</returns>
     public static CatalogSyncState UpToDate(
         long catalogVersion,
         DateTimeOffset synchronizedAt,
         IReadOnlyList<WithdrawnOperation> withdrawnOperations,
-        IReadOnlyList<WithdrawnInstallation> withdrawnInstallations) =>
-        new(catalogVersion, true, synchronizedAt, withdrawnOperations, withdrawnInstallations);
+        IReadOnlyList<WithdrawnInstallation> withdrawnInstallations,
+        CatalogSnapshot? snapshot) =>
+        new(catalogVersion, true, synchronizedAt, withdrawnOperations, withdrawnInstallations, snapshot);
 
     /// <summary>
     /// Builds the state of a client whose catalog is pending of synchronization (AC3).
     /// </summary>
     /// <param name="catalogVersion">Version of the catalog that the client conserves.</param>
     /// <param name="lastSynchronizedAt">Instant of the last successful synchronization.</param>
+    /// <param name="snapshot">
+    /// Last snapshot that the client applied, or <c>null</c> when it never applied one.
+    /// </param>
     /// <returns>The state of the pending client.</returns>
     public static CatalogSyncState Pending(
         long catalogVersion,
-        DateTimeOffset? lastSynchronizedAt) =>
-        new(catalogVersion, false, lastSynchronizedAt, [], []);
+        DateTimeOffset? lastSynchronizedAt,
+        CatalogSnapshot? snapshot = null) =>
+        new(catalogVersion, false, lastSynchronizedAt, [], [], snapshot);
 }
