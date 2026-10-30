@@ -50,19 +50,28 @@ public sealed class CatalogSnapshotRepository : ICatalogSnapshotRepository
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var games = await _context.Games
-            .AsNoTracking()
-            .OrderBy(candidate => candidate.Name)
-            .ThenBy(candidate => candidate.GameId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         // Un paquete retirado no es parte del snapshot: la marca es lo que lo saca, y la
         // fila que lo sostiene sobrevive en el archivo del servidor (AD-26, AC5).
         var packages = await _context.PackageDescriptors
             .AsNoTracking()
             .Where(package => package.WithdrawnAt == null)
             .OrderBy(package => package.PackageId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // La retirada se marca en el paquete, porque la tabla del videojuego no puede
+        // guardar esa marca (AD-26, AD-34). Por eso un juego está publicado solo cuando
+        // tiene algún paquete no retirado: el juego retirado sale del snapshot y sus
+        // filas sobreviven intactas (AC5).
+        var publishedGameIds = packages
+            .Select(package => package.GameId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var games = await _context.Games
+            .AsNoTracking()
+            .Where(candidate => publishedGameIds.Contains(candidate.GameId))
+            .OrderBy(candidate => candidate.Name)
+            .ThenBy(candidate => candidate.GameId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
