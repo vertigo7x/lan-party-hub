@@ -1,0 +1,25 @@
+{
+  "story": "4-1-descubrimiento-autom\u00e1tico-del-servidor-por-mdns",
+  "base": "475e4addb8df0ff547be2021d1e970f26e76f389",
+  "risk": [
+    "red o host"
+  ],
+  "paths": [
+    ".build-lite/plans/4-1.md",
+    "_bmad-output/implementation-artifacts/sprint-status.yaml",
+    "src/Client/App.cs",
+    "src/Client/Application/Connection/DiscoveryOutcome.cs",
+    "src/Client/Application/Connection/ServerDiscoveryService.cs",
+    "src/Client/Application/Ports/IServerDiscovery.cs",
+    "src/Client/Host/ConnectionComposition.cs",
+    "src/Client/Infrastructure/Networking/MdnsServerDiscovery.cs",
+    "src/Client/LANPartyHub.Client.csproj",
+    "src/Client/Presentation/Connection/ConnectionSurface.cs",
+    "src/Client/Presentation/Connection/ConnectionSurfaceViewModel.cs",
+    "src/Client/Presentation/MainWindow.cs",
+    "src/Client/Program.cs",
+    "tests/IntegrationTests/ServerDiscoveryTests.cs",
+    "tests/UnitTests/ConnectionSurfaceViewModelTests.cs",
+    "tests/UnitTests/ServerDiscoveryServiceTests.cs"
+  ]
+}
