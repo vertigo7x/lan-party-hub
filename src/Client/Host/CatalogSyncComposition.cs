@@ -211,9 +211,12 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
             .OrderBy(operation => operation.OperationId, StringComparer.Ordinal)
             .Last();
 
-        return TryResolveTerminalState(last.State, out var terminal)
-            ? $"{last.PackageId} · {StateDisplayMap.GetText(terminal.Value)}"
-            : null;
+        if (!TryResolveTerminalState(last.State, out var terminal) || terminal is null)
+        {
+            return null;
+        }
+
+        return $"{last.PackageId} · {StateDisplayMap.GetText(terminal.Value)}";
     }
 
     /// <summary>
@@ -384,10 +387,11 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
 
             // El suscriptor que llega tarde recibe el ÚLTIMO estado: la primera
             // sincronización ocurre durante el arranque, antes de que exista la ventana
-            // (AC1).
+            // (AC1). App encola cualquier mutación de controles en el hilo de la interfaz;
+            // entregar el replay aquí conserva el contrato síncrono del snapshot retenido.
             if (replay is not null)
             {
-                NotifySubscriber(value, replay);
+                value(replay);
             }
         }
         remove
