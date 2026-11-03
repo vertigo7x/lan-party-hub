@@ -271,7 +271,7 @@ public sealed class ServerConnectionService
 
         if (fixedAnchor.AnchorFingerprint.Matches(presented))
         {
-            return null;
+            return ConnectionAttempt.AnchorVerified(endpoint);
         }
 
         // AD-27: la clave que presenta el servidor NO es la que está fijada. Se RECHAZA, no

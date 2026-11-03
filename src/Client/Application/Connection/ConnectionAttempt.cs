@@ -80,6 +80,15 @@ public sealed record ConnectionAttempt(
         new(endpoint, ConnectionState.AnchorUnverified, null);
 
     /// <summary>
+    /// Builds the attempt of a connection whose persisted trust anchor matched the
+    /// anchor presented by the server (AC3, AD-27).
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <returns>The verified connection attempt.</returns>
+    public static ConnectionAttempt AnchorVerified(ServerEndpoint endpoint) =>
+        new(endpoint, ConnectionState.AnchorVerified, null);
+
+    /// <summary>
     /// Builds the attempt of a connection that did NOT open (AC3).
     /// </summary>
     /// <param name="endpoint">

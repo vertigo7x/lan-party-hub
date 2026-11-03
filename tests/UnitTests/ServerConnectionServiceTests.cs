@@ -285,6 +285,7 @@ public sealed class ServerConnectionServiceTests
 
         Assert.Null(attempt.Error);
         Assert.False(attempt.IsAnchorMismatch);
+        Assert.Equal(ConnectionState.AnchorVerified, attempt.State);
     }
 
     [Fact]
