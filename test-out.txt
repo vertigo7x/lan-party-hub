@@ -1,0 +1,20 @@
+﻿  Determinando los proyectos que se van a restaurar...
+  Todos los proyectos est├ín actualizados para la restauraci├│n.
+  LANPartyHub.EndToEndTests -> C:\PROJECTS\lan-party-hub\tests\EndToEndTests\bin\Debug\net10.0\LANPartyHub.EndToEndTests.dll
+Serie de pruebas para C:\PROJECTS\lan-party-hub\tests\EndToEndTests\bin\Debug\net10.0\LANPartyHub.EndToEndTests.dll (.NETCoreApp,Version=v10.0)
+  LANPartyHub.Shared -> C:\PROJECTS\lan-party-hub\src\Shared\bin\Debug\net10.0\LANPartyHub.Shared.dll
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+  LANPartyHub.Client -> C:\PROJECTS\lan-party-hub\src\Client\bin\Debug\net10.0\LANPartyHub.Client.dll
+  LANPartyHub.Server -> C:\PROJECTS\lan-party-hub\src\Server\bin\Debug\net10.0\LANPartyHub.Server.dll
+  LANPartyHub.UnitTests -> C:\PROJECTS\lan-party-hub\tests\UnitTests\bin\Debug\net10.0\LANPartyHub.UnitTests.dll
+  LANPartyHub.IntegrationTests -> C:\PROJECTS\lan-party-hub\tests\IntegrationTests\bin\Debug\net10.0\LANPartyHub.IntegrationTests.dll
+Serie de pruebas para C:\PROJECTS\lan-party-hub\tests\UnitTests\bin\Debug\net10.0\LANPartyHub.UnitTests.dll (.NETCoreApp,Version=v10.0)
+Serie de pruebas para C:\PROJECTS\lan-party-hub\tests\IntegrationTests\bin\Debug\net10.0\LANPartyHub.IntegrationTests.dll (.NETCoreApp,Version=v10.0)
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+[xUnit.net 00:00:01.49]     LANPartyHub.EndToEndTests.Sm1AcceptanceScenarioTests.The_acceptance_scenario_needs_a_real_lan_with_two_or_more_clients_to_run [SKIP]
+  Omitidas LANPartyHub.EndToEndTests.Sm1AcceptanceScenarioTests.The_acceptance_scenario_needs_a_real_lan_with_two_or_more_clients_to_run [1 ms]
+
+Correctas! - Con error:     0, Superado:     3, Omitido:     1, Total:     4, Duraci├│n: 74 ms - LANPartyHub.EndToEndTests.dll (net10.0)
+
+Correctas! - Con error:     0, Superado:   533, Omitido:     0, Total:   533, Duraci├│n: 30 s - LANPartyHub.UnitTests.dll (net10.0)

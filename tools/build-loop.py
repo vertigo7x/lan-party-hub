@@ -754,7 +754,10 @@ def require_clean_tree() -> None:
     away. Anywhere else a dirty tree means somebody's work is in the way, and
     the loop stops.
     """
-    conflicts = git("diff", "--name-only", "--diff-filter=U").stdout.strip()
+    # `git diff` emits LF→CRLF conversion notices on stderr when core.autocrlf
+    # is enabled. `git()` combines both streams, so use the index's unmerged
+    # entries instead: it is quiet and reports only actual conflicts.
+    conflicts = git("ls-files", "-u").stdout.strip()
     if conflicts:
         raise DriverError(f"the working tree has unresolved conflicts:\n{conflicts}")
     branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()

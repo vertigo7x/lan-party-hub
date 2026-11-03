@@ -1,4 +1,4 @@
-using System.Globalization;
+using LANPartyHub.Client.Application.Connection;
 
 namespace LANPartyHub.Client.Host;
 
@@ -33,13 +33,13 @@ public sealed class ClientCommandLine
     /// apart in the contract <c>ServerEndpoint</c> of <c>Shared</c>, and the command line
     /// carries them together in this form.
     /// </summary>
-    public const string ServerAddressFormat = "host:puerto";
+    public const string ServerAddressFormat = ServerEndpointParser.ServerAddressFormat;
 
     /// <summary>Lowest valid TCP port.</summary>
-    public const int MinimumPort = 1;
+    public const int MinimumPort = ServerEndpointParser.MinimumPort;
 
     /// <summary>Highest valid TCP port.</summary>
-    public const int MaximumPort = 65535;
+    public const int MaximumPort = ServerEndpointParser.MaximumPort;
 
     private static readonly string[] SupportedOptions = [ServerAddressOption, InstallDirectoryOption, ThemeOption];
 
@@ -187,6 +187,11 @@ public sealed class ClientCommandLine
     /// Parses the address of the event server. The accepted format is
     /// <c>host:puerto</c>: the host is not empty and the port is an integer in the range
     /// 1-65535.
+    ///
+    /// <para>
+    /// The rule is the ONE of the Application layer: the flag, the file of configuration
+    /// and the address that the player types mean the same thing (AC1, AD-3).
+    /// </para>
     /// </summary>
     /// <param name="value">Value of the address.</param>
     /// <param name="host">Host of the server.</param>
@@ -202,42 +207,46 @@ public sealed class ClientCommandLine
         host = string.Empty;
         port = 0;
 
-        if (string.IsNullOrWhiteSpace(value))
+        if (!ServerEndpointParser.TryParse(value, out var endpoint, out _))
         {
-            error = $"Valor vacío para la dirección del servidor: el formato esperado es '{ServerAddressFormat}'.";
+            error = DescribeInvalidServerAddress(value);
             return false;
         }
 
-        // The separator is the last colon, so a literal of IPv6 written between brackets is
-        // read as one host and not as a port.
+        host = endpoint!.Address;
+        port = endpoint.Port;
+        error = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Explains why the address of the server was rejected, naming the format that the
+    /// player has to write.
+    /// </summary>
+    /// <param name="value">Value of the address.</param>
+    /// <returns>The message that explains the failure.</returns>
+    private static string DescribeInvalidServerAddress(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return $"Valor vacío para la dirección del servidor: el formato esperado es '{ServerAddressFormat}'.";
+        }
+
         var separator = value.LastIndexOf(':');
 
         if (separator <= 0)
         {
-            error = $"Valor no válido '{value}' para la dirección del servidor: el formato esperado es '{ServerAddressFormat}'.";
-            return false;
+            return $"Valor no válido '{value}' para la dirección del servidor: el formato esperado es '{ServerAddressFormat}'.";
         }
 
         var hostPart = value[..separator];
-        var portPart = value[(separator + 1)..];
 
         if (hostPart.Length == 0 || hostPart.Any(char.IsWhiteSpace))
         {
-            error = $"Valor no válido '{value}' para la dirección del servidor: el host no puede estar vacío y el formato esperado es '{ServerAddressFormat}'.";
-            return false;
+            return $"Valor no válido '{value}' para la dirección del servidor: el host no puede estar vacío y el formato esperado es '{ServerAddressFormat}'.";
         }
 
-        if (!int.TryParse(portPart, NumberStyles.None, CultureInfo.InvariantCulture, out port)
-            || port < MinimumPort
-            || port > MaximumPort)
-        {
-            error = $"Valor no válido '{value}' para la dirección del servidor: el puerto debe ser un número entero en el rango {MinimumPort}-{MaximumPort} y el formato esperado es '{ServerAddressFormat}'.";
-            return false;
-        }
-
-        host = hostPart;
-        error = null;
-        return true;
+        return $"Valor no válido '{value}' para la dirección del servidor: el puerto debe ser un número entero en el rango {MinimumPort}-{MaximumPort} y el formato esperado es '{ServerAddressFormat}'.";
     }
 
     private static bool TryReadValue(
