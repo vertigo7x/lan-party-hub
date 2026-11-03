@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging;
 
@@ -41,17 +42,29 @@ public sealed class ServerConnectionService
     private readonly IServerConnector _connector;
     private readonly IServerVersionProbe _versionProbe;
     private readonly IClientVersionProvider _versions;
+    private readonly ITrustAnchorReader? _anchorReader;
+    private readonly IServerTrustAnchorProbe? _anchorProbe;
     private readonly ILogger<ServerConnectionService> _logger;
 
     /// <summary>Creates the use case of the connection with the event server.</summary>
     /// <param name="connector">Port of the opening of the connection with the server.</param>
     /// <param name="versionProbe">Port of the probe of the versions of the server.</param>
     /// <param name="versions">Versions that the client declares in every request.</param>
+    /// <param name="anchorReader">
+    /// Port of the read of the ancla de confianza que ya está fijada, or <c>null</c> when
+    /// the client does not have a database of state (AD-27).
+    /// </param>
+    /// <param name="anchorProbe">
+    /// Port of the probe of la clave que el servidor presenta, or <c>null</c> when the
+    /// client cannot validate the ancla fijada (AD-27).
+    /// </param>
     /// <param name="logger">Log of the use case.</param>
     public ServerConnectionService(
         IServerConnector connector,
         IServerVersionProbe versionProbe,
         IClientVersionProvider versions,
+        ITrustAnchorReader? anchorReader,
+        IServerTrustAnchorProbe? anchorProbe,
         ILogger<ServerConnectionService> logger)
     {
         ArgumentNullException.ThrowIfNull(connector);
@@ -62,6 +75,8 @@ public sealed class ServerConnectionService
         _connector = connector;
         _versionProbe = versionProbe;
         _versions = versions;
+        _anchorReader = anchorReader;
+        _anchorProbe = anchorProbe;
         _logger = logger;
     }
 
@@ -159,6 +174,121 @@ public sealed class ServerConnectionService
                 probe.ServerVersion);
         }
 
+        // AD-27: la conexión se valida contra el ancla de confianza que YA está fijada. Un
+        // ancla fijada es INMUTABLE, así que una clave distinta se RECHAZA y exige un
+        // emparejamiento fuera de banda nuevo: no es un aviso ni un reintento automático
+        // (AC6, AD-27).
+        var anchorValidation = await ValidateFixedAnchorAsync(endpoint!, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (anchorValidation is not null)
+        {
+            return anchorValidation;
+        }
+
         return ConnectionAttempt.Succeeded(endpoint);
+    }
+
+    /// <summary>
+    /// Validates the server against the ancla de confianza that the client already fixed
+    /// (AC6, AD-27).
+    ///
+    /// <para>
+    /// AD-27: la validación compara la clave que el servidor presenta con la clave que ya
+    /// está PERSISTIDA, y no con un fingerprint recién recibido. Un ancla fijada no se
+    /// sustituye: una clave distinta se rechaza y exige un emparejamiento nuevo, explícito
+    /// y fuera de banda (AC6, AD-27).
+    /// </para>
+    /// <para>
+    /// Cuando el cliente NO tiene ancla fijada, la validación no dice nada: la conexión
+    /// queda en <see cref="ConnectionState.AnchorUnverified"/>, que es un estado de
+    /// seguridad y NO un error de red (AC7, AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <param name="timeout">Time that the validation lasts at most.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The attempt of the connection when the ancla NO coincide, or <c>null</c> when the
+    /// server presents the ancla that is already fixed or when the client has not fixed
+    /// any.
+    /// </returns>
+    private async Task<ConnectionAttempt?> ValidateFixedAnchorAsync(
+        ServerEndpoint endpoint,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        if (_anchorReader is null || _anchorProbe is null)
+        {
+            return null;
+        }
+
+        var fixedAnchor = await _anchorReader
+            .LoadTrustAnchorAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fixedAnchor is null)
+        {
+            // Sin ancla fijada la conexión queda «Ancla sin verificar»: el estado de
+            // seguridad que impide descargar e instalar (AC7, AD-27).
+            return null;
+        }
+
+        var probe = await _anchorProbe
+            .ProbeAsync(endpoint, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (probe.Anchor is null)
+        {
+            // El servidor no publicó ninguna ancla: el cliente NO puede confirmar que la
+            // clave es la fijada, así que la conexión no se da por verificada. El rechazo
+            // no se afirma, porque el servidor puede que no haya publicado nada por un
+            // motivo que no sea un ataque (AC3, AD-27).
+            _logger.LogWarning(
+                "El servidor {ServerAddress}:{ServerPort} no publicó el ancla de confianza que el cliente tiene fijada: la conexión queda sin ancla verificada.",
+                endpoint.Address,
+                endpoint.Port);
+
+            return null;
+        }
+
+        AnchorFingerprint presented;
+
+        try
+        {
+            presented = AnchorFingerprint.FromPublicKey(probe.Anchor.PublicKey);
+        }
+        catch (FormatException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "El servidor {ServerAddress}:{ServerPort} publicó una clave de ancla que no es válida: la conexión queda sin ancla verificada.",
+                endpoint.Address,
+                endpoint.Port);
+
+            return null;
+        }
+
+        if (fixedAnchor.AnchorFingerprint.Matches(presented))
+        {
+            return ConnectionAttempt.AnchorVerified(endpoint);
+        }
+
+        // AD-27: la clave que presenta el servidor NO es la que está fijada. Se RECHAZA, no
+        // se sustituye, y el cliente exige un emparejamiento fuera de banda nuevo. El
+        // `code` del error es el de «fingerprint de ancla no coincide», DISTINTO del de
+        // «firma inválida» (AC2, AC6, AD-27).
+        _logger.LogWarning(
+            "El servidor {ServerAddress}:{ServerPort} presenta un ancla ({PresentedFingerprint}) que NO es la que el cliente tiene fijada ({FixedFingerprint}): el cliente la rechaza y exige un emparejamiento fuera de banda nuevo.",
+            endpoint.Address,
+            endpoint.Port,
+            presented.Value,
+            fixedAnchor.Fingerprint);
+
+        return ConnectionAttempt.AnchorMismatch(
+            endpoint,
+            ErrorCatalog.Resolve(ErrorCatalog.AnchorFingerprintMismatchCode),
+            presented.Value,
+            fixedAnchor.Fingerprint);
     }
 }

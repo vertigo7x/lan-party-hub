@@ -6,6 +6,7 @@ using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Domain.Catalog;
 using LANPartyHub.Server.Domain.Packages;
 using LANPartyHub.Server.Host;
+using LANPartyHub.Server.Infrastructure.Signing;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -712,5 +713,23 @@ public sealed class PackagePublicationDomainTests
         public string Sign(string canonicalManifest) => new string('a', 128);
 
         public string GetKeyId() => "clave-de-prueba";
+
+        /// <summary>
+        /// The trust anchor of the test (AD-27).
+        ///
+        /// <para>
+        /// AD-27: el fingerprint se calcula con la MISMA regla que aplica el servidor, la
+        /// del <see cref="Ed25519ManifestSigner.ComputeFingerprint"/>, porque una segunda
+        /// regla en las pruebas acabaría ocultando un defecto real de la regla compartida.
+        /// </para>
+        /// </summary>
+        public TrustAnchor GetTrustAnchor()
+        {
+            var publicKey = Ed25519ManifestSigner.ComputePublicKey("servidor-de-prueba");
+
+            return new TrustAnchor(
+                Convert.ToBase64String(publicKey),
+                Ed25519ManifestSigner.ComputeFingerprint(publicKey));
+        }
     }
 }

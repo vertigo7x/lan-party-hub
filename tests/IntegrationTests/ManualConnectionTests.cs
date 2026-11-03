@@ -33,6 +33,8 @@ public sealed class ManualConnectionTests
             connector,
             new AlwaysCompatibleVersionProbe(),
             new RealClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -59,6 +61,8 @@ public sealed class ManualConnectionTests
             connector,
             new AlwaysCompatibleVersionProbe(),
             new RealClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -82,6 +86,8 @@ public sealed class ManualConnectionTests
             connector,
             new AlwaysCompatibleVersionProbe(),
             new RealClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -104,6 +110,8 @@ public sealed class ManualConnectionTests
             connector,
             new AlwaysCompatibleVersionProbe(),
             new RealClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -131,6 +139,8 @@ public sealed class ManualConnectionTests
             connector,
             new AlwaysCompatibleVersionProbe(),
             new RealClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
 
         var started = DateTimeOffset.UtcNow;

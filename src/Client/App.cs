@@ -4,10 +4,12 @@ using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LANPartyHub.Client;
 
@@ -88,7 +90,8 @@ public sealed class App : Avalonia.Application
 
             var connectionSurface = new ConnectionSurface(
                 connectionViewModel,
-                ConnectManuallyAsync);
+                ConnectManuallyAsync,
+                FixTrustAnchorAsync);
 
             // El descubrimiento NO bloquea el arranque: la superficie se abre de inmediato
             // y el resultado llega cuando la búsqueda termina (AC1, AC3).
@@ -222,6 +225,87 @@ public sealed class App : Avalonia.Application
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // La conexión no puede impedir que el jugador vuelva a intentarlo (AC3).
+        }
+    }
+
+    /// <summary>
+    /// Fixes the ancla de confianza con el fingerprint que el jugador recibió FUERA de
+    /// banda (AC2, AC3, AD-27).
+    ///
+    /// <para>
+    /// AD-27: la secuencia es la del caso de uso. El cliente obtiene la clave que
+    /// presenta el servidor, DERIVA su fingerprint, lo COMPARA con el esperado y solo
+    /// persiste cuando coinciden. Cuando NO coinciden, el cliente RECHAZA y no escribe
+    /// nada en el disco (AC2, AD-27).
+    /// </para>
+    /// <para>
+    /// El fingerprint esperado NEVER viene del servidor: llega por el canal fuera de
+    /// banda, que es el QR del organizador o el contraste en su pantalla (AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="expectedFingerprint">
+    /// Fingerprint as the player transported it, from the QR or from the screen of the
+    /// organizer.
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the fixation has been attempted.</returns>
+    private async Task FixTrustAnchorAsync(string? expectedFingerprint, CancellationToken cancellationToken)
+    {
+        if (_connection is null || _connection.StateStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var endpoint = _connectionViewModel?.EndpointInUse;
+
+            if (endpoint is null)
+            {
+                // Sin servidor al que preguntar, no hay clave que derivar: la fijación
+                // espera a que el jugador se conecte primero (AC2, AD-27).
+                return;
+            }
+
+            var probe = await _connection.AnchorProbe
+                .ProbeAsync(endpoint, TimeSpan.FromSeconds(3), cancellationToken)
+                .ConfigureAwait(true);
+
+            var useCase = new FixTrustAnchor(
+                _connection.StateStore,
+                TimeProvider.System,
+                NullLogger<FixTrustAnchor>.Instance);
+
+            var result = await useCase
+                .ExecuteAsync(expectedFingerprint, probe.Anchor, cancellationToken)
+                .ConfigureAwait(true);
+
+            if (result.IsFixed)
+            {
+                _connectionViewModel?.ApplyAnchorVerified();
+
+                return;
+            }
+
+            // AD-27: el rechazo precede a persistir y el `code` del error es el de
+            // «fingerprint de ancla no coincide», DISTINTO del de «firma inválida»
+            // (AC2, AD-27).
+            if (result.PresentedFingerprint is not null && result.FixedFingerprint is not null)
+            {
+                _connectionViewModel?.ApplyAnchorMismatch(
+                    result.PresentedFingerprint,
+                    result.FixedFingerprint);
+
+                return;
+            }
+
+            _connectionViewModel?.ApplyAnchorMismatch(
+                result.PresentedFingerprint ?? string.Empty,
+                result.FixedFingerprint ?? string.Empty);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La fijación no puede impedir que el jugador vuelva a intentarlo (AC3).
         }
     }
 

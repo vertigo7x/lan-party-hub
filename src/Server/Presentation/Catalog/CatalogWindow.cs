@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Server.Application.Catalog;
+using LANPartyHub.Server.Presentation.Trust;
 using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Server.Presentation.Catalog;
@@ -41,6 +42,7 @@ public sealed class CatalogWindow : Window
     private readonly RegisterGame _registerGame;
     private readonly ModifyGame _modifyGame;
     private readonly ListGames _listGames;
+    private readonly TrustAnchorViewModel _trustAnchor;
     private readonly StackPanel _rows;
     private readonly TextBlock _summary;
     private readonly TextBlock _status;
@@ -52,16 +54,22 @@ public sealed class CatalogWindow : Window
     /// <param name="registerGame">Use case of the registration of a videogame.</param>
     /// <param name="modifyGame">Use case of the modification of a videogame.</param>
     /// <param name="listGames">Use case that reads the videogames of the catalog.</param>
+    /// <param name="trustAnchor">
+    /// Ancla de confianza que el servidor publica, para que el organizador la reparta
+    /// fuera de banda (AD-27).
+    /// </param>
     public CatalogWindow(
         CatalogViewModel viewModel,
         RegisterGame registerGame,
         ModifyGame modifyGame,
-        ListGames listGames)
+        ListGames listGames,
+        TrustAnchorViewModel trustAnchor)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         ArgumentNullException.ThrowIfNull(registerGame);
         ArgumentNullException.ThrowIfNull(modifyGame);
         ArgumentNullException.ThrowIfNull(listGames);
+        ArgumentNullException.ThrowIfNull(trustAnchor);
 
         Title = "Catálogo";
         Width = 960;
@@ -72,6 +80,20 @@ public sealed class CatalogWindow : Window
         _registerGame = registerGame;
         _modifyGame = modifyGame;
         _listGames = listGames;
+        _trustAnchor = trustAnchor;
+
+        // AD-27: el ancla de confianza es una entrada de la navegación del organizador, y
+        // no un rincón escondido: la organización tiene que poder leer el fingerprint y
+        // exportarlo en cualquier momento, porque es el requisito de operación que
+        // sostiene el emparejamiento de los jugadores (AC1, AD-27).
+        var trustAnchorEntry = new Button
+        {
+            Content = "Ancla de confianza",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+
+        trustAnchorEntry.Click += async (_, _) => await OpenTrustAnchorAsync().ConfigureAwait(true);
 
         var navigation = new StackPanel
         {
@@ -89,6 +111,7 @@ public sealed class CatalogWindow : Window
                 new TextBlock { Text = "Catálogo" },
                 new TextBlock { Text = "Clientes" },
                 new TextBlock { Text = "Paquetes" },
+                trustAnchorEntry,
             },
         };
 
@@ -191,12 +214,38 @@ public sealed class CatalogWindow : Window
     }
 
     /// <summary>
+    /// Opens the panel of the ancla de confianza (AC1, AD-27).
+    ///
+    /// <para>
+    /// AD-27: el panel muestra el fingerprint en pantalla y lo exporta como QR, para que
+    /// el organizador lo reparta por un canal que no pase por la red del evento. El
+    /// contenido del panel es INMUTABLE durante el evento: el ancla fijada no se sustituye
+    /// (AD-27).
+    /// </para>
+    /// </summary>
+    /// <returns>A task that completes when the panel has been closed.</returns>
+    private async Task OpenTrustAnchorAsync()
+    {
+        var panel = new TrustAnchorPanel(_trustAnchor);
+
+        var window = new Window
+        {
+            Title = "Ancla de confianza",
+            Width = 560,
+            Height = 720,
+            Content = panel,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+
+        await window.ShowDialog(this).ConfigureAwait(true);
+    }
+
+    /// <summary>
     /// Opens the form of the alta. The form hands the videogame to the use case of the
     /// catalog, and the list is refreshed when the videogame has been saved.
     /// </summary>
     /// <returns>A task that completes when the form has been closed.</returns>
-    private async Task OpenFormAsync()
-    {
+    private async Task OpenFormAsync()    {
         var form = new GameFormView(ViewModel.CreateFormViewModel(), _registerGame, _modifyGame);
 
         await form.ShowDialog(this).ConfigureAwait(true);

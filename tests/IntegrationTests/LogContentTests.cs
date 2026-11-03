@@ -79,6 +79,7 @@ public sealed class LogContentTests : IDisposable
         "Packages",
         "WithdrawnOperations",
         "WithdrawnInstallations",
+        "AnchorFingerprint",
     ];
 
     /// <summary>

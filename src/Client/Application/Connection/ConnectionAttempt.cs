@@ -45,7 +45,9 @@ public sealed record ConnectionAttempt(
     ConnectionState State,
     ApiError? Error,
     string? IncompatibleClientVersion = null,
-    string? IncompatibleServerVersion = null)
+    string? IncompatibleServerVersion = null,
+    string? PresentedAnchorFingerprint = null,
+    string? FixedAnchorFingerprint = null)
 {
     /// <summary>
     /// Whether the attempt opened the connection with the server (AC1).
@@ -59,12 +61,32 @@ public sealed record ConnectionAttempt(
     public bool IsVersionIncompatible => IncompatibleClientVersion is not null;
 
     /// <summary>
+    /// Whether the server presented an ancla de confianza that is NOT the one that the
+    /// client has fixed (AC6, AD-27).
+    ///
+    /// <para>
+    /// AD-27: el ancla fijada es INMUTABLE. Una clave distinta no se sustituye: se
+    /// rechaza y exige un emparejamiento fuera de banda nuevo.
+    /// </para>
+    /// </summary>
+    public bool IsAnchorMismatch => PresentedAnchorFingerprint is not null;
+
+    /// <summary>
     /// Builds the attempt of a connection that opened (AC1).
     /// </summary>
     /// <param name="endpoint">Endpoint of the server of the event.</param>
     /// <returns>The attempt of the connection.</returns>
     public static ConnectionAttempt Succeeded(ServerEndpoint endpoint) =>
         new(endpoint, ConnectionState.AnchorUnverified, null);
+
+    /// <summary>
+    /// Builds the attempt of a connection whose persisted trust anchor matched the
+    /// anchor presented by the server (AC3, AD-27).
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <returns>The verified connection attempt.</returns>
+    public static ConnectionAttempt AnchorVerified(ServerEndpoint endpoint) =>
+        new(endpoint, ConnectionState.AnchorVerified, null);
 
     /// <summary>
     /// Builds the attempt of a connection that did NOT open (AC3).
@@ -102,4 +124,34 @@ public sealed record ConnectionAttempt(
             error,
             clientVersion,
             serverVersion);
+
+    /// <summary>
+    /// Builds the attempt of a connection that the client rejected because the server
+    /// presented an ancla de confianza that is NOT the one that the client has fixed
+    /// (AC6, AD-27).
+    ///
+    /// <para>
+    /// AD-27: el estado queda DESCONECTADO y el ancla fijada NO se sustituye. El
+    /// emparejamiento nuevo es una operación explícita del organizador, con un fingerprint
+    /// nuevo verificado fuera de banda (AC6, AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <param name="error">Error of the catalog that explains the rejection.</param>
+    /// <param name="presentedFingerprint">Fingerprint that the server presented.</param>
+    /// <param name="fixedFingerprint">Fingerprint that the client has fixed.</param>
+    /// <returns>The attempt of the connection.</returns>
+    public static ConnectionAttempt AnchorMismatch(
+        ServerEndpoint endpoint,
+        ApiError error,
+        string presentedFingerprint,
+        string fixedFingerprint) =>
+        new(
+            endpoint,
+            ConnectionState.Disconnected,
+            error,
+            IncompatibleClientVersion: null,
+            IncompatibleServerVersion: null,
+            PresentedAnchorFingerprint: presentedFingerprint,
+            FixedAnchorFingerprint: fixedFingerprint);
 }

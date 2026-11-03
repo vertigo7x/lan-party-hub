@@ -10,6 +10,24 @@ namespace LANPartyHub.Shared.Contracts;
 public sealed record VersionInfo(string ClientVersion, string ServerVersion, int ProtocolVersion)
 {
     /// <summary>
+    /// The trust anchor that the server publishes, or <c>null</c> when it does not publish
+    /// one (AD-27).
+    ///
+    /// <para>
+    /// AD-27: el servidor publica su ancla <b>para contrastarla</b>, nunca para aceptarla.
+    /// El cliente deriva el fingerprint de la clave pública que llega y lo compara con el
+    /// que Ya tiene, y solo persiste el ancla cuando la comparación la confirma el
+    /// jugador. Un valor que llega por la LAN no puede convertirse en ancla por sí mismo.
+    /// </para>
+    /// <para>
+    /// La propiedad es OPCIONAL y el inventario de los contratos de <c>Shared</c> no cambia:
+    /// sigue siendo el mismo tipo <see cref="TrustAnchor"/>, el que ya existía (AD-18,
+    /// AD-33).
+    /// </para>
+    /// </summary>
+    public TrustAnchor? Anchor { get; init; }
+
+    /// <summary>
     /// The protocol version that the current build speaks (AD-6).
     ///
     /// <para>

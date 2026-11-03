@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Domain;
+using LANPartyHub.Client.Domain.Trust;
 
 namespace LANPartyHub.Client.Application.Ports;
 
@@ -54,4 +55,32 @@ public interface IClientStateStore
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes when the progress is persisted.</returns>
     Task SaveProgressAsync(string operationId, long bytesPersisted, long? totalBytes, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the ancla de confianza that is already fixed, or <c>null</c> when the client
+    /// has not fixed any (AD-27).
+    ///
+    /// <para>
+    /// AD-27: las conexiones posteriores se validan contra el valor YA PERSISTIDO y no
+    /// contra uno recién recibido, así que la lectura de este valor es lo que permite
+    /// distinguir «todavía no se ha fijado» de «está fijada y es otra» (AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the fixed ancla, or with <c>null</c>.</returns>
+    Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Persists the ancla de confianza that the player confirmed (AD-27).
+    ///
+    /// <para>
+    /// AD-27: el rechazo PRECEDE a persistir. Esta operación solo se llama cuando el
+    /// fingerprint calculado y el esperado coinciden, y un ancla ya fijada NO se sustituye
+    /// por una clave distinta (AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="anchor">Ancla de confianza that the player confirmed.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the ancla is persisted.</returns>
+    Task SaveTrustAnchorAsync(PinnedTrustAnchor anchor, CancellationToken cancellationToken);
 }
