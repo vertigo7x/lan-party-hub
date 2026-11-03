@@ -71,6 +71,18 @@ public sealed class ConnectionSurfaceViewModel
     /// </summary>
     public const string AddressInUseLabelText = "Servidor en uso: ";
 
+    /// <summary>
+    /// Text that the surface shows when the server rejected the client because its version
+    /// is not compatible with it (AD-6, FR-4, UX-DR-31).
+    /// </summary>
+    public const string IncompatibleVersionText =
+        "Este cliente ({0}) no es compatible con el servidor ({1}). Actualiza el cliente.";
+
+    /// <summary>
+    /// Text of the title of the notice of the incompatibility (AD-6, UX-DR-31).
+    /// </summary>
+    public const string IncompatibleVersionTitleText = "El cliente no es compatible con el servidor";
+
     private readonly List<ServerEndpoint> _servers = [];
 
     /// <summary>
@@ -136,6 +148,42 @@ public sealed class ConnectionSurfaceViewModel
     /// Whether the surface has to show the notice of the error (AC3, UX-DR-36).
     /// </summary>
     public bool ShowsError => LastError is not null;
+
+    /// <summary>
+    /// Version of the client when the server rejected it as incompatible, or
+    /// <c>null</c> when there is no incompatibility (AD-6).
+    /// </summary>
+    public string? IncompatibleClientVersion { get; private set; }
+
+    /// <summary>
+    /// Version of the server when it rejected the client as incompatible, or
+    /// <c>null</c> when there is no incompatibility (AD-6).
+    /// </summary>
+    public string? IncompatibleServerVersion { get; private set; }
+
+    /// <summary>
+    /// Whether the surface has to show the diagnostic of the incompatibilidad (AD-6,
+    /// UX-DR-31).
+    /// </summary>
+    public bool ShowsIncompatibleVersion => IncompatibleClientVersion is not null;
+
+    /// <summary>
+    /// Text of the diagnostic de la incompatibilidad: la versión del cliente, la del
+    /// servidor y el siguiente paso (AD-6, UX-DR-31).
+    ///
+    /// <para>
+    /// El texto es EXACTO: «Este cliente (1.2) no es compatible con el servidor (1.4).
+    /// Actualiza el cliente.» El código interno NO aparece nunca como texto principal
+    /// (AD-15, AR-4).
+    /// </para>
+    /// </summary>
+    public string IncompatibleVersionMessage =>
+        IncompatibleClientVersion is null
+            ? string.Empty
+            : string.Format(
+                IncompatibleVersionText,
+                IncompatibleClientVersion,
+                IncompatibleServerVersion ?? "desconocida");
 
     /// <summary>
     /// Text of the notice of the error with its three parts: what failed, why and what to
@@ -223,6 +271,49 @@ public sealed class ConnectionSurfaceViewModel
         ConnectionState = attempt.State;
         EndpointInUse = attempt.IsConnected ? attempt.Endpoint : null;
         LastError = attempt.Error;
+
+        if (attempt.IsVersionIncompatible)
+        {
+            IncompatibleClientVersion = attempt.IncompatibleClientVersion;
+            IncompatibleServerVersion = attempt.IncompatibleServerVersion;
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Applies the diagnostic de la incompatibilidad de la versión (AD-6, FR-4).
+    ///
+    /// <para>
+    /// El diagnóstico NO es un estado: el estado de la conexión sigue siendo el que haya
+    /// y lo que la superficie muestra es el texto con las dos versiones y el siguiente
+    /// paso (AD-6, AD-27, UX-DR-31).
+    /// </para>
+    /// </summary>
+    /// <param name="clientVersion">Version of the client that the server rejected.</param>
+    /// <param name="serverVersion">Version of the server, when it published it.</param>
+    public void ApplyVersionIncompatibility(string clientVersion, string? serverVersion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientVersion);
+
+        IncompatibleClientVersion = clientVersion;
+        IncompatibleServerVersion = serverVersion;
+
+        // El cliente incompatible no opera: el estado queda DESCONECTADO (AD-6).
+        ConnectionState = ConnectionState.Disconnected;
+        EndpointInUse = null;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Clears the diagnostic de la incompatibilidad, cuando el jugador vuelve a intentar
+    /// con un cliente compatible (AD-6).
+    /// </summary>
+    public void ClearVersionIncompatibility()
+    {
+        IncompatibleClientVersion = null;
+        IncompatibleServerVersion = null;
 
         Changed?.Invoke();
     }

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
@@ -584,7 +584,7 @@ public sealed class CatalogSurfaceTests : IDisposable
         correlation.Open("0193f2a1b2c34d4e5f60718293a4b5c6");
 
         using var httpClient = new HttpClient(
-            new CorrelationHeadersHandler(correlation)
+            new ClientRequestHeadersHandler(correlation, new RealClientVersionProvider())
             {
                 InnerHandler = new HttpClientHandler(),
             })
@@ -593,7 +593,7 @@ public sealed class CatalogSurfaceTests : IDisposable
         };
 
         var service = new CatalogSyncService(
-            new CatalogHttpClient(httpClient),
+            new CatalogHttpClient(httpClient, new RealClientVersionProvider()),
             store,
             new UnreachableNotifier(),
             applier,
@@ -634,7 +634,7 @@ public sealed class CatalogSurfaceTests : IDisposable
         correlation.Open("0193f2a1b2c34d4e5f60718293a4b5c6");
 
         using var httpClient = new HttpClient(
-            new CorrelationHeadersHandler(correlation)
+            new ClientRequestHeadersHandler(correlation, new RealClientVersionProvider())
             {
                 InnerHandler = new HttpClientHandler(),
             })
@@ -643,7 +643,7 @@ public sealed class CatalogSurfaceTests : IDisposable
         };
 
         var service = new CatalogSyncService(
-            new CatalogHttpClient(httpClient),
+            new CatalogHttpClient(httpClient, new RealClientVersionProvider()),
             store,
             new UnreachableNotifier(),
             applier,

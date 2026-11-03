@@ -71,6 +71,18 @@ public sealed class CatalogSyncService
     }
 
     /// <summary>
+    /// Raised when the server rejects the client because its version is not compatible
+    /// (AD-6, FR-4).
+    ///
+    /// <para>
+    /// La incompatibilidad se publica APARTE del estado de la sincronización, porque no
+    /// es un estado del catálogo: es un diagnóstico con la versión del cliente y la del
+    /// servidor, y la superficie de Conexión lo muestra (AD-6, AD-27).
+    /// </para>
+    /// </summary>
+    public event Action<ClientVersionIncompatibleException>? VersionIncompatible;
+
+    /// <summary>
     /// Starts the synchronization: it subscribes to the trigger of a change of the catalog
     /// and it performs the first synchronization (AC1, AC-3).
     ///
@@ -126,6 +138,33 @@ public sealed class CatalogSyncService
                 outcome.WithdrawnInstallations,
                 snapshot,
                 ResolveServerCatalogVersion(snapshot.CatalogVersion));
+        }
+        catch (ClientVersionIncompatibleException exception)
+        {
+            // AD-6, FR-4: el servidor rechazó la versión del cliente. El cliente NO
+            // aplica el snapshot, NO descarga y NO instala: conserva el catálogo que ya
+            // tenía y publica el diagnóstico de la versión (AD-6).
+            _logger.LogWarning(
+                "El servidor rechazó la versión {ClientVersion} del cliente: no se aplica ningún snapshot y no se inicia ninguna descarga ni instalación.",
+                exception.ClientVersion);
+
+            VersionIncompatible?.Invoke(exception);
+
+            var appliedVersion = await _store
+                .GetAppliedVersionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return CatalogSyncState.Incompatible(
+                appliedVersion,
+                await _store
+                    .GetLastSynchronizedAtAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                await _store
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                ResolveServerCatalogVersion(appliedVersion),
+                exception.ClientVersion,
+                exception.ServerVersion);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -249,7 +288,9 @@ public sealed record CatalogSyncState(
     IReadOnlyList<WithdrawnOperation> WithdrawnOperations,
     IReadOnlyList<WithdrawnInstallation> WithdrawnInstallations,
     CatalogSnapshot? Snapshot,
-    long? ServerCatalogVersion)
+    long? ServerCatalogVersion,
+    string? IncompatibleClientVersion = null,
+    string? IncompatibleServerVersion = null)
 {
     /// <summary>
     /// Builds the state of a client whose catalog is up to date.
@@ -296,4 +337,39 @@ public sealed record CatalogSyncState(
         CatalogSnapshot? snapshot = null,
         long? serverCatalogVersion = null) =>
         new(catalogVersion, false, lastSynchronizedAt, [], [], snapshot, serverCatalogVersion);
+
+    /// <summary>
+    /// Builds the state of a client whose version the server rejected as incompatible
+    /// (AD-6, FR-4).
+    ///
+    /// <para>
+    /// El estado NO está sincronizado y NO lleva ningún snapshot nuevo: el cliente
+    /// conserva el último que aplicó y la incompatibilidad es un diagnóstico aparte
+    /// (AD-6).
+    /// </para>
+    /// </summary>
+    /// <param name="catalogVersion">Version of the catalog that the client conserves.</param>
+    /// <param name="lastSynchronizedAt">Instant of the last successful synchronization.</param>
+    /// <param name="snapshot">Last snapshot that the client applied.</param>
+    /// <param name="serverCatalogVersion">Version of the catalog that the server publishes.</param>
+    /// <param name="clientVersion">Version of the client that the server rejected.</param>
+    /// <param name="serverVersion">Version of the server, when it published it.</param>
+    /// <returns>The state of the incompatible client.</returns>
+    public static CatalogSyncState Incompatible(
+        long catalogVersion,
+        DateTimeOffset? lastSynchronizedAt,
+        CatalogSnapshot? snapshot = null,
+        long? serverCatalogVersion = null,
+        string? clientVersion = null,
+        string? serverVersion = null) =>
+        new(
+            catalogVersion,
+            false,
+            lastSynchronizedAt,
+            [],
+            [],
+            snapshot,
+            serverCatalogVersion,
+            clientVersion,
+            serverVersion);
 }

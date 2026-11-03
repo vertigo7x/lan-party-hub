@@ -187,6 +187,79 @@ public sealed class CatalogSyncServiceTests
             new CatalogSnapshotApplier(store, NullLogger<CatalogSnapshotApplier>.Instance),
             NullLogger<CatalogSyncService>.Instance);
 
+    [Fact]
+    public async Task A_client_that_the_server_rejects_does_not_apply_the_snapshot()
+    {
+        // AD-6, FR-4: un cliente incompatible NO completa la sincronización: el snapshot
+        // NO se aplica y el cliente conserva el que ya tenía.
+        var client = new FakeSnapshotClient(new CatalogSnapshot(9, [], []))
+        {
+            Incompatible = true,
+        };
+
+        var store = new FakeSnapshotStore
+        {
+            AppliedVersion = 5,
+            Snapshot = new CatalogSnapshot(5, [], []),
+        };
+
+        var notifier = new FakeChangeNotifier();
+
+        var service = CreateService(client, store, notifier);
+
+        var state = await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, client.AppliedCount);
+        Assert.False(state.Synchronized);
+        Assert.Equal(5, state.Snapshot?.CatalogVersion);
+    }
+
+    [Fact]
+    public async Task A_client_that_the_server_rejects_publishes_the_diagnostic_of_the_version()
+    {
+        var client = new FakeSnapshotClient(new CatalogSnapshot(9, [], []))
+        {
+            Incompatible = true,
+        };
+
+        var store = new FakeSnapshotStore { AppliedVersion = 5 };
+
+        var notifier = new FakeChangeNotifier();
+
+        var service = CreateService(client, store, notifier);
+
+        ClientVersionIncompatibleException? published = null;
+
+        service.VersionIncompatible += failure => published = failure;
+
+        await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(published);
+        Assert.Equal("1.2", published!.ClientVersion);
+        Assert.Equal("1.4", published.ServerVersion);
+        Assert.Equal(ErrorCatalog.ClientVersionIncompatibleCode, published.Error.Code);
+    }
+
+    [Fact]
+    public async Task The_state_of_a_rejected_client_carries_the_two_versions()
+    {
+        var client = new FakeSnapshotClient(new CatalogSnapshot(9, [], []))
+        {
+            Incompatible = true,
+        };
+
+        var store = new FakeSnapshotStore { AppliedVersion = 5 };
+
+        var notifier = new FakeChangeNotifier();
+
+        var service = CreateService(client, store, notifier);
+
+        var state = await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("1.2", state.IncompatibleClientVersion);
+        Assert.Equal("1.4", state.IncompatibleServerVersion);
+    }
+
     /// <summary>
     /// Double of the reading of the snapshot of the server (AD-1).
     /// </summary>
@@ -198,10 +271,31 @@ public sealed class CatalogSyncServiceTests
 
         public bool Fails { get; init; }
 
-        public Task<CatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken) =>
-            Fails
-                ? throw new HttpRequestException("El servidor no responde.")
-                : Task.FromResult(_snapshot);
+        /// <summary>
+        /// Whether the server rejects the client because its version is not compatible
+        /// (AD-6).
+        /// </summary>
+        public bool Incompatible { get; init; }
+
+        /// <summary>Number of times that the snapshot has been applied.</summary>
+        public int AppliedCount { get; private set; }
+
+        public Task<CatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
+        {
+            if (Incompatible)
+            {
+                throw new ClientVersionIncompatibleException("1.2", "1.4");
+            }
+
+            if (Fails)
+            {
+                throw new HttpRequestException("El servidor no responde.");
+            }
+
+            AppliedCount++;
+
+            return Task.FromResult(_snapshot);
+        }
     }
 
     /// <summary>

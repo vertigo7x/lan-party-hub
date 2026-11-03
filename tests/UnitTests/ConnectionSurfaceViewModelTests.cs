@@ -195,4 +195,121 @@ public sealed class ConnectionSurfaceViewModelTests
 
         Assert.Equal(1, changes);
     }
+
+    [Fact]
+    public void An_incompatible_client_shows_the_exact_text_of_the_diagnostic()
+    {
+        // AD-6, UX-DR-31: el texto es EXACTO y lleva las dos versiones y el siguiente
+        // paso: «Este cliente (1.2) no es compatible con el servidor (1.4). Actualiza el
+        // cliente.»
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyVersionIncompatibility("1.2", "1.4");
+
+        Assert.Equal(
+            "Este cliente (1.2) no es compatible con el servidor (1.4). Actualiza el cliente.",
+            viewModel.IncompatibleVersionMessage);
+    }
+
+    [Fact]
+    public void An_incompatible_client_is_shown_the_diagnostic()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyVersionIncompatibility("1.2", "1.4");
+
+        Assert.True(viewModel.ShowsIncompatibleVersion);
+        Assert.Equal("1.2", viewModel.IncompatibleClientVersion);
+        Assert.Equal("1.4", viewModel.IncompatibleServerVersion);
+    }
+
+    [Fact]
+    public void An_incompatible_client_leaves_the_connection_disconnected()
+    {
+        // La incompatibilidad NO es un estado: el estado queda DESCONECTADO (AD-27).
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyVersionIncompatibility("1.2", "1.4");
+
+        Assert.Equal(ConnectionState.Disconnected, viewModel.ConnectionState);
+        Assert.Equal("Desconectado", viewModel.ConnectionStateText);
+    }
+
+    [Fact]
+    public void The_surface_without_incompatibility_shows_no_diagnostic()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        Assert.False(viewModel.ShowsIncompatibleVersion);
+        Assert.Equal(string.Empty, viewModel.IncompatibleVersionMessage);
+    }
+
+    [Fact]
+    public void A_connection_that_the_server_rejected_shows_the_diagnostic()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyConnection(ConnectionAttempt.Incompatible(
+            new ServerEndpoint("192.168.1.20", 5177),
+            ErrorCatalog.Resolve(ErrorCatalog.ClientVersionIncompatibleCode),
+            "1.2",
+            "1.4"));
+
+        Assert.True(viewModel.ShowsIncompatibleVersion);
+        Assert.Equal(
+            "Este cliente (1.2) no es compatible con el servidor (1.4). Actualiza el cliente.",
+            viewModel.IncompatibleVersionMessage);
+    }
+
+    [Fact]
+    public void The_diagnostic_never_shows_the_internal_code_as_the_primary_text()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyVersionIncompatibility("1.2", "1.4");
+
+        Assert.False(viewModel.IncompatibleVersionMessage.Contains(
+            ErrorCatalog.ClientVersionIncompatibleCode,
+            StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void The_diagnostic_is_cleared_when_the_client_tries_again()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyVersionIncompatibility("1.2", "1.4");
+
+        viewModel.ClearVersionIncompatibility();
+
+        Assert.False(viewModel.ShowsIncompatibleVersion);
+        Assert.Equal(string.Empty, viewModel.IncompatibleVersionMessage);
+    }
+
+    [Fact]
+    public void The_surface_has_no_form_of_credentials()
+    {
+        // AD-6, R-MVP-2, UX-DR-31: el modelo es una LAN administrada sin autenticación, así
+        // que la superficie NO pide usuario, contraseña, token ni rol.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        var properties = typeof(ConnectionSurfaceViewModel)
+            .GetProperties()
+            .Select(property => property.Name)
+            .ToArray();
+
+        foreach (var forbidden in new[]
+        {
+            "UserName",
+            "Username",
+            "Password",
+            "Token",
+            "Role",
+            "Credential",
+            "Credentials",
+        })
+        {
+            Assert.DoesNotContain(forbidden, properties);
+        }
+    }
 }

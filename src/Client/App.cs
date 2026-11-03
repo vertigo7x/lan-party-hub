@@ -109,6 +109,17 @@ public sealed class App : Avalonia.Application
             {
                 _catalogSync.StateChanged += state => mainWindow.ShowSyncState(state);
             }
+
+            // AD-6, FR-4: el servidor puede rechazar la versión del cliente con un 426.
+            // La sincronización publica ese diagnóstico y la superficie de Conexión lo
+            // muestra con las dos versiones y el siguiente paso (AD-6, UX-DR-31).
+            if (_catalogSync is not null)
+            {
+                _catalogSync.Service.VersionIncompatible += failure =>
+                    connectionViewModel.ApplyVersionIncompatibility(
+                        failure.ClientVersion,
+                        failure.ServerVersion);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

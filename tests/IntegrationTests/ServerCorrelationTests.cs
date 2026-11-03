@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Http;
@@ -51,6 +51,8 @@ public sealed class ServerCorrelationTests
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
             request.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
             request.Headers.Add(CorrelationMiddleware.OperationIdHeaderName, OperationId);
 
             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -88,7 +90,9 @@ public sealed class ServerCorrelationTests
         {
             using var client = host.CreateClient();
 
-            using var response = await client.GetAsync("/api/v1/catalog", TestContext.Current.CancellationToken);
+            using var response = await client.SendAsync(
+                BuildCatalogRequest(),
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -116,6 +120,8 @@ public sealed class ServerCorrelationTests
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
         request.Headers.TryAddWithoutValidation(CorrelationMiddleware.ClientIdHeaderName, string.Empty);
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -135,6 +141,8 @@ public sealed class ServerCorrelationTests
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
         request.Headers.TryAddWithoutValidation(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation(CorrelationMiddleware.ClientIdHeaderName, UnknownClientId);
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -157,6 +165,8 @@ public sealed class ServerCorrelationTests
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
         request.Headers.TryAddWithoutValidation(CorrelationMiddleware.ClientIdHeaderName, "no-es-un-identificador");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -176,7 +186,9 @@ public sealed class ServerCorrelationTests
         {
             using var client = host.CreateClient();
 
-            using var response = await client.GetAsync("/api/v1/catalog", TestContext.Current.CancellationToken);
+            using var response = await client.SendAsync(
+                BuildCatalogRequest(),
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -215,6 +227,8 @@ public sealed class ServerCorrelationTests
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
             request.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -246,6 +260,8 @@ public sealed class ServerCorrelationTests
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
         request.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation(CorrelationMiddleware.OperationIdHeaderName, "no-es-un-identificador");
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -270,6 +286,8 @@ public sealed class ServerCorrelationTests
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
             request.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, UnknownClientId);
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+            request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -305,7 +323,9 @@ public sealed class ServerCorrelationTests
 
         using var client = host.CreateClient();
 
-        using var response = await client.GetAsync("/api/v1/catalog", TestContext.Current.CancellationToken);
+        using var response = await client.SendAsync(
+            BuildCatalogRequest(),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -331,6 +351,8 @@ public sealed class ServerCorrelationTests
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
         request.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ProtocolVersionHeaderName, VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -439,6 +461,24 @@ public sealed class ServerCorrelationTests
 
         Assert.Equal(AdminCorrelationMiddleware.CanonicalIdentifierLength, operationId.Length);
         Assert.NotEqual(string.Empty, operationId);
+    }
+
+    /// <summary>
+    /// Builds a request of the surface del cliente que declara una versión COMPATIBLE,
+    /// para que la puerta de la versión lo deje pasar y se observe la correlación
+    /// (AD-6, AD-15).
+    /// </summary>
+    /// <returns>The request.</returns>
+    private static HttpRequestMessage BuildCatalogRequest()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
+
+        request.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+        request.Headers.TryAddWithoutValidation(
+            ClientVersionMiddleware.ProtocolVersionHeaderName,
+            VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        return request;
     }
 
     /// <summary>

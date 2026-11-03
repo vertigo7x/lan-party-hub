@@ -1,6 +1,7 @@
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -68,11 +69,20 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
 
         _logger = loggerFactory.CreateLogger<CatalogSyncComposition>();
 
-        // El manejador de correlación es un DelegatingHandler y necesita un manejador
+        // AD-6: la versión del cliente es la del binario que se está ejecutando y la
+        // versión del protocolo es la constante del contrato compartido, así que el
+        // servidor puede decidir la compatibilidad de la petición (AD-6).
+        var versions = new ClientBuildVersion();
+
+        // El manejador de cabeceras es un DelegatingHandler y necesita un manejador
         // interior que sea el que abre la conexión: sin él, TODA petición del cliente
         // falla antes de salir y el catálogo nunca llega a la superficie (AD-15, AD-23).
+        //
+        // AD-6: el mismo manejador estampa la versión del cliente y la del protocolo en
+        // TODA petición, de modo que el servidor puede rechazar con 426 la que no los
+        // declara.
         _httpClient = new HttpClient(
-            new CorrelationHeadersHandler(headers)
+            new ClientRequestHeadersHandler(headers, versions)
             {
                 InnerHandler = new HttpClientHandler(),
             })
@@ -80,7 +90,7 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
             BaseAddress = serverAddress,
         };
 
-        var snapshotClient = new CatalogHttpClient(_httpClient);
+        var snapshotClient = new CatalogHttpClient(_httpClient, versions);
         var store = new CatalogSnapshotStore(_context);
 
         _hubClient = new CatalogHubClient(

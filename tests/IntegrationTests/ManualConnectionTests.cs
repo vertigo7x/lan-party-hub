@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,6 +31,8 @@ public sealed class ManualConnectionTests
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
             connector,
+            new AlwaysCompatibleVersionProbe(),
+            new RealClientVersionProvider(),
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -54,6 +57,8 @@ public sealed class ManualConnectionTests
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
             connector,
+            new AlwaysCompatibleVersionProbe(),
+            new RealClientVersionProvider(),
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -75,6 +80,8 @@ public sealed class ManualConnectionTests
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
             connector,
+            new AlwaysCompatibleVersionProbe(),
+            new RealClientVersionProvider(),
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -95,6 +102,8 @@ public sealed class ManualConnectionTests
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
             connector,
+            new AlwaysCompatibleVersionProbe(),
+            new RealClientVersionProvider(),
             NullLogger<ServerConnectionService>.Instance);
 
         var attempt = await service.ConnectAsync(
@@ -120,6 +129,8 @@ public sealed class ManualConnectionTests
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
             connector,
+            new AlwaysCompatibleVersionProbe(),
+            new RealClientVersionProvider(),
             NullLogger<ServerConnectionService>.Instance);
 
         var started = DateTimeOffset.UtcNow;

@@ -6,6 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>LANPartyHub.Server</RootNamespace>
     <AssemblyName>LANPartyHub.Server</AssemblyName>
+    <!--
+      AD-6, AD-17: the version of the binary is the one that the server publishes in the
+      X-Server-Version header and in GET /api/v1/server/info, so a client that no es
+      compatible puede leer la versión que necesita sin interpretar texto. The client
+      carries the same version, because the organization distributes the two binaries
+      together.
+    -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

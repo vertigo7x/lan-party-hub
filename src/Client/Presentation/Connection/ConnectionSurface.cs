@@ -26,6 +26,12 @@ namespace LANPartyHub.Client.Presentation.Connection;
 /// The error is presented with its three parts: what failed, why and what to do now. The
 /// internal code NEVER is the primary text (AC3, UX-DR-36, AR-4).
 /// </para>
+/// <para>
+/// AD-6, R-MVP-2, UX-DR-31: NO hay formulario de credenciales. El modelo es una LAN
+/// administrada sin autenticación, así que la superficie no pide usuario, contraseña,
+/// token ni rol: el único control de acceso del protocolo es la compatibilidad de la
+/// versión.
+/// </para>
 /// </summary>
 public sealed class ConnectionSurface : UserControl
 {
@@ -38,6 +44,7 @@ public sealed class ConnectionSurface : UserControl
     private readonly TextBlock _connectionState;
     private readonly TextBlock _addressInUse;
     private readonly TextBlock _errorNotice;
+    private readonly TextBlock _incompatibleNotice;
     private readonly Func<string?, CancellationToken, Task>? _onManualAddress;
 
     /// <summary>
@@ -90,6 +97,14 @@ public sealed class ConnectionSurface : UserControl
             IsVisible = false,
         };
 
+        // AD-6, UX-DR-31: el diagnóstico de la incompatibilidad de la versión, con las dos
+        // versiones y el siguiente paso.
+        _incompatibleNotice = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
         Content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -110,6 +125,7 @@ public sealed class ConnectionSurface : UserControl
                 _connectionState,
                 _addressInUse,
                 _errorNotice,
+                _incompatibleNotice,
             },
         };
 
@@ -162,6 +178,16 @@ public sealed class ConnectionSurface : UserControl
         // principal (AC3, UX-DR-36, AR-4).
         _errorNotice.Text = _viewModel.ErrorNoticeText;
         _errorNotice.IsVisible = _viewModel.ShowsError;
+
+        // AD-6, UX-DR-31: el diagnóstico de la incompatibilidad muestra las DOS
+        // versiones y el siguiente paso: «Este cliente (1.2) no es compatible con el
+        // servidor (1.4). Actualiza el cliente.»
+        _incompatibleNotice.Text = _viewModel.ShowsIncompatibleVersion
+            ? $"{ConnectionSurfaceViewModel.IncompatibleVersionTitleText}{Environment.NewLine}" +
+              $"{_viewModel.IncompatibleVersionMessage}"
+            : string.Empty;
+
+        _incompatibleNotice.IsVisible = _viewModel.ShowsIncompatibleVersion;
     }
 
     /// <summary>

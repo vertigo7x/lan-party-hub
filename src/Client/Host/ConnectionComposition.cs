@@ -1,4 +1,6 @@
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
 using Microsoft.Extensions.Logging;
 
@@ -15,13 +17,19 @@ namespace LANPartyHub.Client.Host;
 /// implementations (AD-1, AD-3).
 /// </para>
 /// <para>
+/// AD-6, FR-4: la composición abre también el sondeo de las versiones del servidor y la
+/// versión del cliente, de modo que la conexión comprueba la compatibilidad ANTES de dar
+/// la conexión por buena.
+/// </para>
+/// <para>
 /// The discovery is a convenience and NOT a requirement: the manual address is a
 /// permanent and equivalent way to reach the server, so a failure of the composition does
 /// not stop the client from starting (AC1, AC4, AD-3).
 /// </para>
 /// </summary>
-public sealed class ConnectionComposition
+public sealed class ConnectionComposition : IDisposable
 {
+    private readonly HttpClient _httpClient;
     private readonly MdnsServerDiscovery _discovery;
     private readonly TcpServerConnector _connector;
 
@@ -37,12 +45,33 @@ public sealed class ConnectionComposition
         _connector = new TcpServerConnector(
             loggerFactory.CreateLogger<TcpServerConnector>());
 
+        // AD-6: la versión del cliente es la del binario que se está ejecutando y la
+        // versión del protocolo es la constante del contrato compartido.
+        var versions = new ClientBuildVersion();
+
+        // AD-6: el sondeo habla HTTP con el servidor. El manejador de cabeceras estampa la
+        // versión del cliente y la del protocolo en TODA petición, así que el servidor
+        // puede decidir la compatibilidad (AD-6, AD-15).
+        _httpClient = new HttpClient(
+            new ClientRequestHeadersHandler(
+                new NullClientRequestHeaders(),
+                versions)
+            {
+                InnerHandler = new HttpClientHandler(),
+            });
+
+        var versionProbe = new HttpServerVersionProbe(
+            _httpClient,
+            loggerFactory.CreateLogger<HttpServerVersionProbe>());
+
         Service = new ServerDiscoveryService(
             _discovery,
             loggerFactory.CreateLogger<ServerDiscoveryService>());
 
         ConnectionService = new ServerConnectionService(
             _connector,
+            versionProbe,
+            versions,
             loggerFactory.CreateLogger<ServerConnectionService>());
     }
 
@@ -51,4 +80,19 @@ public sealed class ConnectionComposition
 
     /// <summary>The use case of the connection by the address that the player types.</summary>
     public ServerConnectionService ConnectionService { get; }
+
+    /// <inheritdoc />
+    public void Dispose() => _httpClient.Dispose();
+
+    /// <summary>
+    /// Source of the identifiers of correlación que la sonda NO necesita: el sondeo va
+    /// contra la superficie del servidor y su respuesta no depende del identificador del
+    /// equipo, así que no lo estampa (AD-15, AD-23).
+    /// </summary>
+    private sealed class NullClientRequestHeaders : IClientRequestHeaders
+    {
+        public string? ClientId => null;
+
+        public string? OperationId => null;
+    }
 }
