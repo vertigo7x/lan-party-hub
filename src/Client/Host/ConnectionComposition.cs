@@ -34,9 +34,15 @@ public sealed class ConnectionComposition : IDisposable
     private readonly TcpServerConnector _connector;
 
     /// <summary>Creates the composition of the connection with the event server.</summary>
+    /// <param name="headers">
+    /// Source of the identifiers of correlation that the requests carry. It carries the
+    /// canonical identifier of the team, which the server REQUIRES in every request of the
+    /// surface of the client (AD-15, AD-23).
+    /// </param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
-    public ConnectionComposition(ILoggerFactory loggerFactory)
+    public ConnectionComposition(IClientRequestHeaders headers, ILoggerFactory loggerFactory)
     {
+        ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         _discovery = new MdnsServerDiscovery(
@@ -49,12 +55,19 @@ public sealed class ConnectionComposition : IDisposable
         // versión del protocolo es la constante del contrato compartido.
         var versions = new ClientBuildVersion();
 
-        // AD-6: el sondeo habla HTTP con el servidor. El manejador de cabeceras estampa la
-        // versión del cliente y la del protocolo en TODA petición, así que el servidor
-        // puede decidir la compatibilidad (AD-6, AD-15).
+        // AD-6, AD-15, AD-23: el sondeo habla HTTP con el servidor. El manejador de
+        // cabeceras estampa la versión del cliente, la del protocolo y el identificador
+        // del equipo en TODA petición, así que el servidor puede decidir la
+        // compatibilidad (AD-6, AD-15).
+        //
+        // El identificador del cliente es OBLIGATORIO: la ruta del sondeo es de la
+        // superficie del cliente y el servidor rechaza con 400 la petición que no lo
+        // lleva (AD-23). Por eso la sonda usa los identificadores reales y no unos de
+        // mentira: sin ellos el sondeo SIEMPRE recibiría un 400 y nunca podría pronunciarse
+        // sobre la compatibilidad.
         _httpClient = new HttpClient(
             new ClientRequestHeadersHandler(
-                new NullClientRequestHeaders(),
+                headers,
                 versions)
             {
                 InnerHandler = new HttpClientHandler(),
@@ -83,16 +96,4 @@ public sealed class ConnectionComposition : IDisposable
 
     /// <inheritdoc />
     public void Dispose() => _httpClient.Dispose();
-
-    /// <summary>
-    /// Source of the identifiers of correlación que la sonda NO necesita: el sondeo va
-    /// contra la superficie del servidor y su respuesta no depende del identificador del
-    /// equipo, así que no lo estampa (AD-15, AD-23).
-    /// </summary>
-    private sealed class NullClientRequestHeaders : IClientRequestHeaders
-    {
-        public string? ClientId => null;
-
-        public string? OperationId => null;
-    }
 }
