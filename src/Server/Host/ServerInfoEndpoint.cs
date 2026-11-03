@@ -31,6 +31,28 @@ public static class ServerInfoEndpoint
     /// <summary>Route that publishes the versions of the server.</summary>
     public const string Route = "/api/v1/server/info";
 
+    /// <summary>
+    /// Header that carries the name of the server of the event.
+    ///
+    /// <para>
+    /// El nombre viaja como CABECERA, con el mismo patrón que <c>X-Server-Version</c>, y no
+    /// como un campo nuevo del contrato <see cref="VersionInfo"/>: el contrato de
+    /// <c>Shared</c> no crece (AD-18, AD-33).
+    /// </para>
+    /// </summary>
+    public const string ServerNameHeaderName = "X-Server-Name";
+
+    /// <summary>
+    /// Name of the server of the event when no source fixes it: the name of the machine
+    /// that hosts it.
+    ///
+    /// <para>
+    /// El nombre es una ETIQUETA legible para el jugador, no un identificador de protocolo:
+    /// el cliente lo muestra en el panel de conexión y nada más (AC1).
+    /// </para>
+    /// </summary>
+    public const string DefaultServerName = "Servidor de LAN Party";
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -84,7 +106,29 @@ public static class ServerInfoEndpoint
                     .MinimumProtocolVersion
                     .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+            // El nombre del servidor viaja como CABECERA, con el mismo patrón que la versión:
+            // el panel de conexión del cliente lo muestra como etiqueta legible y el
+            // contrato de Shared no crece (AD-18, AD-33).
+            context.Response.Headers[ServerNameHeaderName] = ResolveServerName();
+
             return context.Response.WriteAsync(Serialize(info), context.RequestAborted);
         });
+    }
+
+    /// <summary>
+    /// Resolves the name of the server of the event: the name of the machine that hosts it,
+    /// or the default name when the machine does not publish one.
+    ///
+    /// <para>
+    /// El nombre es una ETIQUETA legible para el jugador, nunca un identificador de
+    /// protocolo: el cliente lo muestra en el panel de conexión y nada más (AC1).
+    /// </para>
+    /// </summary>
+    /// <returns>The name of the server of the event.</returns>
+    public static string ResolveServerName()
+    {
+        var machineName = Environment.MachineName;
+
+        return string.IsNullOrWhiteSpace(machineName) ? DefaultServerName : machineName.Trim();
     }
 }

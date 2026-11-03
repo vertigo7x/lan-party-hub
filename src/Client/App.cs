@@ -9,6 +9,8 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using LANPartyHub.Client.Presentation.Status;
+using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LANPartyHub.Client;
@@ -28,6 +30,7 @@ public sealed class App : Avalonia.Application
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
     private ConnectionSurfaceViewModel? _connectionViewModel;
+    private ServerAvailabilityMonitor? _availabilityMonitor;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -97,11 +100,22 @@ public sealed class App : Avalonia.Application
             // y el resultado llega cuando la búsqueda termina (AC1, AC3).
             _ = DiscoverServersAsync(connectionViewModel);
 
+            // AC1: el panel de la conexión es PERSISTENTE y vive en la columna derecha
+            // fija de la ventana. No se colapsa, no se esconde en un menú ni en un modal
+            // (AC1, UX-DR-11).
+            var statusViewModel = new ConnectionStatusPanelViewModel();
+            var statusPanel = new ConnectionStatusPanel(statusViewModel);
+
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
             // goes to the log.
             var window = _startupError is null
-                ? (Window)new MainWindow(_settings, SynchronizeNowAsync, catalogSurface, connectionSurface)
+                ? (Window)new MainWindow(
+                    _settings,
+                    SynchronizeNowAsync,
+                    catalogSurface,
+                    connectionSurface,
+                    statusPanel)
                 : new StartupErrorWindow(_startupError);
 
             desktop.MainWindow = window;
@@ -123,10 +137,114 @@ public sealed class App : Avalonia.Application
                         failure.ClientVersion,
                         failure.ServerVersion);
             }
+
+            // AC3, AC4, AC5: el supervisor de la disponibilidad vigila el servidor y
+            // publica su estado al panel PERSISTENTE, a la superficie de Conexión y al
+            // aviso de la sincronización. La caída del servidor NO interrumpe al jugador:
+            // no hay ningún modal (AC3, UX-DR-29).
+            StartAvailabilitySupervision(statusViewModel, connectionViewModel, ResolveBanner(window));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    /// <summary>
+    /// Starts the supervision of the availability of the event server and wires its state to
+    /// the panel, to the surface of the connection and to the notice of the synchronization
+    /// (AC3, AC4, AC5).
+    ///
+    /// <param name="statusViewModel">View model of the persistent panel of the connection.</param>
+    /// <param name="connectionViewModel">View model of the surface of the connection.</param>
+    /// <param name="banner">Notice of the pending synchronization, when the window has one.</param>
+    private void StartAvailabilitySupervision(
+        ConnectionStatusPanelViewModel statusViewModel,
+        ConnectionSurfaceViewModel connectionViewModel,
+        CatalogSyncBanner? banner)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        var monitor = new ServerAvailabilityMonitor(
+            _connection.VersionProbe,
+            _catalogSync,
+            NullLogger<ServerAvailabilityMonitor>.Instance);
+
+        _availabilityMonitor = monitor;
+
+        monitor.AvailabilityChanged += availability =>
+        {
+            // El panel PERSISTENTE muestra el punto de presencia, el nombre del servidor,
+            // la dirección en uso, la versión y la última operación (AC1, UX-DR-11).
+            statusViewModel.ApplyAvailability(availability);
+
+            // Las acciones que REQUIEREN el servidor quedan deshabilitadas con su motivo
+            // visible (AC4, UX-DR-29).
+            connectionViewModel.ApplyAvailability(availability);
+
+            if (banner is null)
+            {
+                return;
+            }
+
+            if (availability.Available)
+            {
+                banner.Enable();
+
+                return;
+            }
+
+            banner.DisableWithReason(CatalogSyncBanner.ServerUnavailableReasonText);
+        };
+
+        var endpoint = ResolveEndpoint();
+
+        if (endpoint is null)
+        {
+            return;
+        }
+
+        _ = monitor.StartAsync(endpoint, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Resolves the endpoint of the event server that the client is using, or <c>null</c>
+    /// when the client does not know any (AC1).
+    /// </summary>
+    /// <returns>The endpoint of the event server, or <c>null</c>.</returns>
+    private ServerEndpoint? ResolveEndpoint()
+    {
+        if (_connectionViewModel?.EndpointInUse is { } inUse)
+        {
+            return inUse;
+        }
+
+        var address = _catalogSync?.ServerAddress;
+
+        if (address is null)
+        {
+            return null;
+        }
+
+        return ServerEndpointParser.TryParse(
+            $"{address.Host}:{address.Port}",
+            out var endpoint,
+            out _)
+            ? endpoint
+            : null;
+    }
+
+    /// <summary>
+    /// The notice of the pending synchronization of the catalog of the window, when the
+    /// window carries one (AC3, UX-DR-32).
+    /// </summary>
+    /// <param name="window">Window of the player.</param>
+    /// <returns>The notice, or <c>null</c> when the window does not carry one.</returns>
+    private static CatalogSyncBanner? ResolveBanner(Window window) =>
+        window is MainWindow mainWindow
+            ? mainWindow.SyncBanner
+            : null;
 
     /// <summary>
     /// Reads the installations that the client registered and hands them to the surface of

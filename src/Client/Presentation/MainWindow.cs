@@ -6,6 +6,8 @@ using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.Status;
 
 namespace LANPartyHub.Client.Presentation;
 
@@ -22,11 +24,18 @@ namespace LANPartyHub.Client.Presentation;
 /// UX-DR-32). The notice is a discreet bar that does NOT block the navigation: the
 /// surfaces of the window stay usable while the catalog is pending.
 /// </para>
+/// <para>
+/// AC1: la ventana tiene DOS COLUMNAS: el contenido a la izquierda y el panel PERSISTENTE
+/// de la conexión a la derecha, con una anchura FIJA. El panel no se colapsa, no se esconde
+/// en un menú ni en un modal, y no hay ninguna <c>Window</c> que interrumpa al
+/// jugador (AC1, AC3, UX-DR-11, UX-DR-29).
+/// </para>
 /// </summary>
 public sealed class MainWindow : Window
 {
     private readonly CatalogSyncBanner? _banner;
     private readonly CatalogSurface? _catalogSurface;
+    private readonly ConnectionStatusPanel? _statusPanel;
 
     /// <summary>
     /// Creates the main window of the client.
@@ -46,11 +55,16 @@ public sealed class MainWindow : Window
     /// Surface of the connection of the player, or <c>null</c> when the window is built
     /// without it.
     /// </param>
+    /// <param name="statusPanel">
+    /// Persistent panel of the connection, or <c>null</c> when the window is built without
+    /// it.
+    /// </param>
     public MainWindow(
         ClientSettings? settings = null,
         Func<Task>? onSynchronizeNow = null,
         CatalogSurface? catalogSurface = null,
-        ConnectionSurface? connectionSurface = null)
+        ConnectionSurface? connectionSurface = null,
+        ConnectionStatusPanel? statusPanel = null)
     {
         Title = "LAN Party Hub";
         Width = 1280;
@@ -101,6 +115,7 @@ public sealed class MainWindow : Window
         _banner = banner;
 
         _catalogSurface = catalogSurface;
+        _statusPanel = statusPanel;
 
         var content = new StackPanel
         {
@@ -140,8 +155,68 @@ public sealed class MainWindow : Window
             layout.Children.Add(connectionSurface);
         }
 
-        Content = layout;
+        // AC1: la ventana tiene DOS COLUMNAS. El contenido vive a la izquierda y el panel
+        // PERSISTENTE de la conexión a la derecha, con una anchura FIJA: el panel no se
+        // colapsa, no se esconde en un menú ni en un modal (AC1, UX-DR-11).
+        Content = BuildColumns(layout, statusPanel);
     }
+
+    /// <summary>
+    /// Builds the two columns of the window: the content and the persistent panel of the
+    /// connection (AC1).
+    /// </summary>
+    /// <param name="content">Content of the left column.</param>
+    /// <param name="statusPanel">
+    /// Persistent panel of the connection, or <c>null</c> when the window is built without
+    /// it.
+    /// </param>
+    /// <returns>The grid of the window.</returns>
+    private static Grid BuildColumns(Control content, ConnectionStatusPanel? statusPanel)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+        };
+
+        Grid.SetColumn(content, 0);
+
+        grid.Children.Add(content);
+
+        if (statusPanel is not null)
+        {
+            var column = new Border
+            {
+                Width = StatusPanelWidth,
+                Padding = new Thickness(0),
+                BorderBrush = new SolidColorBrush(DesignTokens.BorderHairline),
+                BorderThickness = new Thickness(1, 0, 0, 0),
+                Child = statusPanel,
+            };
+
+            Grid.SetColumn(column, 1);
+
+            grid.Children.Add(column);
+        }
+
+        return grid;
+    }
+
+    /// <summary>
+    /// Fixed width of the column of the persistent panel of the connection (AC1).
+    /// </summary>
+    public const double StatusPanelWidth = 320;
+
+    /// <summary>
+    /// The persistent panel of the connection, or <c>null</c> when the window is built
+    /// without it (AC1).
+    /// </summary>
+    public ConnectionStatusPanel? StatusPanel => _statusPanel;
+
+    /// <summary>
+    /// The notice of the pending synchronization of the catalog, or <c>null</c> when the
+    /// window is built without it (AC3, UX-DR-32).
+    /// </summary>
+    public CatalogSyncBanner? SyncBanner => _banner;
 
     /// <summary>
     /// Shows the state of the synchronization of the catalog in the notice of the window.

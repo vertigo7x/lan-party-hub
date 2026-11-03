@@ -25,10 +25,24 @@ namespace LANPartyHub.Client.Application.Ports;
 /// Oldest protocol version that the server accepts, or <c>null</c> when the server did
 /// not publish it.
 /// </param>
+/// <param name="ServerName">
+/// Name of the server of the event, or <c>null</c> when the server did not publish it.
+/// </param>
+/// <param name="Reachable">
+/// Whether the server answered the probe at all.
+///
+/// <para>
+/// A server that does not answer is NOT a rejection of the version: el jugador tiene que
+/// poder reintentar, y la disponibilidad del servidor es un estado DEL CLIENTE (AC3,
+/// AC4).
+/// </para>
+/// </param>
 public sealed record ServerVersionProbeResult(
     bool Compatible,
     string? ServerVersion,
-    int? MinimumProtocolVersion);
+    int? MinimumProtocolVersion,
+    string? ServerName = null,
+    bool Reachable = true);
 
 /// <summary>
 /// Port of the probe of the versions of the event server (AD-6, FR-4).

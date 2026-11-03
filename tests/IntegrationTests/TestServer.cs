@@ -73,8 +73,34 @@ internal sealed class TestServer : IAsyncDisposable
     /// </param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The host, ready to serve.</returns>
+    public static Task<TestServer> StartAsync(
+        string? dataDirectory,
+        CancellationToken cancellationToken = default) =>
+        StartAsync(dataDirectory, port: null, cancellationToken);
+
+    /// <summary>
+    /// Starts the real host over the given data folder and, when a port is given, on that
+    /// EXACT port.
+    ///
+    /// <para>
+    /// El puerto FIJO existe para la historia de la reconexión: el host se baja y se
+    /// vuelve a levantar en la MISMA dirección y en el MISMO puerto, así que el cliente
+    /// puede recuperarse sin reinstalarse (AC5).
+    /// </para>
+    /// </summary>
+    /// <param name="dataDirectory">
+    /// Folder of the data of the host, or <c>null</c> for a temporary one that the host
+    /// deletes when it ends.
+    /// </param>
+    /// <param name="port">
+    /// Port that the host listens on, or <c>null</c> for one that is free at the moment of
+    /// the startup.
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The host, ready to serve.</returns>
     public static async Task<TestServer> StartAsync(
         string? dataDirectory,
+        int? port,
         CancellationToken cancellationToken = default)
     {
         var addresses = new PrivateAddressResolver().GetPrivateAddresses();
@@ -91,16 +117,16 @@ internal sealed class TestServer : IAsyncDisposable
 
         for (var attempt = 1; ; attempt++)
         {
-            var port = GetFreeTcpPort();
-            var application = await Program.BuildServerAsync(["--data-dir", folder, "--http-port", port.ToString()]);
+            var effectivePort = port ?? GetFreeTcpPort();
+            var application = await Program.BuildServerAsync(["--data-dir", folder, "--http-port", effectivePort.ToString()]);
 
             try
             {
                 await application.StartAsync(cancellationToken);
 
-                return new TestServer(application, addresses.First(), port, folder, ownsDataDirectory);
+                return new TestServer(application, addresses.First(), effectivePort, folder, ownsDataDirectory);
             }
-            catch (Exception exception) when (attempt < MaximumStartAttempts && exception is IOException)
+            catch (Exception exception) when (attempt < MaximumStartAttempts && port is null && exception is IOException)
             {
                 // The port was taken between the probe and the bind: another one is tried.
                 await application.DisposeAsync();

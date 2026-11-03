@@ -1,9 +1,11 @@
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -23,13 +25,15 @@ namespace LANPartyHub.Client.Host;
 /// ports and never on them (AD-1).
 /// </para>
 /// </summary>
-public sealed class CatalogSyncComposition : IAsyncDisposable
+public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectHandler
 {
     private readonly HttpClient _httpClient;
     private readonly ClientStateDbContext _context;
     private readonly CatalogHubClient _hubClient;
     private readonly ILogger<CatalogSyncComposition> _logger;
     private readonly CatalogSnapshotStore _store;
+    private readonly ClientStateStore _stateStore;
+    private readonly IServerConnectionGate? _connectionGate;
     private readonly Lock _gate = new();
 
     private CatalogSyncState? _lastState;
@@ -39,16 +43,23 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
     /// <param name="stateDatabasePath">Absolute path of the SQLite file of the client.</param>
     /// <param name="headers">Source of the identifiers of correlation of the requests.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="connectionGate">
+    /// Puerta de versión y del ancla fijado que la reconexión repite, or <c>null</c> when
+    /// the composition cannot re-establish the connection (AC5, AD-6, AD-27).
+    /// </param>
     public CatalogSyncComposition(
         Uri serverAddress,
         string stateDatabasePath,
         IClientRequestHeaders headers,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IServerConnectionGate? connectionGate = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDatabasePath);
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        ServerAddress = serverAddress;
 
         // El pool está desactivado porque la base de datos se abre pocas veces y un
         // handle agrupado mantendría el archivo de la carpeta de datos bloqueado mientras
@@ -103,6 +114,8 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
 
         _store = store;
 
+        _connectionGate = connectionGate;
+
         Service = new CatalogSyncService(
             snapshotClient,
             store,
@@ -113,6 +126,11 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
 
     /// <summary>The use case of the synchronization of the catalog.</summary>
     public CatalogSyncService Service { get; }
+
+    /// <summary>
+    /// Address of the event server that the composition talks to (AC1).
+    /// </summary>
+    public Uri ServerAddress { get; }
 
     /// <summary>
     /// Reads the installations that the client registered, which the ficha del videojuego
@@ -141,6 +159,78 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
     }
 
     /// <summary>
+    /// Reads the last operation that FINISHED, so the persistent panel of the connection
+    /// shows su resultado en vez de un espacio vacío (AC2, UX-DR-11).
+    ///
+    /// <para>
+    /// La lectura es de SOLO LECTURA y no escribe nada: la última operación se lee de las
+    /// operaciones de descarga que ya están persistidas, y no hay migración (AD-22).
+    /// </para>
+    /// <para>
+    /// Una operación TERMINADA es la que está en un estado terminal: completada, cancelada
+    /// o fallida. Una operación en curso NO es la última operación terminada (AD-10).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The description of the last operation that finished, or <c>null</c> when the client
+    /// has no finished operation yet.
+    /// </returns>
+    public async Task<string?> LoadLastFinishedOperationAsync(CancellationToken cancellationToken)
+    {
+        var operations = await _stateStore
+            .LoadDownloadOperationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var finished = operations
+            .Where(operation => TryResolveTerminalState(operation.State, out _))
+            .ToArray();
+
+        if (finished.Length == 0)
+        {
+            return null;
+        }
+
+        var last = finished
+            .OrderBy(operation => operation.OperationId, StringComparer.Ordinal)
+            .Last();
+
+        return TryResolveTerminalState(last.State, out var terminal)
+            ? $"{last.PackageId} · {StateDisplayMap.GetText(terminal.Value)}"
+            : null;
+    }
+
+    /// <summary>
+    /// Resolves whether the state of an operation is TERMINAL, and which one is (AD-10).
+    /// </summary>
+    /// <param name="state">Name of the state of the operation.</param>
+    /// <param name="terminal">The terminal state, when the state is terminal.</param>
+    /// <returns><c>true</c> when the state is terminal.</returns>
+    private static bool TryResolveTerminalState(string state, out DownloadState? terminal)
+    {
+        terminal = null;
+
+        if (string.IsNullOrWhiteSpace(state))
+        {
+            return false;
+        }
+
+        if (!Enum.TryParse<DownloadState>(state, ignoreCase: false, out var parsed))
+        {
+            return false;
+        }
+
+        if (parsed is not (DownloadState.Completed or DownloadState.Cancelled or DownloadState.Failed))
+        {
+            return false;
+        }
+
+        terminal = parsed;
+
+        return true;
+    }
+
+    /// <summary>
     /// Starts the synchronization: it subscribes to the trigger of a change of the catalog
     /// and it performs the first synchronization (AC1, AC-3).
     /// </summary>
@@ -166,6 +256,83 @@ public sealed class CatalogSyncComposition : IAsyncDisposable
         var state = await Service.SynchronizeAsync(cancellationToken).ConfigureAwait(false);
 
         Publish(state);
+    }
+
+    /// <summary>
+    /// Re-establishes the connection with the server of the event and resynchronizes the
+    /// catalog, WITHOUT reinstalling anything (AC5).
+    ///
+    /// <para>
+    /// AC5: la reconexión REPETE la puerta de versión (AD-6) y la validación del ancla
+    /// fijado (AD-27), re-suscribe al hub del estado del cliente y llama a la
+    /// sincronización del catálogo. El cliente recupera la conexión y vuelve a sincronizar
+    /// el catálogo sin reinstalarse (AC5, AD-5, AD-26).
+    /// </para>
+    /// <para>
+    /// La suscripción al hub es IDEMPOTENTE: el manejador de <c>CatalogChanged</c> se
+    /// registra una sola vez, así que re-suscribir NO duplica el disparo de la
+    /// resincronización (AC5, AD-5).
+    /// </para>
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// <c>true</c> when the connection was re-established and the catalog was
+    /// resynchronized, or <c>false</c> when the server could not be reached again.
+    /// </returns>
+    public async Task<bool> ReconnectAsync(
+        ServerEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+
+        if (_connectionGate is null)
+        {
+            return false;
+        }
+
+        ConnectionAttempt attempt;
+
+        try
+        {
+            attempt = await _connectionGate
+                .OpenAsync(endpoint, TimeSpan.FromSeconds(3), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "No se pudo reabrir la conexión con {ServerAddress}:{ServerPort}: la reconexión no se completa.",
+                endpoint.Address,
+                endpoint.Port);
+
+            return false;
+        }
+
+        if (!attempt.IsConnected)
+        {
+            _logger.LogWarning(
+                "La reconexión con {ServerAddress}:{ServerPort} no pasó la puerta de versión ni la del ancla fijado: la reconexión no se completa.",
+                endpoint.Address,
+                endpoint.Port);
+
+            return false;
+        }
+
+        // La suscripción se hace de nuevo, y es idempotente: el hub se reinicia si hacía
+        // falta y el manejador de `CatalogChanged` NO se duplica (AC5).
+        await Service.StartAsync(cancellationToken).ConfigureAwait(false);
+
+        var state = await Service.SynchronizeAsync(cancellationToken).ConfigureAwait(false);
+
+        Publish(state);
+
+        return true;
     }
 
     /// <summary>

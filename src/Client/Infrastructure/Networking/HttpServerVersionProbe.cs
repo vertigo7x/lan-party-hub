@@ -39,6 +39,17 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
     /// </summary>
     public const string MinimumProtocolVersionHeaderName = "X-Minimum-Protocol-Version";
 
+    /// <summary>
+    /// Header that carries the name of the server of the event.
+    ///
+    /// <para>
+    /// El nombre viaja como CABECERA, con el mismo patrón que la versión, y no como un
+    /// campo nuevo del contrato <see cref="VersionInfo"/> de <c>Shared</c>: el contrato no
+    /// crece (AD-18, AD-33).
+    /// </para>
+    /// </summary>
+    public const string ServerNameHeaderName = "X-Server-Name";
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<HttpServerVersionProbe> _logger;
 
@@ -77,6 +88,7 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
 
             var serverVersion = ReadHeader(response, ServerVersionHeaderName);
             var minimumProtocolVersion = ReadMinimumProtocolVersion(response);
+            var serverName = ReadHeader(response, ServerNameHeaderName);
 
             if (response.StatusCode == HttpStatusCode.UpgradeRequired)
             {
@@ -89,7 +101,9 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
                 return new ServerVersionProbeResult(
                     Compatible: false,
                     serverVersion,
-                    minimumProtocolVersion);
+                    minimumProtocolVersion,
+                    serverName,
+                    Reachable: true);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -105,13 +119,17 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
                 return new ServerVersionProbeResult(
                     Compatible: true,
                     serverVersion,
-                    minimumProtocolVersion);
+                    minimumProtocolVersion,
+                    serverName,
+                    Reachable: true);
             }
 
             return new ServerVersionProbeResult(
                 Compatible: true,
                 serverVersion,
-                minimumProtocolVersion);
+                minimumProtocolVersion,
+                serverName,
+                Reachable: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -130,7 +148,9 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
             return new ServerVersionProbeResult(
                 Compatible: true,
                 ServerVersion: null,
-                MinimumProtocolVersion: null);
+                MinimumProtocolVersion: null,
+                ServerName: null,
+                Reachable: false);
         }
         catch (HttpRequestException exception)
         {
@@ -145,7 +165,9 @@ public sealed class HttpServerVersionProbe : IServerVersionProbe
             return new ServerVersionProbeResult(
                 Compatible: true,
                 ServerVersion: null,
-                MinimumProtocolVersion: null);
+                MinimumProtocolVersion: null,
+                ServerName: null,
+                Reachable: false);
         }
     }
 
