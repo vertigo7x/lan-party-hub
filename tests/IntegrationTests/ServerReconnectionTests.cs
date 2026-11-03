@@ -263,10 +263,130 @@ public sealed class ServerReconnectionTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_healthy_server_does_not_reconnect_on_every_poll()
+    {
+        // AC5: la reconexión es la respuesta a una CAÍDA, no al estado permanente. Con el
+        // servidor SANO, el sondeo periódico NO restablece la conexión: el cliente no abre
+        // un socket, no repite la puerta de versión y no descarga el catálogo completo en
+        // cada sondeo.
+        var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            port: null,
+            TestContext.Current.CancellationToken);
+
+        await using (host)
+        {
+            var handler = new CountingReconnectHandler();
+
+            var probe = new CountingVersionProbe(
+                new HttpServerVersionProbe(
+                    BuildProbeHttpClient(),
+                    NullLogger<HttpServerVersionProbe>.Instance));
+
+            var monitor = new ServerAvailabilityMonitor(
+                probe,
+                handler,
+                NullLogger<ServerAvailabilityMonitor>.Instance)
+            {
+                InitialRetryDelay = TimeSpan.FromMilliseconds(100),
+                MaximumRetryDelay = TimeSpan.FromMilliseconds(100),
+                AvailablePollInterval = TimeSpan.FromMilliseconds(100),
+            };
+
+            await monitor.StartAsync(
+                new ServerEndpoint(host.BoundAddress.ToString(), host.Port),
+                TestContext.Current.CancellationToken);
+
+            try
+            {
+                // Varios sondeos con el servidor en pie.
+                await WaitForAsync(
+                    () => probe.ProbeCount >= 5,
+                    "el supervisor no llegó a sondear cinco veces");
+
+                await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
+
+                Assert.Equal(0, handler.Attempts);
+            }
+            finally
+            {
+                await monitor.StopAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_client_reconnects_once_when_the_server_comes_back()
+    {
+        // AC5: cuando el servidor CAE y vuelve, el cliente recupera la conexión UNA sola
+        // vez. Los sondeos posteriores, con el servidor ya recuperado, NO vuelven a
+        // reconectar (AC5).
+        var dataDirectory = CreateTemporaryDataDirectory();
+        var port = GetFreeTcpPort();
+
+        var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+
+        var handler = new CountingReconnectHandler();
+
+        var probe = new CountingVersionProbe(
+            new HttpServerVersionProbe(
+                BuildProbeHttpClient(),
+                NullLogger<HttpServerVersionProbe>.Instance));
+
+        var monitor = new ServerAvailabilityMonitor(
+            probe,
+            handler,
+            NullLogger<ServerAvailabilityMonitor>.Instance)
+        {
+            InitialRetryDelay = TimeSpan.FromMilliseconds(100),
+            MaximumRetryDelay = TimeSpan.FromMilliseconds(100),
+            AvailablePollInterval = TimeSpan.FromMilliseconds(100),
+        };
+
+        await monitor.StartAsync(
+            new ServerEndpoint(host.BoundAddress.ToString(), host.Port),
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            // El servidor está en pie: el cliente ya está conectado y NO reconecta.
+            await WaitForAsync(
+                () => probe.ProbeCount >= 2,
+                "el supervisor no llegó a sondear dos veces con el servidor en pie");
+
+            // El servidor CAE.
+            await host.DisposeAsync();
+
+            await WaitForAsync(
+                () => probe.ProbeCount >= 4,
+                "el supervisor no siguió vigilando tras la caída");
+
+            // El servidor VUELVE: el cliente recupera su conexión.
+            await using var restored = await TestServer.StartAsync(
+                dataDirectory,
+                port,
+                TestContext.Current.CancellationToken);
+
+            await WaitForAsync(
+                () => handler.Attempts >= 1,
+                "el cliente no recuperó la conexión cuando el servidor volvió");
+
+            // Más sondeos con el servidor ya recuperado: la reconexión NO se repite.
+            await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
+
+            Assert.Equal(1, handler.Attempts);
+        }
+        finally
+        {
+            await monitor.StopAsync();
+        }
+    }
+
     /// <summary>
     /// Starts the supervision of the availability of the host and wires it to the panel
     /// (AC1, AC3, AC4).
-    /// </summary>
+    ///
     /// <param name="host">Host of the event server.</param>
     /// <param name="panel">View model of the persistent panel.</param>
     /// <param name="published">List that collects the published availabilities.</param>
@@ -387,6 +507,47 @@ public sealed class ServerReconnectionTests : IDisposable
             {
                 // La carpeta no se puede borrar ahora, y no falla la prueba.
             }
+        }
+    }
+
+    /// <summary>
+    /// Sonda de las versiones que CUENTA los sondeos, para que la prueba pueda observar
+    /// cuántos sondeos hizo el supervisor (AC5).
+    /// </summary>
+    private sealed class CountingVersionProbe : IServerVersionProbe
+    {
+        private readonly IServerVersionProbe _inner;
+
+        public CountingVersionProbe(IServerVersionProbe inner) => _inner = inner;
+
+        /// <summary>How many times the probe was called.</summary>
+        public int ProbeCount { get; private set; }
+
+        public Task<ServerVersionProbeResult> ProbeAsync(
+            ServerEndpoint endpoint,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            ProbeCount++;
+
+            return _inner.ProbeAsync(endpoint, timeout, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Manejador de la reconexión que CUENTA los intentos, para que la prueba pueda
+    /// observar cuántas veces el supervisor restableció la conexión (AC5).
+    /// </summary>
+    private sealed class CountingReconnectHandler : IServerReconnectHandler
+    {
+        /// <summary>How many times the reconexión was attempted.</summary>
+        public int Attempts { get; private set; }
+
+        public Task<bool> ReconnectAsync(ServerEndpoint endpoint, CancellationToken cancellationToken)
+        {
+            Attempts++;
+
+            return Task.FromResult(true);
         }
     }
 }

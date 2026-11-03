@@ -228,11 +228,92 @@ public sealed class ServerAvailabilityMonitorTests
     {
         // AC4, AC5: una reconexión que NO pasa la puerta no deja de reintentar: el
         // supervisor sigue vigilando y lo intenta otra vez.
-        var probe = new ScriptedVersionProbe { Reachable = true };
+        var probe = new ScriptedVersionProbe { Reachable = false };
         var handler = new RecordingReconnectHandler { Succeeds = false };
         var monitor = CreateMonitor(probe, handler);
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
+
+        await probe.WaitForProbesAsync(1, TestContext.Current.CancellationToken);
+
+        // El servidor vuelve: el cliente intenta recuperar su conexión, pero la
+        // reconexión NO pasa la puerta, así que el supervisor la reintenta (AC4, AC5).
+        probe.Reachable = true;
+
+        await handler.WaitForReconnectionsAsync(2, TestContext.Current.CancellationToken);
+
+        Assert.True(handler.Attempts >= 2);
+    }
+
+    [Fact]
+    public async Task A_healthy_server_does_not_trigger_the_reconnection_on_every_poll()
+    {
+        // AC5: la reconexión es la respuesta a una CAÍDA, no al estado permanente. Con el
+        // servidor SANO, el sondeo periódico NO restablece la conexión: el cliente no
+        // abre un socket, no repite la puerta de versión y no descarga el catálogo
+        // completo en cada sondeo.
+        var probe = new ScriptedVersionProbe { Reachable = true };
+        var handler = new RecordingReconnectHandler();
+        var monitor = CreateMonitor(probe, handler);
+
+        await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
+
+        // Varios sondeos con el servidor en pie.
+        await probe.WaitForProbesAsync(3, TestContext.Current.CancellationToken);
+
+        await Task.Delay(TestRetryDelay, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, handler.Attempts);
+    }
+
+    [Fact]
+    public async Task The_reconnection_happens_only_once_per_outage()
+    {
+        // AC5: una sola caída produce UNA sola reconexión. Los sondeos posteriores, con el
+        // servidor ya recuperado, NO vuelven a restablecerse.
+        var probe = new ScriptedVersionProbe { Reachable = false };
+        var handler = new RecordingReconnectHandler();
+        var monitor = CreateMonitor(probe, handler);
+
+        await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
+
+        await probe.WaitForProbesAsync(1, TestContext.Current.CancellationToken);
+
+        probe.Reachable = true;
+
+        await handler.WaitForReconnectionsAsync(1, TestContext.Current.CancellationToken);
+
+        // Más sondeos con el servidor en pie: la reconexión NO se repite.
+        await probe.WaitForProbesAsync(4, TestContext.Current.CancellationToken);
+
+        await Task.Delay(TestRetryDelay, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, handler.Attempts);
+    }
+
+    [Fact]
+    public async Task A_second_outage_triggers_a_second_reconnection()
+    {
+        // AC5: cada CAÍDA produce su propia reconexión: la bandera de recuperación se
+        // levanta otra vez y el cliente restablece su conexión cuando el servidor vuelve.
+        var probe = new ScriptedVersionProbe { Reachable = false };
+        var handler = new RecordingReconnectHandler();
+        var monitor = CreateMonitor(probe, handler);
+
+        await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
+
+        await probe.WaitForProbesAsync(1, TestContext.Current.CancellationToken);
+
+        probe.Reachable = true;
+
+        await handler.WaitForReconnectionsAsync(1, TestContext.Current.CancellationToken);
+
+        // El servidor CAE otra vez y vuelve.
+        probe.Reachable = false;
+
+        await probe.WaitForProbesAsync(3, TestContext.Current.CancellationToken);
+
+        probe.Reachable = true;
 
         await handler.WaitForReconnectionsAsync(2, TestContext.Current.CancellationToken);
 

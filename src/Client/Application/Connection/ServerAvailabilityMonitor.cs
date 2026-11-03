@@ -14,9 +14,16 @@ namespace LANPartyHub.Client.Application.Connection;
 /// visible, y NO se abre ningún modal que interrumpa al jugador (AC3, AC4, UX-DR-29).
 /// </para>
 /// <para>
-/// Cuando el servidor vuelve, el supervisor llama al manejador de la reconexión, que
-/// REPETE la puerta de versión (AD-6) y la validación del ancla fijado (AD-27), re-suscribe
-/// al hub y resincroniza el catálogo. El cliente se recupera SIN reinstalarse (AC5).
+/// Cuando el servidor vuelve DESPUÉS de una caída, el supervisor llama al manejador de la
+/// reconexión, que REPETE la puerta de versión (AD-6) y la validación del ancla fijado
+/// (AD-27), re-suscribe al hub y resincroniza el catálogo. El cliente se recupera SIN
+/// reinstalarse (AC5).
+/// </para>
+/// <para>
+/// La reconexión es la respuesta a una CAÍDA, no al estado permanente: con el servidor
+/// SANO, el sondeo periódico se limita a publicar la disponibilidad y NO restablece la
+/// conexión. Así el cliente no abre un socket, no repite la puerta y no descarga el
+/// catálogo completo en cada sondeo (AC5).
 /// </para>
 /// <para>
 /// La disponibilidad que el supervisor publica es la del SERVIDOR: el punto de presencia
@@ -223,6 +230,12 @@ public sealed class ServerAvailabilityMonitor
     {
         var retryDelay = InitialRetryDelay;
 
+        // La reconexión se debe a una CAÍDA: el cliente ya abrió su conexión al
+        // arrancar, así que con el servidor sano NO hay nada que restablecer. La bandera
+        // se levanta cuando el servidor NO responde y se baja cuando la reconexión
+        // termina bien (AC5).
+        var recoveryPending = false;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             var probe = await ProbeAsync(endpoint, cancellationToken).ConfigureAwait(false);
@@ -231,6 +244,11 @@ public sealed class ServerAvailabilityMonitor
             {
                 // La sonda no pudo pronunciarse: el servidor NO está disponible y el
                 // reintento sigue su curso (AC4).
+                //
+                // La caída deja una RECUPERACIÓN pendiente: cuando el servidor vuelva, el
+                // cliente tiene que restablecer su conexión (AC5).
+                recoveryPending = true;
+
                 PublishUnavailable(endpoint, retryDelay);
 
                 if (!await CountdownAsync(retryDelay, cancellationToken).ConfigureAwait(false))
@@ -246,6 +264,20 @@ public sealed class ServerAvailabilityMonitor
             // El servidor volvió: el punto de presencia pasa a disponible (AC1, AC3).
             PublishAvailable(endpoint, probe);
 
+            if (!recoveryPending)
+            {
+                // El servidor está SANO y el cliente NO pasó por una caída: NO hay nada
+                // que restablecer. El sondeo periódico sigue publicando la
+                // disponibilidad, y el cliente NO abre un socket, NO repite la puerta de
+                // versión y NO descarga el catálogo en cada sondeo (AC5).
+                if (!await DelayAsync(AvailablePollInterval, cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
             // AD-6, AD-27: la reconexión REPETE la puerta de versión y la validación del
             // ancla fijado. El servidor que responde puede ser otro, así que la confianza
             // de la sesión anterior NO se hereda (AC5).
@@ -257,6 +289,9 @@ public sealed class ServerAvailabilityMonitor
 
             if (!reconnected)
             {
+                // La recuperación sigue PENDIENTE: el siguiente sondeo vuelve a intentar
+                // la reconexión, porque el cliente todavía no recuperó su conexión (AC4,
+                // AC5).
                 if (!await CountdownAsync(retryDelay, cancellationToken).ConfigureAwait(false))
                 {
                     return;
@@ -268,7 +303,10 @@ public sealed class ServerAvailabilityMonitor
             }
 
             // El cliente recuperó la conexión y resincronizó el catálogo SIN
-            // reinstalarse (AC5).
+            // reinstalarse (AC5). La recuperación queda dischargeada: los sondeos
+            // siguientes NO vuelven a reconectar (AC5).
+            recoveryPending = false;
+
             retryDelay = InitialRetryDelay;
 
             if (!await DelayAsync(AvailablePollInterval, cancellationToken).ConfigureAwait(false))
@@ -318,6 +356,12 @@ public sealed class ServerAvailabilityMonitor
 
     /// <summary>
     /// Re-establishes the connection and resynchronizes the catalog (AC5).
+    ///
+    /// <para>
+    /// Solo se llama cuando el cliente tiene una RECUPERACIÓN pendiente, es decir, cuando
+    /// el servidor estuvo caído y volvió: con el servidor sano NO se restablece nada
+    /// (AC5).
+    /// </para>
     ///
     /// <param name="endpoint">Endpoint of the server of the event.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
