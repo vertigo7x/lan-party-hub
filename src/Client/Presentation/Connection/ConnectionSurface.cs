@@ -45,7 +45,14 @@ public sealed class ConnectionSurface : UserControl
     private readonly TextBlock _addressInUse;
     private readonly TextBlock _errorNotice;
     private readonly TextBlock _incompatibleNotice;
+    private readonly TextBlock _expectedFingerprintLabel;
+    private readonly TextBox _expectedFingerprintInput;
+    private readonly Button _fixAnchor;
+    private readonly TextBlock _presentedFingerprint;
+    private readonly TextBlock _anchorUnverifiedNotice;
+    private readonly TextBlock _anchorMismatchNotice;
     private readonly Func<string?, CancellationToken, Task>? _onManualAddress;
+    private readonly Func<string?, CancellationToken, Task>? _onFixAnchor;
 
     /// <summary>
     /// Creates the surface of the connection.
@@ -55,14 +62,20 @@ public sealed class ConnectionSurface : UserControl
     /// Action that the player triggers with «Enter» in the field of the address, or
     /// <c>null</c> when the surface is built without it.
     /// </param>
+    /// <param name="onFixAnchor">
+    /// Action that the player triggers to fix the ancla de confianza, or <c>null</c> when
+    /// the surface is built without it (AC2, AD-27).
+    /// </param>
     public ConnectionSurface(
         ConnectionSurfaceViewModel viewModel,
-        Func<string?, CancellationToken, Task>? onManualAddress = null)
+        Func<string?, CancellationToken, Task>? onManualAddress = null,
+        Func<string?, CancellationToken, Task>? onFixAnchor = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
         _viewModel = viewModel;
         _onManualAddress = onManualAddress;
+        _onFixAnchor = onFixAnchor;
 
         _servers = new ItemsControl();
 
@@ -105,6 +118,48 @@ public sealed class ConnectionSurface : UserControl
             IsVisible = false,
         };
 
+        // AD-27: el campo del fingerprint ESPERADO. El valor llega por un canal fuera de
+        // banda, así que el campo lo teclea el jugador con lo que le dio el organizador
+        // (AC2, AD-27).
+        _expectedFingerprintLabel = new TextBlock
+        {
+            Text = ConnectionSurfaceViewModel.ExpectedFingerprintLabelText,
+        };
+
+        _expectedFingerprintInput = new TextBox
+        {
+            PlaceholderText = ConnectionSurfaceViewModel.ExpectedFingerprintPlaceholderText,
+            Height = DesignTokens.FieldInputHeight,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+
+        _expectedFingerprintInput.TextChanged += (_, _) =>
+            _viewModel.SetExpectedFingerprint(_expectedFingerprintInput.Text);
+
+        _fixAnchor = new Button { Content = "Fijar ancla de confianza" };
+
+        _fixAnchor.Click += (_, _) => ConfirmAnchor();
+
+        _presentedFingerprint = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas, Courier New, monospace"),
+        };
+
+        // AD-27: el aviso del ancla sin verificar. Es un estado de SEGURIDAD y no un error
+        // de red, y la UI lo dice de forma explícita (AC7, AD-27).
+        _anchorUnverifiedNotice = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
+        _anchorMismatchNotice = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
         Content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -126,6 +181,12 @@ public sealed class ConnectionSurface : UserControl
                 _addressInUse,
                 _errorNotice,
                 _incompatibleNotice,
+                _expectedFingerprintLabel,
+                _expectedFingerprintInput,
+                _fixAnchor,
+                _presentedFingerprint,
+                _anchorUnverifiedNotice,
+                _anchorMismatchNotice,
             },
         };
 
@@ -145,6 +206,12 @@ public sealed class ConnectionSurface : UserControl
     /// from the outside (AC1).
     /// </summary>
     public TextBox AddressInput => _addressInput;
+
+    /// <summary>
+    /// The field of the fingerprint esperado, so the surface can be inspected and driven
+    /// from the outside (AC2, AD-27).
+    /// </summary>
+    public TextBox ExpectedFingerprintInput => _expectedFingerprintInput;
 
     /// <summary>
     /// Renders the state of the view model in the surface (AC1, AC2, AC3, AC4).
@@ -188,6 +255,56 @@ public sealed class ConnectionSurface : UserControl
             : string.Empty;
 
         _incompatibleNotice.IsVisible = _viewModel.ShowsIncompatibleVersion;
+
+        // AD-27: el aviso del ancla SIN VERIFICAR dice de forma explícita que el cliente
+        // no descarga ni instala nada hasta que el ancla esté fijada (AC7, AD-27).
+        _anchorUnverifiedNotice.Text = _viewModel.ShowsAnchorUnverified
+            ? $"{ConnectionSurfaceViewModel.AnchorUnverifiedTitleText}{Environment.NewLine}" +
+              $"{ConnectionSurfaceViewModel.AnchorUnverifiedText}"
+            : string.Empty;
+
+        _anchorUnverifiedNotice.IsVisible = _viewModel.ShowsAnchorUnverified;
+
+        // AD-27: el fingerprint que el servidor presenta se muestra JUNTO al esperado,
+        // para que el jugador pueda CONTRASTARLOS antes de confirmar (AC2, AD-27).
+        _presentedFingerprint.Text = _viewModel.PresentedAnchorFingerprint is null
+            ? string.Empty
+            : $"{ConnectionSurfaceViewModel.PresentedFingerprintLabelText}{_viewModel.PresentedAnchorFingerprint}";
+
+        _presentedFingerprint.IsVisible = _viewModel.PresentedAnchorFingerprint is not null;
+
+        // AC6, AD-27: el aviso del ancla que NO coincide muestra los dos fingerprints.
+        _anchorMismatchNotice.Text = _viewModel.ShowsAnchorMismatch
+            ? $"{ConnectionSurfaceViewModel.AnchorMismatchTitleText}{Environment.NewLine}" +
+              $"{_viewModel.AnchorMismatchText}"
+            : string.Empty;
+
+        _anchorMismatchNotice.IsVisible = _viewModel.ShowsAnchorMismatch;
+    }
+
+    /// <summary>
+    /// Confirms the fingerprint esperado that the player typed, so the client fixes the
+    /// ancla de confianza (AC2, AD-27).
+    ///
+    /// <para>
+    /// AD-27: la acción NO escribe nada por su cuenta. La superficie entrega el valor al
+    /// caso de uso, que es el único que deriva el fingerprint de la clave que presenta el
+    /// servidor, lo COMPARA con el esperado y decide. El rechazo precede a persistir
+    /// (AC2, AD-27).
+    /// </para>
+    /// </summary>
+    private void ConfirmAnchor()
+    {
+        var fingerprint = _expectedFingerprintInput.Text;
+
+        _viewModel.SetExpectedFingerprint(fingerprint);
+
+        if (_onFixAnchor is null)
+        {
+            return;
+        }
+
+        _ = _onFixAnchor(fingerprint, CancellationToken.None);
     }
 
     /// <summary>

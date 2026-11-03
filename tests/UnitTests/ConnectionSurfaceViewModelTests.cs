@@ -312,4 +312,111 @@ public sealed class ConnectionSurfaceViewModelTests
             Assert.DoesNotContain(forbidden, properties);
         }
     }
+
+    [Fact]
+    public void A_connection_that_opens_without_a_fixed_anchor_shows_the_unverified_notice()
+    {
+        // AC7, AD-27: sin ancla fijada, el estado es «Ancla sin verificar» y la UI lo dice
+        // de forma EXPRESA: es un estado de seguridad y no un error de red.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyConnection(ConnectionAttempt.Succeeded(
+            new ServerEndpoint("192.168.1.20", 5177)));
+
+        Assert.Equal(ConnectionState.AnchorUnverified, viewModel.ConnectionState);
+        Assert.True(viewModel.ShowsAnchorUnverified);
+    }
+
+    [Fact]
+    public void The_unverified_notice_says_that_nothing_is_downloaded_nor_installed()
+    {
+        // AC7, AD-27: la UI lo dice de forma explícita, porque el jugador tiene que saber
+        // por qué no puede operar.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyConnection(ConnectionAttempt.Succeeded(
+            new ServerEndpoint("192.168.1.20", 5177)));
+
+        Assert.Contains("no se descarga ni se instala", ConnectionSurfaceViewModel.AnchorUnverifiedText);
+        Assert.False(string.IsNullOrWhiteSpace(ConnectionSurfaceViewModel.AnchorUnverifiedText));
+    }
+
+    [Fact]
+    public void A_fixed_anchor_that_matches_hides_the_unverified_notice()
+    {
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyAnchorVerified();
+
+        Assert.Equal(ConnectionState.AnchorVerified, viewModel.ConnectionState);
+        Assert.False(viewModel.ShowsAnchorUnverified);
+    }
+
+    [Fact]
+    public void A_server_that_presents_another_anchor_shows_both_fingerprints()
+    {
+        // AC6, AD-27: el jugador ve el fingerprint que presentó el servidor y el que ya
+        // está fijado, para que vea la diferencia.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyAnchorMismatch("aaaaaaaa", "bbbbbbbb");
+
+        Assert.True(viewModel.ShowsAnchorMismatch);
+        Assert.Contains("aaaaaaaa", viewModel.AnchorMismatchText);
+        Assert.Contains("bbbbbbbb", viewModel.AnchorMismatchText);
+    }
+
+    [Fact]
+    public void A_server_that_presents_another_anchor_leaves_the_client_disconnected()
+    {
+        // AC6, AD-27: el cliente con un ancla que no coincide NO opera.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyAnchorMismatch("aaaaaaaa", "bbbbbbbb");
+
+        Assert.Equal(ConnectionState.Disconnected, viewModel.ConnectionState);
+        Assert.Null(viewModel.EndpointInUse);
+    }
+
+    [Fact]
+    public void The_surface_shows_the_fingerprint_that_the_server_presented()
+    {
+        // AC2, AD-27: el fingerprint recibido se muestra junto al esperado, para que el
+        // jugador los CONTRASTE antes de confirmar.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.ApplyPresentedFingerprint("cafe");
+
+        Assert.Equal("cafe", viewModel.PresentedAnchorFingerprint);
+    }
+
+    [Fact]
+    public void The_surface_records_the_expected_fingerprint_that_the_player_typed()
+    {
+        // AC2, AD-27: el valor esperado llega por el canal fuera de banda.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        viewModel.SetExpectedFingerprint("cafe");
+
+        Assert.Equal("cafe", viewModel.ExpectedFingerprint);
+    }
+
+    [Fact]
+    public void The_surface_never_asks_for_the_anchor_through_the_network()
+    {
+        // AD-27, R-MVP-3: el fingerprint NO se propaga por mDNS, ni por el handshake de
+        // SignalR, ni por GET /api/v1/server/info como valor a aceptar sin contrastar. La
+        // superficie solo tiene un campo de ENTRADA, que es el canal fuera de banda.
+        var viewModel = new ConnectionSurfaceViewModel();
+
+        var properties = typeof(ConnectionSurfaceViewModel)
+            .GetProperties()
+            .Where(property => property.CanWrite)
+            .Select(property => property.Name)
+            .ToArray();
+
+        Assert.Contains("ExpectedFingerprint", properties);
+        Assert.DoesNotContain("ReceivedFingerprint", properties);
+        Assert.DoesNotContain("ServerFingerprint", properties);
+    }
 }

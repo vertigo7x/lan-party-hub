@@ -1,5 +1,6 @@
 using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -244,6 +245,131 @@ public sealed class ServerConnectionServiceTests
         Assert.Equal(5177, probe.LastEndpoint.Port);
     }
 
+    [Fact]
+    public async Task A_client_without_a_fixed_anchor_leaves_the_anchor_unverified()
+    {
+        // AC7, AD-27: sin ancla fijada, el estado es «Ancla sin verificar» y el cliente no
+        // opera. La conexión NO se degrada a «conectado» por el hecho de abrir el socket.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(
+            connector,
+            new FakeServerVersionProbe(),
+            new FakeTrustAnchorReader { Fixed = null },
+            new FakeServerTrustAnchorProbe { Presented = GoldenAnchor() });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ConnectionState.AnchorUnverified, attempt.State);
+        Assert.Null(attempt.Error);
+    }
+
+    [Fact]
+    public async Task A_fixed_anchor_that_matches_the_server_keeps_the_connection()
+    {
+        // AD-27: con el ancla fijada y validada contra el valor persistido, la conexión no
+        // se rechaza.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(
+            connector,
+            new FakeServerVersionProbe(),
+            new FakeTrustAnchorReader { Fixed = GoldenPinnedAnchor() },
+            new FakeServerTrustAnchorProbe { Presented = GoldenAnchor() });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(attempt.Error);
+        Assert.False(attempt.IsAnchorMismatch);
+    }
+
+    [Fact]
+    public async Task A_fixed_anchor_that_does_not_match_the_server_is_rejected()
+    {
+        // AC6, AD-27: un ancla fijada es INMUTABLE. Una clave distinta se RECHAZA.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(
+            connector,
+            new FakeServerVersionProbe(),
+            new FakeTrustAnchorReader { Fixed = GoldenPinnedAnchor() },
+            new FakeServerTrustAnchorProbe { Presented = OtherAnchor() });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ConnectionState.Disconnected, attempt.State);
+        Assert.True(attempt.IsAnchorMismatch);
+        Assert.Null(attempt.Endpoint is null ? null : attempt.Endpoint);
+    }
+
+    [Fact]
+    public async Task A_rejected_anchor_carries_the_anchor_mismatch_code()
+    {
+        // AC2, AD-27: el `code` del diagnóstico es el de «fingerprint de ancla no
+        // coincide», DISTINTO del de «firma inválida».
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(
+            connector,
+            new FakeServerVersionProbe(),
+            new FakeTrustAnchorReader { Fixed = GoldenPinnedAnchor() },
+            new FakeServerTrustAnchorProbe { Presented = OtherAnchor() });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(attempt.Error);
+        Assert.Equal(ErrorCatalog.AnchorFingerprintMismatchCode, attempt.Error!.Code);
+        Assert.NotEqual(ErrorCatalog.ManifestSignatureInvalidCode, attempt.Error.Code);
+    }
+
+    [Fact]
+    public async Task A_rejected_anchor_carries_both_fingerprints()
+    {
+        // AC6: la superficie muestra el fingerprint que presentó el servidor y el que ya
+        // está fijado.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(
+            connector,
+            new FakeServerVersionProbe(),
+            new FakeTrustAnchorReader { Fixed = GoldenPinnedAnchor() },
+            new FakeServerTrustAnchorProbe { Presented = OtherAnchor() });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(attempt.PresentedAnchorFingerprint);
+        Assert.NotNull(attempt.FixedAnchorFingerprint);
+        Assert.NotEqual(
+            attempt.PresentedAnchorFingerprint,
+            attempt.FixedAnchorFingerprint);
+    }
+
+    private static TrustAnchor GoldenAnchor() =>
+        new(
+            AnchorFingerprintTests.GoldenPublicKeyBase64,
+            AnchorFingerprintTests.GoldenFingerprint);
+
+    private static TrustAnchor OtherAnchor() =>
+        new(
+            Convert.ToBase64String(new byte[32]),
+            new string('a', 64));
+
+    private static PinnedTrustAnchor GoldenPinnedAnchor() =>
+        new(
+            AnchorFingerprintTests.GoldenPublicKeyBase64,
+            AnchorFingerprintTests.GoldenFingerprint,
+            "2026-11-03T09:00:00.0000000Z");
+
     private static ServerConnectionService CreateService(FakeServerConnector connector) =>
         CreateService(connector, new FakeServerVersionProbe());
 
@@ -254,7 +380,49 @@ public sealed class ServerConnectionServiceTests
             connector,
             probe,
             new FakeClientVersionProvider(),
+            anchorReader: null,
+            anchorProbe: null,
             NullLogger<ServerConnectionService>.Instance);
+
+    private static ServerConnectionService CreateService(
+        FakeServerConnector connector,
+        FakeServerVersionProbe probe,
+        FakeTrustAnchorReader anchorReader,
+        FakeServerTrustAnchorProbe anchorProbe) =>
+        new(
+            connector,
+            probe,
+            new FakeClientVersionProvider(),
+            anchorReader,
+            anchorProbe,
+            NullLogger<ServerConnectionService>.Instance);
+
+    /// <summary>
+    /// Ancla de confianza que el cliente ya tiene fijada (AD-27).
+    /// </summary>
+    private sealed class FakeTrustAnchorReader : ITrustAnchorReader
+    {
+        /// <summary>The ancla that the client has fixed, when it has one.</summary>
+        public PinnedTrustAnchor? Fixed { get; init; }
+
+        public Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(Fixed);
+    }
+
+    /// <summary>
+    /// Sonda del ancla que el servidor presenta (AD-27).
+    /// </summary>
+    private sealed class FakeServerTrustAnchorProbe : IServerTrustAnchorProbe
+    {
+        /// <summary>The ancla that the server presents.</summary>
+        public TrustAnchor? Presented { get; init; }
+
+        public Task<ServerTrustAnchorProbeResult> ProbeAsync(
+            ServerEndpoint endpoint,
+            TimeSpan timeout,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ServerTrustAnchorProbeResult(Presented, Reachable: true));
+    }
 
     /// <summary>
     /// Port of the opening of the connection with the server, with the behaviour that the

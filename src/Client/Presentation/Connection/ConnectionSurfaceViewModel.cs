@@ -83,6 +83,56 @@ public sealed class ConnectionSurfaceViewModel
     /// </summary>
     public const string IncompatibleVersionTitleText = "El cliente no es compatible con el servidor";
 
+    /// <summary>
+    /// Text of the label of the field of the fingerprint esperado (AC2, AD-27).
+    /// </summary>
+    public const string ExpectedFingerprintLabelText = "Fingerprint del ancla de confianza";
+
+    /// <summary>
+    /// Text of the placeholder of the field of the fingerprint esperado (AC2, AD-27).
+    /// </summary>
+    public const string ExpectedFingerprintPlaceholderText =
+        "El que te dio el organizador (QR o pantalla)";
+
+    /// <summary>
+    /// Text of the label of the fingerprint que el servidor presenta (AC2, AD-27).
+    /// </summary>
+    public const string PresentedFingerprintLabelText = "Fingerprint que presenta el servidor: ";
+
+    /// <summary>
+    /// Text of the label of the fingerprint que ya está fijado (AD-27).
+    /// </summary>
+    public const string FixedFingerprintLabelText = "Fingerprint ya fijado: ";
+
+    /// <summary>
+    /// Text of the title of the notice of the ancla sin verificar (AC7, AD-27).
+    ///
+    /// <para>
+    /// AD-27: el estado «Ancla sin verificar» NO es un error de red: es un estado de
+    /// SEGURIDAD, y la UI lo dice de forma explícita. El cliente no lo degrada a
+    /// «conectado» por haber descargado antes el catálogo (AC7, AD-27).
+    /// </para>
+    /// </summary>
+    public const string AnchorUnverifiedTitleText = "Ancla de confianza sin verificar";
+
+    /// <summary>
+    /// Text that the surface shows when the ancla de confianza NO está fijada (AC7,
+    /// AD-27).
+    ///
+    /// <para>
+    /// AD-27: en este estado el cliente NO descarga ni instala nada, y la UI lo dice de
+    /// forma explícita, porque el jugador tiene que saber por qué no puede operar.
+    /// </para>
+    /// </summary>
+    public const string AnchorUnverifiedText =
+        "No has fijado todavía el ancla de confianza. Pide al organizador el fingerprint del ancla "
+        + "e introdúcelo aquí: hasta entonces no se descarga ni se instala nada.";
+
+    /// <summary>
+    /// Text of the title of the notice of la ancla que no coincide (AC2, AD-27).
+    /// </summary>
+    public const string AnchorMismatchTitleText = "El ancla de confianza no coincide";
+
     private readonly List<ServerEndpoint> _servers = [];
 
     /// <summary>
@@ -162,10 +212,61 @@ public sealed class ConnectionSurfaceViewModel
     public string? IncompatibleServerVersion { get; private set; }
 
     /// <summary>
-    /// Whether the surface has to show the diagnostic of the incompatibilidad (AD-6,
+    /// Whether the surface has to show the diagnostic de la incompatibilidad (AD-6,
     /// UX-DR-31).
     /// </summary>
     public bool ShowsIncompatibleVersion => IncompatibleClientVersion is not null;
+
+    /// <summary>
+    /// The fingerprint esperado that the player typed or that the QR carried (AC2,
+    /// AD-27).
+    ///
+    /// <para>
+    /// AD-27: este valor llega por un canal FUERA de banda. El cliente nunca lo toma del
+    /// servidor, y un valor que llega por la LAN no puede convertirse en ancla por sí
+    /// mismo (AD-27).
+    /// </para>
+    /// </summary>
+    public string ExpectedFingerprint { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The fingerprint that the server presented, when the client already fixed an ancla
+    /// and the server presented a DIFFERENT one (AC6, AD-27).
+    /// </summary>
+    public string? PresentedAnchorFingerprint { get; private set; }
+
+    /// <summary>
+    /// The fingerprint that the client has fixed, when the server presented a different
+    /// one (AC6, AD-27).
+    /// </summary>
+    public string? FixedAnchorFingerprint { get; private set; }
+
+    /// <summary>
+    /// Whether the surface has to show the notice de la ancla sin verificar (AC7, AD-27).
+    ///
+    /// <para>
+    /// AD-27: el estado «Ancla sin verificar» es un estado de seguridad, no un error de
+    /// red, y la UI lo dice de forma explícita (AC7, AD-27).
+    /// </para>
+    /// </summary>
+    public bool ShowsAnchorUnverified => ConnectionState == ConnectionState.AnchorUnverified;
+
+    /// <summary>
+    /// Whether the surface has to show the notice de la ancla que no coincide (AC6,
+    /// AD-27).
+    /// </summary>
+    public bool ShowsAnchorMismatch => PresentedAnchorFingerprint is not null;
+
+    /// <summary>
+    /// Text of la ancla que no coincide: el fingerprint que presentó el servidor y el que
+    /// ya está fijado, para que el jugador vea la diferencia (AC6, AD-27).
+    /// </summary>
+    public string AnchorMismatchText =>
+        PresentedAnchorFingerprint is null
+            ? string.Empty
+            : $"{PresentedFingerprintLabelText}{PresentedAnchorFingerprint}{Environment.NewLine}" +
+              $"{FixedFingerprintLabelText}{FixedAnchorFingerprint}";
+
 
     /// <summary>
     /// Text of the diagnostic de la incompatibilidad: la versión del cliente, la del
@@ -247,12 +348,29 @@ public sealed class ConnectionSurfaceViewModel
 
     /// <summary>
     /// Records the address that the player typed (AC1).
-    ///
+    /// </summary>
     /// <param name="address">Text of the address, in the form <c>host:puerto</c>.</param>
     public void SetAddress(string? address)
     {
         Address = address ?? string.Empty;
     }
+
+    /// <summary>
+    /// Records the fingerprint esperado that the player typed or that the QR carried
+    /// (AC2, AD-27).
+    ///
+    /// <para>
+    /// AD-27: este valor es el que llega FUERA de banda. La superficie solo lo guarda: la
+    /// comparación y el rechazo los hace el caso de uso, que es el único que escribe
+    /// (AC2, AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="fingerprint">Fingerprint as the player transported it.</param>
+    public void SetExpectedFingerprint(string? fingerprint)
+    {
+        ExpectedFingerprint = fingerprint ?? string.Empty;
+    }
+
 
     /// <summary>
     /// Applies the result of the manual connection to the surface (AC1, AC3).
@@ -277,6 +395,70 @@ public sealed class ConnectionSurfaceViewModel
             IncompatibleClientVersion = attempt.IncompatibleClientVersion;
             IncompatibleServerVersion = attempt.IncompatibleServerVersion;
         }
+
+        if (attempt.IsAnchorMismatch)
+        {
+            // AC6, AD-27: el servidor presentó un ancla que NO es la fijada. La superficie
+            // muestra los dos fingerprints para que el jugador vea la diferencia, y el
+            // ancla fijada NO se sustituye.
+            PresentedAnchorFingerprint = attempt.PresentedAnchorFingerprint;
+            FixedAnchorFingerprint = attempt.FixedAnchorFingerprint;
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Applies the fingerprint que el servidor presentó y el que ya está fijado, cuando no
+    /// coinciden (AC6, AD-27).
+    /// </summary>
+    /// <param name="presentedFingerprint">Fingerprint that the server presented.</param>
+    /// <param name="fixedFingerprint">Fingerprint that the client has fixed.</param>
+    public void ApplyAnchorMismatch(string presentedFingerprint, string fixedFingerprint)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(presentedFingerprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixedFingerprint);
+
+        PresentedAnchorFingerprint = presentedFingerprint;
+        FixedAnchorFingerprint = fixedFingerprint;
+
+        // El cliente con un ancla que no coincide NO opera: el estado queda
+        // DESCONECTADO (AC6, AD-27).
+        ConnectionState = ConnectionState.Disconnected;
+        EndpointInUse = null;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Applies the state of an ancla de confianza que ya está fijada y coincide con la
+    /// que presenta el servidor (AD-27).
+    ///
+    /// <para>
+    /// AD-27: con el ancla fijada y validada contra el valor PERSISTIDO, la conexión pasa
+    /// a «Ancla verificada» y el cliente puede validar los manifiestos firmados (AD-2,
+    /// AD-27).
+    /// </para>
+    /// </summary>
+    public void ApplyAnchorVerified()
+    {
+        ConnectionState = ConnectionState.AnchorVerified;
+        PresentedAnchorFingerprint = null;
+        FixedAnchorFingerprint = null;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Applies the fingerprint que el servidor presentó, para que la superficie lo muestre
+    /// junto al esperado ANTES de que el jugador confirme (AC2, AD-27).
+    /// </summary>
+    /// <param name="presentedFingerprint">Fingerprint that the server presented.</param>
+    public void ApplyPresentedFingerprint(string presentedFingerprint)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(presentedFingerprint);
+
+        PresentedAnchorFingerprint = presentedFingerprint;
 
         Changed?.Invoke();
     }

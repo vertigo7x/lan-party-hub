@@ -238,6 +238,22 @@ public partial class Program
                 configuration.DataDirectory,
                 configuration.HttpPort);
 
+        // AD-27: el fingerprint del ancla de confianza va al LOG DE ARRANQUE, porque el
+        // servidor puede correr SIN escritorio y la organización tiene que poder entregar
+        // el fingerprint igualmente (por el chat del evento, por un cartel o por el canal
+        // que ya usa para repartir el ejecutable).
+        //
+        // El fingerprint es el dato que viaja FUERA de banda. El log es local del servidor
+        // y la organización decide cómo lo reparte, así que publicarlo aquí no lo convierte
+        // en un valor que el cliente pueda aceptar sin contrastar (AD-27).
+        var trustAnchor = app.Services.GetRequiredService<IManifestSigner>().GetTrustAnchor();
+
+        app.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("LANPartyHub.Server.Startup")
+            .LogInformation(
+                "Ancla de confianza del evento: fingerprint {AnchorFingerprint}. Repártelo fuera de banda a los jugadores.",
+                trustAnchor.Fingerprint);
+
         // AD-11: the migrations are versioned and they are applied automatically at startup.
         // EnsureCreated is never used: it skips the history of the migrations.
         await using (var scope = app.Services.CreateAsyncScope())

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using LANPartyHub.Server.Application.Ports;
+using LANPartyHub.Shared.Contracts;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 
@@ -47,6 +48,7 @@ public sealed class Ed25519ManifestSigner : IManifestSigner
 
     private readonly Ed25519PrivateKeyParameters _privateKey;
     private readonly string _keyId;
+    private readonly byte[] _publicKey;
 
     /// <summary>
     /// Creates the signer of the installation manifest of the server.
@@ -60,7 +62,8 @@ public sealed class Ed25519ManifestSigner : IManifestSigner
         var seed = DeriveSeed(machineName ?? Environment.MachineName);
 
         _privateKey = new Ed25519PrivateKeyParameters(seed, 0);
-        _keyId = ComputeKeyId(_privateKey.GeneratePublicKey().GetEncoded());
+        _publicKey = _privateKey.GeneratePublicKey().GetEncoded();
+        _keyId = ComputeKeyId(_publicKey);
     }
 
     /// <summary>
@@ -139,6 +142,38 @@ public sealed class Ed25519ManifestSigner : IManifestSigner
     /// <inheritdoc />
     public string GetKeyId() => _keyId;
 
+    /// <inheritdoc />
+    public TrustAnchor GetTrustAnchor() =>
+        new(
+            PublicKey: Convert.ToBase64String(_publicKey),
+            Fingerprint: ComputeFingerprint(_publicKey));
+
+    /// <summary>
+    /// Computes the canonical fingerprint of a raw Ed25519 public key (AD-27).
+    ///
+    /// <para>
+    /// AD-27: la regla del fingerprint es UNA y es la misma en el servidor y en el
+    /// cliente: el <c>sha256</c> de los 32 bytes de la clave pública cruda, en hexadecimal
+    /// minúsculo. El cliente DERIVA el fingerprint de la clave que el servidor presenta y
+    /// lo compara con el esperado, así que las dos unidades tienen que aplicar
+    /// exactamente la misma regla: dos reglas distintas harían que un fingerprint
+    /// auténtico pareciera distinto en los dos lados.
+    /// </para>
+    /// <para>
+    /// El valor coincide con el identificador de la clave que la firma usa, de modo que la
+    /// clave que firma los manifiestos y la que el organizador transporta son la misma
+    /// (AD-2, AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="publicKey">Raw bytes of the public key.</param>
+    /// <returns>The fingerprint of the key, in lowercase hexadecimal.</returns>
+    public static string ComputeFingerprint(byte[] publicKey)
+    {
+        ArgumentNullException.ThrowIfNull(publicKey);
+
+        return Convert.ToHexString(SHA256.HashData(publicKey)).ToLowerInvariant();
+    }
+
     /// <summary>
     /// Computes the identifier of a key from its raw public key: the fingerprint of the
     /// key in hexadecimal, which is the value that the organizer contrasts out of band
@@ -146,10 +181,5 @@ public sealed class Ed25519ManifestSigner : IManifestSigner
     /// </summary>
     /// <param name="publicKey">Raw bytes of the public key.</param>
     /// <returns>The identifier of the key.</returns>
-    private static string ComputeKeyId(byte[] publicKey)
-    {
-        ArgumentNullException.ThrowIfNull(publicKey);
-
-        return Convert.ToHexString(SHA256.HashData(publicKey)).ToLowerInvariant();
-    }
+    private static string ComputeKeyId(byte[] publicKey) => ComputeFingerprint(publicKey);
 }

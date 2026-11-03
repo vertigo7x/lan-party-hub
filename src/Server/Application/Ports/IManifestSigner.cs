@@ -1,3 +1,5 @@
+using LANPartyHub.Shared.Contracts;
+
 namespace LANPartyHub.Server.Application.Ports;
 
 /// <summary>
@@ -31,4 +33,19 @@ public interface IManifestSigner
     /// </summary>
     /// <returns>The identifier of the signing key.</returns>
     string GetKeyId();
+
+    /// <summary>
+    /// The trust anchor of the event: the public key of the server and the fingerprint that
+    /// the organizer transports out of band (AD-27).
+    ///
+    /// <para>
+    /// AD-27: el servidor PUBLICA su ancla para que el jugador la CONTRASTE, nunca para
+    /// que el cliente la acepte sin más. El fingerprint es el dato que viaja fuera de
+    /// banda y la clave pública es lo que el cliente deriva el fingerprint de, de modo que
+    /// los dos lados aplican la MISMA regla y no puede haber dos reglas distintas
+    /// (AD-27).
+    /// </para>
+    /// </summary>
+    /// <returns>The trust anchor of the event.</returns>
+    TrustAnchor GetTrustAnchor();
 }

@@ -2,6 +2,9 @@ using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
+using LANPartyHub.Client.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace LANPartyHub.Client.Host;
@@ -32,6 +35,7 @@ public sealed class ConnectionComposition : IDisposable
     private readonly HttpClient _httpClient;
     private readonly MdnsServerDiscovery _discovery;
     private readonly TcpServerConnector _connector;
+    private readonly ClientStateDbContext? _stateContext;
 
     /// <summary>Creates the composition of the connection with the event server.</summary>
     /// <param name="headers">
@@ -40,7 +44,15 @@ public sealed class ConnectionComposition : IDisposable
     /// surface of the client (AD-15, AD-23).
     /// </param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
-    public ConnectionComposition(IClientRequestHeaders headers, ILoggerFactory loggerFactory)
+    /// <param name="stateDatabasePath">
+    /// Absolute path of the SQLite file of the client, or <c>null</c> when the client
+    /// cannot open the database and therefore cannot read the ancla de confianza que ya
+    /// está fijada (AD-27).
+    /// </param>
+    public ConnectionComposition(
+        IClientRequestHeaders headers,
+        ILoggerFactory loggerFactory,
+        string? stateDatabasePath = null)
     {
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(loggerFactory);
@@ -77,6 +89,41 @@ public sealed class ConnectionComposition : IDisposable
             _httpClient,
             loggerFactory.CreateLogger<HttpServerVersionProbe>());
 
+        // AD-27: la sonda del ancla de confianza lee la MISMA ruta que la de las versiones,
+        // porque el servidor publica las dos cosas en ella. La sonda NO decide si el ancla
+        // es la buena: solo devuelve lo que llegó (AD-27).
+        var anchorProbe = new HttpTrustAnchorProbe(
+            _httpClient,
+            loggerFactory.CreateLogger<HttpTrustAnchorProbe>());
+
+        // AD-27: el ancla fijada vive en la base de datos del cliente. Sin base de datos
+        // el cliente no puede validar contra el valor PERSISTIDO, así que la conexión
+        // queda en «Ancla sin verificar» (AC7, AD-27).
+        ClientStateDbContext? stateContext = null;
+        ITrustAnchorReader? anchorReader = null;
+
+        if (!string.IsNullOrWhiteSpace(stateDatabasePath))
+        {
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = stateDatabasePath,
+                Pooling = false,
+            }.ToString();
+
+            var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite(
+                    connectionString,
+                    sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                .Options;
+
+            stateContext = new ClientStateDbContext(options);
+            anchorReader = new ClientStateStore(stateContext);
+        }
+
+        _stateContext = stateContext;
+        AnchorReader = anchorReader;
+        StateStore = anchorReader as IClientStateStore;
+
         Service = new ServerDiscoveryService(
             _discovery,
             loggerFactory.CreateLogger<ServerDiscoveryService>());
@@ -85,7 +132,11 @@ public sealed class ConnectionComposition : IDisposable
             _connector,
             versionProbe,
             versions,
+            anchorReader,
+            anchorProbe,
             loggerFactory.CreateLogger<ServerConnectionService>());
+
+        AnchorProbe = anchorProbe;
     }
 
     /// <summary>The use case of the discovery of the event server.</summary>
@@ -94,6 +145,28 @@ public sealed class ConnectionComposition : IDisposable
     /// <summary>The use case of the connection by the address that the player types.</summary>
     public ServerConnectionService ConnectionService { get; }
 
+    /// <summary>
+    /// The adapter that reads the ancla de confianza that the server publishes (AD-27).
+    /// </summary>
+    public IServerTrustAnchorProbe AnchorProbe { get; }
+
+    /// <summary>
+    /// The access to the ancla de confianza que ya está fijada, or <c>null</c> when the
+    /// client could not open the database of state (AD-27).
+    /// </summary>
+    public ITrustAnchorReader? AnchorReader { get; }
+
+    /// <summary>
+    /// The access to the database of the client, or <c>null</c> when the client could not
+    /// open it (AD-27).
+    /// </summary>
+    public IClientStateStore? StateStore { get; }
+
     /// <inheritdoc />
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+
+        _stateContext?.Dispose();
+    }
 }

@@ -43,6 +43,9 @@ public sealed class ClientStateDbContext : DbContext
     /// <summary>Rows of the <c>CATALOG_SNAPSHOT</c> table.</summary>
     public DbSet<CatalogSnapshotEntity> CatalogSnapshots => Set<CatalogSnapshotEntity>();
 
+    /// <summary>Rows of the <c>TRUST_ANCHOR</c> table.</summary>
+    public DbSet<TrustAnchorEntity> TrustAnchors => Set<TrustAnchorEntity>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -104,6 +107,20 @@ public sealed class ClientStateDbContext : DbContext
             entity.Property(e => e.CatalogVersion).HasColumnName("catalogVersion").IsRequired();
             entity.Property(e => e.SynchronizedAt).HasColumnName("synchronizedAt").IsRequired();
             entity.Property(e => e.Payload).HasColumnName("payload").IsRequired();
+        });
+
+        // AD-27: la tabla del ancla de confianza fijada. Guarda UNA fila con la clave
+        // pública, el fingerprint confirmado y el instante de la fijación. La tabla no
+        // replica ninguna tabla del servidor: el esquema es del cliente (AD-22).
+        modelBuilder.Entity<TrustAnchorEntity>(entity =>
+        {
+            entity.ToTable("TRUST_ANCHOR");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("id").IsRequired();
+            entity.Property(e => e.PublicKey).HasColumnName("publicKey").IsRequired();
+            entity.Property(e => e.Fingerprint).HasColumnName("fingerprint").IsRequired();
+            entity.Property(e => e.FixedAt).HasColumnName("fixedAt").IsRequired();
         });
     }
 }

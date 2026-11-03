@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -54,10 +55,19 @@ public static class ServerInfoEndpoint
 
         app.MapGet(Route, (HttpContext context) =>
         {
+            // AD-27: el servidor PUBLICA su ancla para que el jugador la CONTRASTE con
+            // la que el organizador le entregó fuera de banda. Publicarla NO la hace
+            // confiable: el cliente deriva el fingerprint de la clave que llega y solo
+            // persiste el ancla cuando la comparación la confirma el jugador.
+            var anchor = app.Services.GetRequiredService<IManifestSigner>().GetTrustAnchor();
+
             var info = new VersionInfo(
                 ClientVersion: string.Empty,
                 ServerVersion: ServerVersion.Current,
-                ProtocolVersion: ServerVersion.ProtocolVersion);
+                ProtocolVersion: ServerVersion.ProtocolVersion)
+            {
+                Anchor = anchor,
+            };
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "application/json; charset=utf-8";

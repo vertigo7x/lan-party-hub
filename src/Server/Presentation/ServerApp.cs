@@ -2,8 +2,11 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Server.Application.Catalog;
 using LANPartyHub.Server.Application.Packages;
+using LANPartyHub.Server.Application.Ports;
+using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Presentation.Catalog;
 using LANPartyHub.Server.Presentation.Packages;
+using LANPartyHub.Server.Presentation.Trust;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LANPartyHub.Server.Presentation;
@@ -59,7 +62,18 @@ public sealed class ServerApp : Avalonia.Application
             var listPackages = scope.ServiceProvider.GetRequiredService<ListPackages>();
             var withdrawGame = scope.ServiceProvider.GetRequiredService<WithdrawGame>();
 
-            var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames);
+            // AD-27: el ancla de confianza la publica el adaptador que posee la clave del
+            // servidor, y la dirección es la que el organizador tiene que escribir en el
+            // QR para que el jugador escanee el par completo. La dirección se compone
+            // con el nombre del host y el puerto HTTP de la configuración efectiva.
+            var signer = scope.ServiceProvider.GetRequiredService<IManifestSigner>();
+            var configuration = scope.ServiceProvider.GetRequiredService<ServerConfiguration>();
+
+            var trustAnchor = new TrustAnchorViewModel(
+                signer.GetTrustAnchor(),
+                $"{Environment.MachineName}:{configuration.HttpPort}");
+
+            var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames, trustAnchor);
 
             desktop.MainWindow = window;
 

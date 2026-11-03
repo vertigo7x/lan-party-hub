@@ -1,6 +1,7 @@
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain;
+using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Client.Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,7 +17,7 @@ namespace LANPartyHub.Client.Infrastructure.Persistence;
 /// data folder survives (AD-23).
 /// </para>
 /// </summary>
-public sealed class ClientStateStore : IClientStateStore
+public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
 {
     private readonly ClientStateDbContext _context;
 
@@ -129,6 +130,50 @@ public sealed class ClientStateStore : IClientStateStore
         }
 
         progress.BytesPersisted = bytesPersisted;
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken)
+    {
+        var row = await _context.TrustAnchors
+            .AsNoTracking()
+            .OrderBy(anchor => anchor.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (row is null)
+        {
+            return null;
+        }
+
+        return new PinnedTrustAnchor(row.PublicKey, row.Fingerprint, row.FixedAt);
+    }
+
+    /// <inheritdoc />
+    public async Task SaveTrustAnchorAsync(PinnedTrustAnchor anchor, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+
+        // AD-27: el ancla fijada es INMUTABLE. Una fila que ya existe NO se sustituye por
+        // otra clave: el emparejamiento nuevo es una operación explícita del organizador y
+        // no un efecto secundario de una conexión.
+        var existing = await _context.TrustAnchors
+            .AnyAsync(cancellationToken);
+
+        if (existing)
+        {
+            throw new InvalidOperationException(
+                "El ancla de confianza ya está fijada y no puede sustituirse por otra clave sin un emparejamiento fuera de banda nuevo.");
+        }
+
+        _context.TrustAnchors.Add(new TrustAnchorEntity
+        {
+            Id = TrustAnchorEntity.SingleRowKey,
+            PublicKey = anchor.PublicKey,
+            Fingerprint = anchor.Fingerprint,
+            FixedAt = anchor.FixedAt,
+        });
 
         await _context.SaveChangesAsync(cancellationToken);
     }

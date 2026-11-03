@@ -64,7 +64,11 @@ public static class Program
             // jugador, porque la superficie de Conexión consume su resultado. Un fallo al
             // abrirla NO impide que el cliente arranque: la vía manual sigue operativa
             // (AC4).
-            connection = OpenConnection(correlationScope, loggerFactory);
+            //
+            // AD-27: la composición recibe la ruta de la base de datos del cliente, que es
+            // donde vive el ancla de confianza YA FIJADA. Las conexiones posteriores se
+            // validan contra ese valor persistido (AD-27).
+            connection = OpenConnection(correlationScope, loggerFactory, startup.StateDatabasePath);
 
             BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
                 .StartWithClassicDesktopLifetime(args);
@@ -355,10 +359,15 @@ public static class Program
     /// the requests to the server have to declare (AD-15, AD-23).
     /// </param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="stateDatabasePath">
+    /// Absolute path of the SQLite file of the client, where the ancla de confianza fijada
+    /// lives (AD-27).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static ConnectionComposition? OpenConnection(
         IClientCorrelationScope correlationScope,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        string? stateDatabasePath = null)
     {
         ArgumentNullException.ThrowIfNull(correlationScope);
         ArgumentNullException.ThrowIfNull(loggerFactory);
@@ -372,7 +381,7 @@ public static class Program
             // cada petición. La composición recibe el scope ya abierto con el
             // identificador canónico, así que la sonda estampa un identificador real y el
             // servidor puede pronunciarse sobre la compatibilidad.
-            composition = new ConnectionComposition(correlationScope, loggerFactory);
+            composition = new ConnectionComposition(correlationScope, loggerFactory, stateDatabasePath);
         }
         catch (Exception exception)
         {

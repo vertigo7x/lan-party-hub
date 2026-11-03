@@ -129,6 +129,33 @@ namespace LANPartyHub.Client.Infrastructure.Persistence.Migrations
                     b.ToTable("DOWNLOAD_PROGRESS", (string)null);
                 });
 
+            modelBuilder.Entity("LANPartyHub.Client.Infrastructure.Persistence.Entities.TrustAnchorEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<string>("FixedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("fixedAt");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("publicKey");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TRUST_ANCHOR", (string)null);
+                });
+
             modelBuilder.Entity("LANPartyHub.Client.Infrastructure.Persistence.Entities.DownloadProgressEntity", b =>
                 {
                     b.HasOne("LANPartyHub.Client.Infrastructure.Persistence.Entities.DownloadOperationEntity", null)
