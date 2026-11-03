@@ -204,6 +204,12 @@ public static class ErrorCatalog
     /// </summary>
     public const string ServerAddressInvalidCode = "SERVER_ADDRESS_INVALID";
 
+    /// <summary>
+    /// The client is not compatible with the server: the version of the protocol that the
+    /// client declares is outside of the range that the server supports (AD-6, FR-4).
+    /// </summary>
+    public const string ClientVersionIncompatibleCode = "CLIENT_VERSION_INCOMPATIBLE";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -406,6 +412,11 @@ public static class ErrorCatalog
             "La dirección del servidor no es válida",
             "El valor escrito no tiene la forma 'host:puerto' con un puerto entre 1 y 65535.",
             "Escribe la dirección del servidor con su puerto, por ejemplo '192.168.1.20:5177', y vuelve a intentarlo."),
+        new(
+            ClientVersionIncompatibleCode,
+            "Este cliente no es compatible con el servidor",
+            "La versión del protocolo que declara el cliente no está en el rango de versiones que soporta el servidor.",
+            "Actualiza el cliente con el binario que distribuye la organización del evento y vuelve a intentarlo."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

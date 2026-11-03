@@ -64,7 +64,7 @@ public static class Program
             // jugador, porque la superficie de Conexión consume su resultado. Un fallo al
             // abrirla NO impide que el cliente arranque: la vía manual sigue operativa
             // (AC4).
-            connection = OpenConnection(loggerFactory);
+            connection = OpenConnection(correlationScope, loggerFactory);
 
             BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
                 .StartWithClassicDesktopLifetime(args);
@@ -350,17 +350,29 @@ public static class Program
     /// sigue operativa siempre (AC4, AD-3).
     /// </para>
     /// </summary>
+    /// <param name="correlationScope">
+    /// Scope that correlates the log of the client and that carries the identifiers that
+    /// the requests to the server have to declare (AD-15, AD-23).
+    /// </param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
-    private static ConnectionComposition? OpenConnection(ILoggerFactory loggerFactory)
+    private static ConnectionComposition? OpenConnection(
+        IClientCorrelationScope correlationScope,
+        ILoggerFactory loggerFactory)
     {
+        ArgumentNullException.ThrowIfNull(correlationScope);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         ConnectionComposition? composition = null;
 
         try
         {
-            composition = new ConnectionComposition(loggerFactory);
+            // AD-15, AD-23: el sondeo de las versiones habla con la superficie del
+            // cliente del servidor, y esa superficie EXIGE el identificador del equipo en
+            // cada petición. La composición recibe el scope ya abierto con el
+            // identificador canónico, así que la sonda estampa un identificador real y el
+            // servidor puede pronunciarse sobre la compatibilidad.
+            composition = new ConnectionComposition(correlationScope, loggerFactory);
         }
         catch (Exception exception)
         {

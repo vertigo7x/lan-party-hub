@@ -259,10 +259,23 @@ public sealed class LogContentTests : IDisposable
 
             using var correlated = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
             correlated.Headers.Add(CorrelationMiddleware.ClientIdHeaderName, ClientId);
+            correlated.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+            correlated.Headers.TryAddWithoutValidation(
+                ClientVersionMiddleware.ProtocolVersionHeaderName,
+                VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             using var correlatedResponse = await client.SendAsync(correlated, TestContext.Current.CancellationToken);
 
-            using var rejected = await client.GetAsync("/api/v1/catalog", TestContext.Current.CancellationToken);
+            // La petición sin identificador de cliente lleva la versión, para que la
+            // puerta de la versión la deje pasar y se observe el rechazo de la
+            // correlación (AD-6, AD-15).
+            using var rejected = new HttpRequestMessage(HttpMethod.Get, "/api/v1/catalog");
+            rejected.Headers.TryAddWithoutValidation(ClientVersionMiddleware.ClientVersionHeaderName, "1.0.0");
+            rejected.Headers.TryAddWithoutValidation(
+                ClientVersionMiddleware.ProtocolVersionHeaderName,
+                VersionInfo.CurrentProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            using var rejectedResponse = await client.SendAsync(rejected, TestContext.Current.CancellationToken);
 
             using var metrics = await client.GetAsync(MetricsEndpoint.Route, TestContext.Current.CancellationToken);
         }

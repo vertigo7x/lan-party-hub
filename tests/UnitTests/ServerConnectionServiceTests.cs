@@ -175,8 +175,86 @@ public sealed class ServerConnectionServiceTests
         Assert.Equal(TimeSpan.FromSeconds(3), connector.LastTimeout);
     }
 
+    [Fact]
+    public async Task A_client_that_the_server_rejects_ends_as_disconnected()
+    {
+        // AD-6, FR-4: un cliente incompatible NO opera: el intento termina como
+        // desconectado y no hay conexión con la que sincronizar, descargar o instalar.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(connector, new FakeServerVersionProbe { Incompatible = true });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ConnectionState.Disconnected, attempt.State);
+        Assert.False(attempt.IsConnected);
+        Assert.True(attempt.IsVersionIncompatible);
+    }
+
+    [Fact]
+    public async Task A_client_that_the_server_rejects_carries_the_version_of_the_client_and_the_server()
+    {
+        // AD-6: el diagnóstico lleva la versión del cliente y la del servidor.
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(connector, new FakeServerVersionProbe { Incompatible = true });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("1.2.0", attempt.IncompatibleClientVersion);
+        Assert.Equal("1.4.0", attempt.IncompatibleServerVersion);
+    }
+
+    [Fact]
+    public async Task A_client_that_the_server_rejects_carries_the_error_of_the_catalog()
+    {
+        var connector = new FakeServerConnector();
+
+        var service = CreateService(connector, new FakeServerVersionProbe { Incompatible = true });
+
+        var attempt = await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(attempt.Error);
+        Assert.Equal(ErrorCatalog.ClientVersionIncompatibleCode, attempt.Error!.Code);
+        Assert.False(string.IsNullOrWhiteSpace(attempt.Error.Message));
+        Assert.False(string.IsNullOrWhiteSpace(attempt.Error.Cause));
+        Assert.False(string.IsNullOrWhiteSpace(attempt.Error.NextStep));
+    }
+
+    [Fact]
+    public async Task A_compatible_client_probes_the_versions_of_the_server()
+    {
+        var connector = new FakeServerConnector();
+        var probe = new FakeServerVersionProbe();
+
+        var service = CreateService(connector, probe);
+
+        await service.ConnectAsync(
+            "192.168.1.20:5177",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(probe.LastEndpoint);
+        Assert.Equal("192.168.1.20", probe.LastEndpoint!.Address);
+        Assert.Equal(5177, probe.LastEndpoint.Port);
+    }
+
     private static ServerConnectionService CreateService(FakeServerConnector connector) =>
-        new(connector, NullLogger<ServerConnectionService>.Instance);
+        CreateService(connector, new FakeServerVersionProbe());
+
+    private static ServerConnectionService CreateService(
+        FakeServerConnector connector,
+        FakeServerVersionProbe probe) =>
+        new(
+            connector,
+            probe,
+            new FakeClientVersionProvider(),
+            NullLogger<ServerConnectionService>.Instance);
 
     /// <summary>
     /// Port of the opening of the connection with the server, with the behaviour that the
@@ -208,5 +286,41 @@ public sealed class ServerConnectionServiceTests
 
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// Sondeo de las versiones del servidor, con el comportamiento que los tests
+    /// necesitan (AD-6).
+    /// </summary>
+    private sealed class FakeServerVersionProbe : IServerVersionProbe
+    {
+        /// <summary>Whether the server rejects the client as incompatible.</summary>
+        public bool Incompatible { get; init; }
+
+        /// <summary>The endpoint that the use case passed to the port.</summary>
+        public ServerEndpoint? LastEndpoint { get; private set; }
+
+        public Task<ServerVersionProbeResult> ProbeAsync(
+            ServerEndpoint endpoint,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            LastEndpoint = endpoint;
+
+            return Task.FromResult(new ServerVersionProbeResult(
+                Compatible: !Incompatible,
+                ServerVersion: "1.4.0",
+                MinimumProtocolVersion: 1));
+        }
+    }
+
+    /// <summary>
+    /// Versiones que declara el cliente (AD-6).
+    /// </summary>
+    private sealed class FakeClientVersionProvider : IClientVersionProvider
+    {
+        public string ClientVersion => "1.2.0";
+
+        public int ProtocolVersion => VersionInfo.CurrentProtocolVersion;
     }
 }

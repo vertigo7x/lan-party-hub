@@ -15,13 +15,19 @@ namespace LANPartyHub.Client.Application.Connection;
 /// partes (AC1, AC3, AR-4).
 /// </para>
 /// <para>
-/// A failure NEVER travels to the caller as an exception: an address that does not answer
-/// ends the attempt as <see cref="ConnectionState.Disconnected"/> with the three part
-/// message, and the player can try again (AC3, UX-DR-36).
+/// AD-6, FR-4: después de abrir la conexión, el caso de uso SONDEA la versión del
+/// servidor. El servidor es el que decide la compatibilidad: si el cliente no es
+/// compatible, el intento termina DESCONECTADO con el diagnóstico de la versión, y el
+/// cliente NO sincroniza, NO descarga y NO instala (AD-6).
 /// </para>
 /// <para>
-/// The use case depends on the port declared in this layer and never on an adapter, so it
-/// can be exercised without a network (AD-1).
+/// Un fallo NEVER viaja al caller como una excepción: una dirección que no responde
+/// ends the attempt as <see cref="ConnectionState.Disconnected"/> con el mensaje de tres
+/// partes, y el jugador puede volver a intentarlo (AC3, UX-DR-36).
+/// </para>
+/// <para>
+/// El caso de uso depende del puerto declarado en esta capa y nunca de un adaptador,
+/// así que puede ejercitarse sin una red (AD-1).
 /// </para>
 /// </summary>
 public sealed class ServerConnectionService
@@ -33,19 +39,29 @@ public sealed class ServerConnectionService
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(3);
 
     private readonly IServerConnector _connector;
+    private readonly IServerVersionProbe _versionProbe;
+    private readonly IClientVersionProvider _versions;
     private readonly ILogger<ServerConnectionService> _logger;
 
     /// <summary>Creates the use case of the connection with the event server.</summary>
     /// <param name="connector">Port of the opening of the connection with the server.</param>
+    /// <param name="versionProbe">Port of the probe of the versions of the server.</param>
+    /// <param name="versions">Versions that the client declares in every request.</param>
     /// <param name="logger">Log of the use case.</param>
     public ServerConnectionService(
         IServerConnector connector,
+        IServerVersionProbe versionProbe,
+        IClientVersionProvider versions,
         ILogger<ServerConnectionService> logger)
     {
         ArgumentNullException.ThrowIfNull(connector);
+        ArgumentNullException.ThrowIfNull(versionProbe);
+        ArgumentNullException.ThrowIfNull(versions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _connector = connector;
+        _versionProbe = versionProbe;
+        _versions = versions;
         _logger = logger;
     }
 
@@ -100,8 +116,6 @@ public sealed class ServerConnectionService
                 "El cliente se conectó al servidor {ServerAddress}:{ServerPort}; el ancla de confianza queda pendiente.",
                 endpoint!.Address,
                 endpoint.Port);
-
-            return ConnectionAttempt.Succeeded(endpoint);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -123,5 +137,28 @@ public sealed class ServerConnectionService
                 endpoint,
                 ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode));
         }
+
+        // AD-6, FR-4: la conexión se abrió, así que ahora hay que comprobar que el
+        // servidor ACEPTA la versión del cliente. El servidor decide, y el cliente solo
+        // interpreta su respuesta.
+        var probe = await _versionProbe
+            .ProbeAsync(endpoint!, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!probe.Compatible)
+        {
+            _logger.LogWarning(
+                "El cliente {ClientVersion} no es compatible con el servidor {ServerVersion}: el intento termina como desconectado.",
+                _versions.ClientVersion,
+                probe.ServerVersion ?? "(desconocida)");
+
+            return ConnectionAttempt.Incompatible(
+                endpoint,
+                ErrorCatalog.Resolve(ErrorCatalog.ClientVersionIncompatibleCode),
+                _versions.ClientVersion,
+                probe.ServerVersion);
+        }
+
+        return ConnectionAttempt.Succeeded(endpoint);
     }
 }

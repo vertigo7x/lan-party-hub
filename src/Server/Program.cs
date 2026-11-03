@@ -178,6 +178,7 @@ public partial class Program
         }.ToString();
 
         builder.Services.AddSingleton(dataDirectory);
+        builder.Services.AddSingleton(configuration);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<HostMetrics>();
         builder.Services.AddSingleton<IMetricsCounters>(provider => provider.GetRequiredService<HostMetrics>());
@@ -253,6 +254,17 @@ public partial class Program
             }
         }
 
+        // AD-6, FR-4: la puerta de la compatibilidad de las versiones se abre ANTES que la
+        // correlación, porque un cliente incompatible NO puede sincronizar el catálogo,
+        // descargar ni instalar: la primera puerta que encuentra es la de la versión
+        // (AD-6, AD-15).
+        //
+        // La superficie de la administración queda fuera: el organizador NO es un cliente
+        // de la LAN y su binario no declara una versión de protocolo (AD-30).
+        app.UseWhen(
+            context => IsClientSurface(context.Request.Path),
+            branch => branch.UseMiddleware<ClientVersionMiddleware>());
+
         // AD-15, AD-23: the surface of the client is correlated. Every request that
         // reaches /api/v1 opens the scope of its unit of work and has to carry the
         // identifier of the client. The surface of the host, /metrics, is not the surface
@@ -282,6 +294,10 @@ public partial class Program
 
         // AD-5, AD-7: the administration of the publication of the packages.
         PackagesEndpoint.Map(app);
+
+        // AD-6, AD-27: la superficie que publica las versiones del servidor, para que el
+        // cliente compare las suyas con las del servidor sin interpretar texto.
+        ServerInfoEndpoint.Map(app);
 
         // AD-5, AD-26: la superficie del cliente que publica el snapshot completo del
         // catálogo, y el hub del estado del cliente, que es el canal de push del servidor

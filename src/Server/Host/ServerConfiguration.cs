@@ -1,4 +1,5 @@
 using System.Globalization;
+using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
@@ -28,6 +29,12 @@ public sealed class ServerConfiguration
     /// <summary>Key of the HTTP port, inside <see cref="SectionName"/>.</summary>
     public const string HttpPortKey = "httpPort";
 
+    /// <summary>
+    /// Key of the oldest protocol version that the server accepts, inside
+    /// <see cref="SectionName"/>.
+    /// </summary>
+    public const string MinimumProtocolVersionKey = "minimumProtocolVersion";
+
     /// <summary>Name of the data folder used when no source fixes it.</summary>
     public const string DefaultDataDirectory = "data";
 
@@ -37,10 +44,11 @@ public sealed class ServerConfiguration
     /// <summary>Name of the optional configuration file that sits next to the binary.</summary>
     public const string FileName = "appsettings.json";
 
-    private ServerConfiguration(string dataDirectory, int httpPort)
+    private ServerConfiguration(string dataDirectory, int httpPort, int minimumProtocolVersion)
     {
         DataDirectory = dataDirectory;
         HttpPort = httpPort;
+        MinimumProtocolVersion = minimumProtocolVersion;
     }
 
     /// <summary>Absolute path of the data folder of the server.</summary>
@@ -48,6 +56,18 @@ public sealed class ServerConfiguration
 
     /// <summary>TCP port of the HTTP surface: the API and the SignalR hub (AD-5).</summary>
     public int HttpPort { get; }
+
+    /// <summary>
+    /// Oldest protocol version that the server accepts (AD-6).
+    ///
+    /// <para>
+    /// It is the POLICY of the server: el rango mínimo que se publica es
+    /// <c>[MinimumProtocolVersion, VersionInfo.CurrentProtocolVersion]</c>. When no source
+    /// fixes it, it is the protocol version that the server speaks, so a server that does
+    /// not configure anything accepts exactly the version that it speaks (AD-6).
+    /// </para>
+    /// </summary>
+    public int MinimumProtocolVersion { get; }
 
     /// <summary>
     /// Registers the three configuration sources, in the order <c>file &gt; env &gt; flags</c>.
@@ -80,8 +100,9 @@ public sealed class ServerConfiguration
 
         var dataDirectory = ResolveDataDirectory(configuration, section, baseDirectory);
         var httpPort = ResolveHttpPort(configuration, section);
+        var minimumProtocolVersion = ResolveMinimumProtocolVersion(configuration, section);
 
-        return new ServerConfiguration(dataDirectory, httpPort);
+        return new ServerConfiguration(dataDirectory, httpPort, minimumProtocolVersion);
     }
 
     private static string ResolveDataDirectory(
@@ -130,6 +151,55 @@ public sealed class ServerConfiguration
         }
 
         return httpPort;
+    }
+
+    /// <summary>
+    /// Resolves the oldest protocol version that the server accepts (AD-6).
+    ///
+    /// <para>
+    /// The value is validated against the protocol version that the server speaks: a
+    /// minimum that is HIGHER than the current version would declare a range that is
+    /// empty, and no client would ever be compatible. The startup rejects that value
+    /// instead of accepting a server that rejects every client (AD-6).
+    /// </para>
+    /// </summary>
+    /// <param name="configuration">Configuration with the three sources already registered.</param>
+    /// <param name="section">Section of the configuration that holds the settings.</param>
+    /// <returns>The oldest protocol version that the server accepts.</returns>
+    /// <exception cref="ServerStartupException">A source fixes an invalid value.</exception>
+    private static int ResolveMinimumProtocolVersion(
+        IConfiguration configuration,
+        IConfigurationSection section)
+    {
+        var rawMinimum = section[MinimumProtocolVersionKey];
+
+        if (rawMinimum is null)
+        {
+            return VersionInfo.CurrentProtocolVersion;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawMinimum))
+        {
+            throw new ServerStartupException(
+                $"Valor vacío en {DescribeSource(configuration, $"{SectionName}:{MinimumProtocolVersionKey}")}: la versión mínima del protocolo no puede estar vacía.");
+        }
+
+        var candidate = rawMinimum.Trim();
+
+        if (!int.TryParse(candidate, NumberStyles.None, CultureInfo.InvariantCulture, out var minimumProtocolVersion)
+            || minimumProtocolVersion < 1)
+        {
+            throw new ServerStartupException(
+                $"Valor no válido '{rawMinimum}' en {DescribeSource(configuration, $"{SectionName}:{MinimumProtocolVersionKey}")}: la versión mínima del protocolo debe ser un número entero mayor que cero.");
+        }
+
+        if (minimumProtocolVersion > VersionInfo.CurrentProtocolVersion)
+        {
+            throw new ServerStartupException(
+                $"Valor no válido '{rawMinimum}' en {DescribeSource(configuration, $"{SectionName}:{MinimumProtocolVersionKey}")}: la versión mínima del protocolo no puede ser mayor que la versión que habla el servidor ({VersionInfo.CurrentProtocolVersion}), porque el rango quedaría vacío.");
+        }
+
+        return minimumProtocolVersion;
     }
 
     /// <summary>

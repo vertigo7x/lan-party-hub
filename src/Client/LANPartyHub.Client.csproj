@@ -8,6 +8,13 @@
     <RootNamespace>LANPartyHub.Client</RootNamespace>
     <AssemblyName>LANPartyHub.Client</AssemblyName>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!--
+      AD-6, AD-17: the version of the binary is the one that the client declares in the
+      X-Client-Version header of every request, so the server can tell whether the client
+      is compatible. It is the same version as the one of the server, because the
+      organization distributes the two binaries together.
+    -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
