@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-26-2026 17:03
-last_updated: 11-03-2026 13:48
+last_updated: 11-03-2026 14:41
 project: Lan Party Hub
 project_key: NOKEY
 tracking_system: file-system
@@ -62,8 +62,8 @@ development_status:
   4-5-panel-de-conexión-persistente-y-reconexión: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-abstracción-de-transferencia-con-un-único-camino-http: backlog
+  epic-5: in-progress
+  5-1-abstracción-de-transferencia-con-un-único-camino-http: done
   5-2-descarga-del-paquete-con-progreso-pausa-y-reanudación: backlog
   5-3-persistencia-del-progreso-y-recuperación-tras-reinicio: backlog
   epic-5-retrospective: optional

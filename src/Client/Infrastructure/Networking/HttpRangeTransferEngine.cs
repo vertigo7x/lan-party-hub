@@ -1,0 +1,187 @@
+using System.Net;
+using System.Net.Http.Headers;
+using LANPartyHub.Client.Application.Ports;
+
+namespace LANPartyHub.Client.Infrastructure.Networking;
+
+/// <summary>
+/// The only implementation of the port of the transfer of bytes of the MVP
+/// (AD-4, AD-20, AD-24, AD-28).
+///
+/// <para>
+/// The engine asks for a range of the content over HTTP with the header <c>Range</c> and it
+/// interprets the answer of the server:
+/// </para>
+/// <list type="bullet">
+/// <item>
+/// <c>206 Partial Content</c>: the server honoured the range and it declares the range
+/// that it served in <c>Content-Range</c>. The bytes are copied and the total of the
+/// content is read from the header.
+/// </item>
+/// <item>
+/// <c>200 OK</c>: the server ignored the range and it served the whole content. The bytes
+/// are copied from the beginning, so the accumulated offset of the partial file does not
+/// apply and the range was not honoured.
+/// </item>
+/// <list type="bullet">
+/// <item>
+/// <c>416 Range Not Satisfiable</c>: the range cannot be satisfied. It is a failure of the
+/// transfer, and the caller decides what it means for the operation.
+/// </item>
+/// </list>
+/// <para>
+/// The engine knows NO route and resolves NO host: the caller brings the absolute URL of the
+/// content and the range, so the engine cannot download from the Internet on its own.
+/// </para>
+/// </summary>
+public sealed class HttpRangeTransferEngine : ITransferEngine
+{
+    /// <summary>Header that asks for a range of the content.</summary>
+    public const string RangeHeaderName = "Range";
+
+    /// <summary>Header that declares the range that the server served.</summary>
+    public const string ContentRangeHeaderName = "Content-Range";
+
+    /// <summary>Header that declares the total size of the content.</summary>
+    public const string ContentLengthHeaderName = "Content-Length";
+
+    private readonly HttpClient _httpClient;
+
+    /// <summary>Creates the engine over a client of the event server.</summary>
+    /// <param name="httpClient">
+    /// Client of the event server. Its base address is not used by the engine: the caller
+    /// brings the absolute URL of the content in every call.
+    /// </param>
+    public HttpRangeTransferEngine(HttpClient httpClient)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+
+        _httpClient = httpClient;
+    }
+
+    /// <inheritdoc />
+    public async Task<TransferOutcome> TransferAsync(
+        Uri contentUri,
+        long startInclusive,
+        long endInclusive,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(contentUri);
+        ArgumentNullException.ThrowIfNull(destination);
+
+        if (!contentUri.IsAbsoluteUri)
+        {
+            throw new ArgumentException(
+                "La URL del contenido tiene que ser absoluta.",
+                nameof(contentUri));
+        }
+
+        if (startInclusive < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(startInclusive),
+                "El inicio del rango no puede ser negativo.");
+        }
+
+        if (endInclusive < startInclusive)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endInclusive),
+                "El final del rango no puede ser anterior al inicio.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, contentUri);
+
+        request.Headers.Range = new RangeHeaderValue(startInclusive, endInclusive);
+
+        using var response = await _httpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        // AD-20: el servidor sirve el paquete por HTTP con Range requests. Un 416 dice
+        // que el rango no es satisfacible, y el 5.2 decide qué significa para la
+        // operación; el motor lo reporta como una falla de la transferencia.
+        if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+        {
+            throw new TransferRangeNotSatisfiableException(startInclusive, endInclusive);
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        // El servidor honró el rango cuando answered con 206. Un 200 significa que lo
+        // ignoró y sirvió el contenido entero: los bytes empiezan por el principio, así
+        // que el offset acumulado de la reanudación no aplica y el destino se deja como
+        // estaba.
+        var rangeHonoured = response.StatusCode == HttpStatusCode.PartialContent;
+
+        var transferred = await CopyAsync(response, destination, cancellationToken).ConfigureAwait(false);
+
+        var totalBytes = rangeHonoured
+            ? ReadTotalBytes(response)
+            : ReadContentLength(response);
+
+        return new TransferOutcome(transferred, totalBytes, rangeHonoured);
+    }
+
+    /// <summary>
+    /// Reads the total size of the content that the server declares in the
+    /// <c>Content-Range</c> of a partial answer.
+    /// </summary>
+    /// <param name="response">Response of the server.</param>
+    /// <returns>The total size of the content, or <c>null</c> when it is not declared.</returns>
+    private static long? ReadTotalBytes(HttpResponseMessage response)
+    {
+        if (response.Content.Headers.ContentRange is not { } contentRange)
+        {
+            return null;
+        }
+
+        return contentRange.Length;
+    }
+
+    /// <summary>
+    /// Reads the size of the answer that the server declares in <c>Content-Length</c>.
+    /// </summary>
+    /// <param name="response">Response of the server.</param>
+    /// <returns>The size of the answer, or <c>null</c> when it is not declared.</returns>
+    private static long? ReadContentLength(HttpResponseMessage response) =>
+        response.Content.Headers.ContentLength;
+
+    /// <summary>
+    /// Copies the body of the answer into the destination and counts the bytes that it
+    /// wrote.
+    /// </summary>
+    /// <param name="response">Response of the server.</param>
+    /// <param name="destination">Stream that receives the bytes.</param>
+    /// <param name="cancellationToken">Token that cancels the transfer.</param>
+    /// <returns>The number of bytes that the transfer wrote.</returns>
+    private static async Task<long> CopyAsync(
+        HttpResponseMessage response,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        await using var source = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var buffer = new byte[81920];
+
+        long transferred = 0;
+
+        int read;
+
+        while ((read = await source
+            .ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
+            .ConfigureAwait(false)) > 0)
+        {
+            await destination
+                .WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
+
+            transferred += read;
+        }
+
+        return transferred;
+    }
+}

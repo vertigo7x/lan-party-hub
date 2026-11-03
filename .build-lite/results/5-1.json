@@ -1,0 +1,27 @@
+{
+  "story": "5-1-abstracci\u00f3n-de-transferencia-con-un-\u00fanico-camino-http",
+  "base": "d18d2755b5918b7aaeadb2d046135dd0d91821b5",
+  "risk": [
+    "red o host",
+    "persistencia"
+  ],
+  "paths": [
+    ".build-lite/plans/5-1.md",
+    "src/Client/Application/Ports/ITransferEngine.cs",
+    "src/Client/Application/Ports/TransferEngineRegistry.cs",
+    "src/Client/Domain/TransferEngines.cs",
+    "src/Client/Host/TransferComposition.cs",
+    "src/Client/Infrastructure/Networking/HttpRangeTransferEngine.cs",
+    "src/Client/Infrastructure/Networking/TransferRangeNotSatisfiableException.cs",
+    "src/Client/Infrastructure/Persistence/DownloadProgressReconciler.cs",
+    "src/Client/Infrastructure/Persistence/Entities/DownloadOperationEntity.cs",
+    "src/Client/Infrastructure/Persistence/Migrations/20261103135729_RenameTransferEngineToHttpRangeTransferEngine.Designer.cs",
+    "src/Client/Infrastructure/Persistence/Migrations/20261103135729_RenameTransferEngineToHttpRangeTransferEngine.cs",
+    "src/Client/Program.cs",
+    "tests/IntegrationTests/ClientStartupTests.cs",
+    "tests/IntegrationTests/DownloadTransferEngineTests.cs",
+    "tests/UnitTests/HttpRangeTransferEngineTests.cs",
+    "tests/UnitTests/TransferAbstractionTests.cs",
+    "tests/UnitTests/TransferEngineRegistryTests.cs"
+  ]
+}
