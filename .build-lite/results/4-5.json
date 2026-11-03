@@ -1,0 +1,38 @@
+{
+  "story": "4-5-panel-de-conexi\u00f3n-persistente-y-reconexi\u00f3n",
+  "base": "142aee88df5dfda9b9e4ebc216744d56ed687d1e",
+  "risk": [
+    "red o host"
+  ],
+  "paths": [
+    ".build-lite/plans/4-5.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Connection/ServerAvailability.cs",
+    "src/Client/Application/Connection/ServerAvailabilityMonitor.cs",
+    "src/Client/Application/Connection/ServerConnectionService.cs",
+    "src/Client/Application/Ports/IServerConnectionGate.cs",
+    "src/Client/Application/Ports/IServerReconnectHandler.cs",
+    "src/Client/Application/Ports/IServerVersionProbe.cs",
+    "src/Client/Application/Ports/IUiThread.cs",
+    "src/Client/Host/CatalogSyncComposition.cs",
+    "src/Client/Host/ConnectionComposition.cs",
+    "src/Client/Infrastructure/Networking/CatalogHubClient.cs",
+    "src/Client/Infrastructure/Networking/HttpServerVersionProbe.cs",
+    "src/Client/Presentation/AvaloniaUiThread.cs",
+    "src/Client/Presentation/CatalogSyncBanner.cs",
+    "src/Client/Presentation/Connection/ConnectionSurface.cs",
+    "src/Client/Presentation/Connection/ConnectionSurfaceViewModel.cs",
+    "src/Client/Presentation/MainWindow.cs",
+    "src/Client/Presentation/Status/ConnectionStatusPanel.cs",
+    "src/Client/Presentation/Status/ConnectionStatusPanelViewModel.cs",
+    "src/Client/Program.cs",
+    "src/Server/Host/ServerInfoEndpoint.cs",
+    "tests/IntegrationTests/CatalogSurfaceTests.cs",
+    "tests/IntegrationTests/ServerReconnectionTests.cs",
+    "tests/IntegrationTests/TestServer.cs",
+    "tests/UnitTests/ConnectionStatusPanelViewModelTests.cs",
+    "tests/UnitTests/HubEventContractTests.cs",
+    "tests/UnitTests/ServerAvailabilityMonitorTests.cs",
+    "tests/UnitTests/UiThreadNotificationTests.cs"
+  ]
+}
