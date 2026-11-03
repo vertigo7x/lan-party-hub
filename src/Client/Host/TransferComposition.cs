@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
 
 namespace LANPartyHub.Client.Host;
@@ -21,12 +22,36 @@ public sealed class TransferComposition : IDisposable
     private readonly HttpClient _httpClient;
 
     /// <summary>Creates the composition of the transfer of bytes.</summary>
-    public TransferComposition()
+    /// <param name="headers">
+    /// Source of the identifiers of correlation that the requests carry. It carries the
+    /// canonical identifier of the team, which the server REQUIRES in every request of the
+    /// surface of the client (AD-15, AD-23).
+    /// </param>
+    public TransferComposition(IClientRequestHeaders headers)
     {
+        ArgumentNullException.ThrowIfNull(headers);
+
+        // AD-6: la versión del cliente es la del binario que se está ejecutando y la
+        // versión del protocolo es la constante del contrato compartido.
+        var versions = new ClientBuildVersion();
+
         // El motor pide rangos al servidor del evento con el encabezado `Range`, así que
         // comparte el cliente HTTP que estampa la versión del cliente y la del protocolo
         // en TODA petición (AD-6, AD-20).
-        _httpClient = new HttpClient(new HttpClientHandler());
+        //
+        // AD-15, AD-23: la ruta del contenido es de la superficie del cliente y el
+        // servidor rechaza con 400 la petición que no lleva el identificador del equipo.
+        //
+        // El manejador de cabeceras es un DelegatingHandler y necesita un manejador
+        // interior que sea el que abre la conexión: sin él, TODA petición del motor falla
+        // antes de salir (AD-15, AD-23).
+        _httpClient = new HttpClient(
+            new ClientRequestHeadersHandler(
+                headers,
+                versions)
+            {
+                InnerHandler = new HttpClientHandler(),
+            });
 
         Engine = new HttpRangeTransferEngine(_httpClient);
     }

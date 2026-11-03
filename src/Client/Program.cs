@@ -80,7 +80,12 @@ public static class Program
             // `ITransferEngine` y el puerto se entrega con UNA sola implementación,
             // `HttpRangeTransferEngine`. La composición NO expone ningún selector: en el
             // MVP no hay nada que seleccionar.
-            transfer = new TransferComposition();
+            //
+            // AD-6, AD-15, AD-23: la composición recibe el scope de correlación ya
+            // abierto con el identificador canónico del equipo, así que el motor estampa
+            // un identificador real y el servidor puede pronunciarse sobre la
+            // compatibilidad de la petición.
+            transfer = new TransferComposition(correlationScope);
 
             BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
                 .StartWithClassicDesktopLifetime(args);
