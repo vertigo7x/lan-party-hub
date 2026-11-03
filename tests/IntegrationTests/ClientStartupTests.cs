@@ -222,7 +222,7 @@ public sealed class ClientStartupTests : IDisposable
         const string operationId = "operacion-4";
         const string packageId = "paquete\\con\\separador";
 
-        InsertOperation(dataFolder, operationId, packageId, "HttpRange", 4, 100);
+        InsertOperation(dataFolder, operationId, packageId, "HttpRangeTransferEngine", 4, 100);
 
         // The startup completes: a corrupted row never takes the client down.
         var startup = await StartClientAsync(dataFolder);
@@ -249,7 +249,7 @@ public sealed class ClientStartupTests : IDisposable
         const string packageId = "paquete-corto";
 
         WritePartialFile(dataFolder, packageId, 8);
-        InsertOperation(dataFolder, operationId, packageId, "HttpRange", 100, 100);
+        InsertOperation(dataFolder, operationId, packageId, "HttpRangeTransferEngine", 100, 100);
 
         var startup = await StartClientAsync(dataFolder);
 
@@ -277,7 +277,7 @@ public sealed class ClientStartupTests : IDisposable
         const string packageId = "paquete-largo";
 
         WritePartialFile(dataFolder, packageId, 8);
-        InsertOperation(dataFolder, operationId, packageId, "HttpRange", 4, 100);
+        InsertOperation(dataFolder, operationId, packageId, "HttpRangeTransferEngine", 4, 100);
 
         var startup = await StartClientAsync(dataFolder);
 
@@ -302,7 +302,7 @@ public sealed class ClientStartupTests : IDisposable
         const string packageId = "paquete-negativo";
 
         WritePartialFile(dataFolder, packageId, 8);
-        InsertOperation(dataFolder, operationId, packageId, "HttpRange", -4, 100);
+        InsertOperation(dataFolder, operationId, packageId, "HttpRangeTransferEngine", -4, 100);
 
         var startup = await StartClientAsync(dataFolder);
 
@@ -330,7 +330,7 @@ public sealed class ClientStartupTests : IDisposable
 
         // There is no partial file on the disk: the effective progress cannot be anything
         // but zero.
-        InsertOperation(dataFolder, operationId, packageId, "HttpRange", 50, 100);
+        InsertOperation(dataFolder, operationId, packageId, "HttpRangeTransferEngine", 50, 100);
 
         var startup = await StartClientAsync(dataFolder);
 

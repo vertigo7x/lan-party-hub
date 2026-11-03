@@ -1,6 +1,5 @@
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Ports;
-using LANPartyHub.Client.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace LANPartyHub.Client.Infrastructure.Persistence;
@@ -54,7 +53,7 @@ public sealed class DownloadProgressReconciler : IDownloadProgressReconciler
 
         foreach (var operation in operations)
         {
-            if (!TransferEngines.IsActive(operation.TransferEngine))
+            if (!TransferEngineRegistry.IsActive(operation.TransferEngine))
             {
                 // The record is rejected and not reinterpreted (AD-24). It is not deleted, so
                 // another version of the client can read it.

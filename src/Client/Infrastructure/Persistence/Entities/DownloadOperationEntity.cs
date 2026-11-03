@@ -20,6 +20,10 @@ public sealed class DownloadOperationEntity
     /// <summary>Name of the state of the operation.</summary>
     public string State { get; set; } = string.Empty;
 
-    /// <summary>Family of the engine that transfers the bytes of the operation.</summary>
+    /// <summary>
+    /// Identifier of the engine that transfers the bytes of the operation. In the MVP it is
+    /// exactly <c>HttpRangeTransferEngine</c>, the identifier of the only implementation of
+    /// the port (AD-4, AD-24).
+    /// </summary>
     public string TransferEngine { get; set; } = string.Empty;
 }
