@@ -4,6 +4,7 @@ using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
@@ -29,6 +30,7 @@ public sealed class App : Avalonia.Application
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
+    private readonly IUiThread _uiThread;
     private ConnectionSurfaceViewModel? _connectionViewModel;
     private ServerAvailabilityMonitor? _availabilityMonitor;
 
@@ -53,12 +55,18 @@ public sealed class App : Avalonia.Application
         ClientSettings? settings,
         string? startupError,
         CatalogSyncComposition? catalogSync = null,
-        ConnectionComposition? connection = null)
+        ConnectionComposition? connection = null,
+        IUiThread? uiThread = null)
     {
         _settings = settings;
         _startupError = startupError;
         _catalogSync = catalogSync;
         _connection = connection;
+
+        // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
+        // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
+        // un control de Avalonia SOLO se toca desde el hilo que lo posee (AC3, AC4, AC5).
+        _uiThread = uiThread ?? new AvaloniaUiThread();
     }
 
     /// <inheritdoc />
@@ -122,20 +130,31 @@ public sealed class App : Avalonia.Application
 
             // El aviso de la sincronización pendiente se actualiza con el estado que
             // publica la composición, y NO bloquea la navegación (AC3, UX-DR-32).
+            //
+            // La publicación llega desde el grupo de hilos cuando la reconexión resincroniza
+            // el catálogo, así que el aviso se ENCOLA en el hilo de la interfaz: tocar el
+            // banner desde el hilo que no lo posee lo deja sin repintar para siempre
+            // (AC3, AC4, AC5).
             if (_catalogSync is not null && window is MainWindow mainWindow)
             {
-                _catalogSync.StateChanged += state => mainWindow.ShowSyncState(state);
+                _catalogSync.StateChanged += state =>
+                    _uiThread.Post(() => mainWindow.ShowSyncState(state));
             }
 
             // AD-6, FR-4: el servidor puede rechazar la versión del cliente con un 426.
             // La sincronización publica ese diagnóstico y la superficie de Conexión lo
             // muestra con las dos versiones y el siguiente paso (AD-6, UX-DR-31).
+            //
+            // El diagnóstico se publica desde el grupo de hilos cuando la sincronización
+            // la resuelve la reconexión, así que se ENCOLA en el hilo de la interfaz antes
+            // de tocar la superficie (AC3, AC4, AC5).
             if (_catalogSync is not null)
             {
                 _catalogSync.Service.VersionIncompatible += failure =>
-                    connectionViewModel.ApplyVersionIncompatibility(
-                        failure.ClientVersion,
-                        failure.ServerVersion);
+                    _uiThread.Post(() =>
+                        connectionViewModel.ApplyVersionIncompatibility(
+                            failure.ClientVersion,
+                            failure.ServerVersion));
             }
 
             // AC3, AC4, AC5: el supervisor de la disponibilidad vigila el servidor y
@@ -175,27 +194,38 @@ public sealed class App : Avalonia.Application
 
         monitor.AvailabilityChanged += availability =>
         {
-            // El panel PERSISTENTE muestra el punto de presencia, el nombre del servidor,
-            // la dirección en uso, la versión y la última operación (AC1, UX-DR-11).
-            statusViewModel.ApplyAvailability(availability);
-
-            // Las acciones que REQUIEREN el servidor quedan deshabilitadas con su motivo
-            // visible (AC4, UX-DR-29).
-            connectionViewModel.ApplyAvailability(availability);
-
-            if (banner is null)
+            // El supervisor publica su estado desde el GRUPO DE HILOS: el bucle de la
+            // supervisión va con `ConfigureAwait(false)`. Los controles de Avalonia SOLO
+            // se tocan desde el hilo que los posee, así que TODA la notificación se
+            // encola en el hilo de la interfaz antes de tocar un control. Sin esto, el
+            // `SetValue` del punto de presencia lanza `InvalidOperationException`, la
+            // supervisión queda fallida y el panel NO se repinta ni reconecta nunca
+            // (AC3, AC4, AC5).
+            _uiThread.Post(() =>
             {
-                return;
-            }
+                // El panel PERSISTENTE muestra el punto de presencia, el nombre del
+                // servidor, la dirección en uso, la versión y la última operación
+                // (AC1, UX-DR-11).
+                statusViewModel.ApplyAvailability(availability);
 
-            if (availability.Available)
-            {
-                banner.Enable();
+                // Las acciones que REQUIEREN el servidor quedan deshabilitadas con su
+                // motivo visible (AC4, UX-DR-29).
+                connectionViewModel.ApplyAvailability(availability);
 
-                return;
-            }
+                if (banner is null)
+                {
+                    return;
+                }
 
-            banner.DisableWithReason(CatalogSyncBanner.ServerUnavailableReasonText);
+                if (availability.Available)
+                {
+                    banner.Enable();
+
+                    return;
+                }
+
+                banner.DisableWithReason(CatalogSyncBanner.ServerUnavailableReasonText);
+            });
         };
 
         var endpoint = ResolveEndpoint();

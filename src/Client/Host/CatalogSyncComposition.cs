@@ -34,6 +34,7 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     private readonly CatalogSnapshotStore _store;
     private readonly ClientStateStore _stateStore;
     private readonly IServerConnectionGate? _connectionGate;
+    private readonly IUiThread _uiThread;
     private readonly Lock _gate = new();
 
     private CatalogSyncState? _lastState;
@@ -47,19 +48,30 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     /// Puerta de versión y del ancla fijado que la reconexión repite, or <c>null</c> when
     /// the composition cannot re-establish the connection (AC5, AD-6, AD-27).
     /// </param>
+    /// <param name="uiThread">
+    /// Hilo de la interfaz, que encola las notificaciones que llegan desde el grupo de
+    /// hilos (AC3, AC4, AC5).
+    /// </param>
     public CatalogSyncComposition(
         Uri serverAddress,
         string stateDatabasePath,
         IClientRequestHeaders headers,
         ILoggerFactory loggerFactory,
-        IServerConnectionGate? connectionGate = null)
+        IServerConnectionGate? connectionGate,
+        IUiThread uiThread)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDatabasePath);
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(loggerFactory);
+        ArgumentNullException.ThrowIfNull(uiThread);
 
         ServerAddress = serverAddress;
+
+        // La publicación del estado se encola en el hilo de la interfaz: la reconexión
+        // resincroniza el catálogo desde el grupo de hilos y un suscriptor que toque un
+        // control desde ahí lo deja sin repintar para siempre (AC3, AC4, AC5).
+        _uiThread = uiThread;
 
         // El pool está desactivado porque la base de datos se abre pocas veces y un
         // handle agrupado mantendría el archivo de la carpeta de datos bloqueado mientras
@@ -77,6 +89,10 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
             .Options;
 
         _context = new ClientStateDbContext(options);
+
+        // AC2: la última operación terminada se lee del MISMO archivo de estado del
+        // cliente, así que el almacén comparte el contexto que la composición ya abrió.
+        _stateStore = new ClientStateStore(_context);
 
         _logger = loggerFactory.CreateLogger<CatalogSyncComposition>();
 
@@ -345,6 +361,11 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     /// exists, so without the replay the state that carries the snapshot of the catalog
     /// would be lost and the surface of the catalog would never show the games (AC1).
     /// </para>
+    /// <para>
+    /// La notificación se ENCOLA en el hilo de la interfaz, porque la publicación llega
+    /// desde el grupo de hilos cuando la reconexión resincroniza el catálogo. Un control
+    /// de Avalonia SOLO se toca desde el hilo que lo posee (AC3, AC4, AC5).
+    /// </para>
     /// </summary>
     public event Action<CatalogSyncState>? StateChanged
     {
@@ -366,7 +387,7 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
             // (AC1).
             if (replay is not null)
             {
-                value(replay);
+                NotifySubscriber(value, replay);
             }
         }
         remove
@@ -381,11 +402,31 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     private Action<CatalogSyncState>? _stateChanged;
 
     /// <summary>
+    /// Notifies ONE subscriber of the state, in the thread of the interface (AC3, AC4, AC5).
+    ///
+    /// <para>
+    /// La notificación va encolada porque el suscriptor puede tocar un control de Avalonia,
+    /// y un control SOLO se toca desde el hilo que lo posee (AC3).
+    /// </para>
+    /// </summary>
+    /// <param name="subscriber">Suscriptor que se notifica.</param>
+    /// <param name="state">State of the synchronization of the catalog.</param>
+    private void NotifySubscriber(Action<CatalogSyncState> subscriber, CatalogSyncState state)
+    {
+        _uiThread.Post(() => subscriber(state));
+    }
+
+    /// <summary>
     /// Publishes the state of the synchronization to whoever observes it (AC3, UX-DR-32).
     ///
     /// <para>
     /// The state is RETAINED, so a subscriber that arrives after the publication receives
     /// it as soon as it subscribes (AC1).
+    /// </para>
+    /// <para>
+    /// La publicación se NOTIFICA en el hilo de la interfaz: la reconexión resincroniza
+    /// el catálogo desde el grupo de hilos y un suscriptor que toque un control desde ahí
+    /// lo deja sin repintar para siempre (AC3, AC4, AC5).
     /// </para>
     /// </summary>
     /// <param name="state">State of the synchronization of the catalog.</param>
@@ -393,12 +434,21 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     {
         ArgumentNullException.ThrowIfNull(state);
 
+        Action<CatalogSyncState>? subscribers;
+
         lock (_gate)
         {
             _lastState = state;
+
+            subscribers = _stateChanged;
         }
 
-        _stateChanged?.Invoke(state);
+        if (subscribers is null)
+        {
+            return;
+        }
+
+        _uiThread.Post(() => subscribers(state));
     }
 
     /// <inheritdoc />

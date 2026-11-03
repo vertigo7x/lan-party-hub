@@ -34,6 +34,7 @@ public sealed class ConnectionStatusPanel : UserControl
     private readonly ConnectionStatusPanelViewModel _viewModel;
     private readonly Border _presenceBadge;
     private readonly TextBlock _presenceText;
+    private readonly TextBlock _presenceValue;
     private readonly TextBlock _unavailableNotice;
     private readonly TextBlock _retryCountdown;
     private readonly TextBlock _serverName;
@@ -87,6 +88,11 @@ public sealed class ConnectionStatusPanel : UserControl
         _serverVersion = new TextBlock();
         _lastOperation = new TextBlock { TextWrapping = TextWrapping.Wrap };
 
+        // La fila de la presencia lleva SU PROPIO texto: el texto de la insignia ya es su
+        // hijo visual, y un control de Avalonia NO puede estar en dos sitios a la vez
+        // (AC1).
+        _presenceValue = new TextBlock();
+
         Content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -102,7 +108,7 @@ public sealed class ConnectionStatusPanel : UserControl
                 _presenceBadge,
                 _unavailableNotice,
                 _retryCountdown,
-                BuildRow(ConnectionStatusPanelViewModel.PresenceLabelText, _presenceText),
+                BuildRow(ConnectionStatusPanelViewModel.PresenceLabelText, _presenceValue),
                 BuildRow(ConnectionStatusPanelViewModel.ServerNameLabelText, _serverName),
                 BuildRow(ConnectionStatusPanelViewModel.AddressLabelText, _address),
                 BuildRow(ConnectionStatusPanelViewModel.ServerVersionLabelText, _serverVersion),
@@ -185,6 +191,10 @@ public sealed class ConnectionStatusPanel : UserControl
 
         _presenceText.Foreground = new SolidColorBrush(presenceColor);
         _presenceText.Text = _viewModel.PresenceText;
+
+        // La fila de la presencia lleva el mismo texto que la insignia, en SU propio
+        // control (AC1).
+        _presenceValue.Text = _viewModel.PresenceText;
 
         _unavailableNotice.Text = _viewModel.UnavailableNoticeText;
         _unavailableNotice.IsVisible = _viewModel.ShowsUnavailableNotice;

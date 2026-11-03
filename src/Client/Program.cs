@@ -5,6 +5,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
 using LANPartyHub.Client.Infrastructure.Logging;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Presentation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -332,7 +333,8 @@ public static class Program
                 startup.StateDatabasePath,
                 correlationScope,
                 loggerFactory,
-                connection?.ConnectionService);
+                connection?.ConnectionService,
+                new AvaloniaUiThread());
 
             composition.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         }

@@ -5,6 +5,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Status;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Shared.Contracts;
@@ -238,7 +239,9 @@ public sealed class ServerReconnectionTests : IDisposable
                 new Uri($"http://{host.BoundAddress}:{host.Port}"),
                 databasePath,
                 correlation,
-                NullLoggerFactory.Instance);
+                NullLoggerFactory.Instance,
+                connectionGate: null,
+                new AvaloniaUiThread());
 
             await catalogSync.StartAsync(TestContext.Current.CancellationToken);
 
