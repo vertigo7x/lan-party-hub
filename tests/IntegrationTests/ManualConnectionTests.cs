@@ -25,7 +25,7 @@ public sealed class ManualConnectionTests
     [Fact]
     public async Task The_client_connects_with_the_address_that_the_player_types()
     {
-        await using var listener = await RealListener.AcceptAsync(TestContext.Current.CancellationToken);
+        await using var listener = RealListener.Start();
 
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
@@ -35,6 +35,8 @@ public sealed class ManualConnectionTests
         var attempt = await service.ConnectAsync(
             $"127.0.0.1:{listener.Port}",
             TestContext.Current.CancellationToken);
+
+        await listener.AcceptAsync(TestContext.Current.CancellationToken);
 
         // La vía manual es PERMANENTE y equivalente: el cliente se conecta a la dirección
         // escrita y el estado pasa a conectado (AC1, AD-3).
@@ -47,7 +49,7 @@ public sealed class ManualConnectionTests
     [Fact]
     public async Task The_address_that_the_player_types_is_the_one_that_the_client_uses()
     {
-        await using var listener = await RealListener.AcceptAsync(TestContext.Current.CancellationToken);
+        await using var listener = RealListener.Start();
 
         var connector = new TcpServerConnector(NullLogger<TcpServerConnector>.Instance);
         var service = new ServerConnectionService(
@@ -57,6 +59,8 @@ public sealed class ManualConnectionTests
         var attempt = await service.ConnectAsync(
             $"127.0.0.1:{listener.Port}",
             TestContext.Current.CancellationToken);
+
+        await listener.AcceptAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("127.0.0.1", attempt.Endpoint!.Address);
     }
@@ -156,12 +160,11 @@ public sealed class ManualConnectionTests
     private sealed class RealListener : IAsyncDisposable
     {
         private readonly System.Net.Sockets.TcpListener _listener;
-        private readonly System.Net.Sockets.TcpClient _accepted;
+        private System.Net.Sockets.TcpClient? _accepted;
 
-        private RealListener(System.Net.Sockets.TcpListener listener, int port, System.Net.Sockets.TcpClient accepted)
+        private RealListener(System.Net.Sockets.TcpListener listener, int port)
         {
             _listener = listener;
-            _accepted = accepted;
 
             Port = port;
         }
@@ -170,27 +173,31 @@ public sealed class ManualConnectionTests
         public int Port { get; }
 
         /// <summary>
-        /// Starts a listener on the loopback and accepts the first connection.
+        /// Starts a listener on the loopback, ready to accept the first connection.
         /// </summary>
-        /// <param name="cancellationToken">Token that cancels the operation.</param>
         /// <returns>The listener, ready to accept.</returns>
-        public static async Task<RealListener> AcceptAsync(CancellationToken cancellationToken)
+        public static RealListener Start()
         {
             var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
 
             listener.Start();
 
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            var accepted = await listener.AcceptTcpClientAsync(cancellationToken)
-                .ConfigureAwait(false);
+            return new RealListener(listener, port);
+        }
 
-            return new RealListener(listener, port, accepted);
+        /// <summary>Accepts the connection after the client has started it.</summary>
+        /// <param name="cancellationToken">Token that cancels the operation.</param>
+        public async Task AcceptAsync(CancellationToken cancellationToken)
+        {
+            _accepted = await _listener.AcceptTcpClientAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <inheritdoc />
         public ValueTask DisposeAsync()
         {
-            _accepted.Dispose();
+            _accepted?.Dispose();
             _listener.Stop();
 
             return ValueTask.CompletedTask;
