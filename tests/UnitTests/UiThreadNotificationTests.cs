@@ -322,6 +322,8 @@ public sealed class UiThreadNotificationTests
         public string? ClientId => "0193f2a1-b2c3-4d4e-5f60-718293a4b5c6";
 
         public string? OperationId => "0193f2a1-b2c3-4d4e-5f60-718293a4b5c7";
+
+        public string? MachineName => null;
     }
 
     /// <summary>

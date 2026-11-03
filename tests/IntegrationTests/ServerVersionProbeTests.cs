@@ -217,5 +217,7 @@ public sealed class ServerVersionProbeTests
         public string? ClientId { get; }
 
         public string? OperationId => null;
+
+        public string? MachineName => null;
     }
 }

@@ -35,20 +35,43 @@ public sealed class ServerConfiguration
     /// </summary>
     public const string MinimumProtocolVersionKey = "minimumProtocolVersion";
 
+    /// <summary>
+    /// Key of the number of simultaneous range responses that the server admits per client,
+    /// inside <see cref="SectionName"/> (AD-14).
+    /// </summary>
+    public const string MaxConcurrentDownloadsPerClientKey = "maxConcurrentDownloadsPerClient";
+
     /// <summary>Name of the data folder used when no source fixes it.</summary>
     public const string DefaultDataDirectory = "data";
 
     /// <summary>TCP port used when no source fixes it.</summary>
     public const int DefaultHttpPort = 8080;
 
+    /// <summary>
+    /// Number of simultaneous range responses that the server admits per client when no
+    /// source fixes another one (AD-14).
+    ///
+    /// <para>
+    /// El valor por defecto NO depende del resultado de ningún spike: el reparto
+    /// equitativo del enlace es un límite de concurrencia, y el límite tiene un valor
+    /// aunque la medición del ancho de banda real todavía no exista (AD-14, NFR-6).
+    /// </para>
+    /// </summary>
+    public const int DefaultMaxConcurrentDownloadsPerClient = 2;
+
     /// <summary>Name of the optional configuration file that sits next to the binary.</summary>
     public const string FileName = "appsettings.json";
 
-    private ServerConfiguration(string dataDirectory, int httpPort, int minimumProtocolVersion)
+    private ServerConfiguration(
+        string dataDirectory,
+        int httpPort,
+        int minimumProtocolVersion,
+        int maxConcurrentDownloadsPerClient)
     {
         DataDirectory = dataDirectory;
         HttpPort = httpPort;
         MinimumProtocolVersion = minimumProtocolVersion;
+        MaxConcurrentDownloadsPerClient = maxConcurrentDownloadsPerClient;
     }
 
     /// <summary>Absolute path of the data folder of the server.</summary>
@@ -68,6 +91,17 @@ public sealed class ServerConfiguration
     /// </para>
     /// </summary>
     public int MinimumProtocolVersion { get; }
+
+    /// <summary>
+    /// Number of simultaneous range responses that the server admits per client (AD-14).
+    ///
+    /// <para>
+    /// Es el límite POR CLIENTE del reparto del enlace: todas las conexiones de un
+    /// cliente beben del mismo cubo, así que un cliente que abre varias descargas
+    /// simultáneas no se lleva la parte que le corresponde a cada una (AD-14).
+    /// </para>
+    /// </summary>
+    public int MaxConcurrentDownloadsPerClient { get; }
 
     /// <summary>
     /// Registers the three configuration sources, in the order <c>file &gt; env &gt; flags</c>.
@@ -101,8 +135,13 @@ public sealed class ServerConfiguration
         var dataDirectory = ResolveDataDirectory(configuration, section, baseDirectory);
         var httpPort = ResolveHttpPort(configuration, section);
         var minimumProtocolVersion = ResolveMinimumProtocolVersion(configuration, section);
+        var maxConcurrentDownloadsPerClient = ResolveMaxConcurrentDownloadsPerClient(configuration, section);
 
-        return new ServerConfiguration(dataDirectory, httpPort, minimumProtocolVersion);
+        return new ServerConfiguration(
+            dataDirectory,
+            httpPort,
+            minimumProtocolVersion,
+            maxConcurrentDownloadsPerClient);
     }
 
     private static string ResolveDataDirectory(
@@ -200,6 +239,49 @@ public sealed class ServerConfiguration
         }
 
         return minimumProtocolVersion;
+    }
+
+    /// <summary>
+    /// Resolves the number of simultaneous range responses that the server admits per
+    /// client (AD-14).
+    ///
+    /// <para>
+    /// El límite tiene que ser MAYOR que cero: un límite de cero no repartiría el enlace,
+    /// lo bloquearía, y el valor por defecto se aplica cuando ninguna fuente fija otro
+    /// (AD-14).
+    /// </para>
+    /// </summary>
+    /// <param name="configuration">Configuration with the three sources already registered.</param>
+    /// <param name="section">Section of the configuration that holds the settings.</param>
+    /// <returns>The number of simultaneous range responses per client.</returns>
+    /// <exception cref="ServerStartupException">A source fixes an invalid value.</exception>
+    private static int ResolveMaxConcurrentDownloadsPerClient(
+        IConfiguration configuration,
+        IConfigurationSection section)
+    {
+        var rawLimit = section[MaxConcurrentDownloadsPerClientKey];
+
+        if (rawLimit is null)
+        {
+            return DefaultMaxConcurrentDownloadsPerClient;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawLimit))
+        {
+            throw new ServerStartupException(
+                $"Valor vacío en {DescribeSource(configuration, $"{SectionName}:{MaxConcurrentDownloadsPerClientKey}")}: el límite de descargas por cliente no puede estar vacío.");
+        }
+
+        var candidate = rawLimit.Trim();
+
+        if (!int.TryParse(candidate, NumberStyles.None, CultureInfo.InvariantCulture, out var limit)
+            || limit < 1)
+        {
+            throw new ServerStartupException(
+                $"Valor no válido '{rawLimit}' en {DescribeSource(configuration, $"{SectionName}:{MaxConcurrentDownloadsPerClientKey}")}: el límite de descargas por cliente debe ser un número entero mayor que cero.");
+        }
+
+        return limit;
     }
 
     /// <summary>

@@ -135,6 +135,43 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
     }
 
     /// <inheritdoc />
+    public async Task SaveOperationAsync(
+        string operationId,
+        string packageId,
+        string state,
+        string transferEngine,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(state);
+        ArgumentException.ThrowIfNullOrWhiteSpace(transferEngine);
+
+        // AD-10, AD-24: la operación declara el motor que transfiere sus bytes, y el
+        // formato de su progreso se deduce de ese valor. El registro se escribe una vez
+        // y su estado se ACTUALIZA: el estado de la máquina es del cliente (AD-10).
+        var operation = await _context.DownloadOperations
+            .FirstOrDefaultAsync(row => row.OperationId == operationId, cancellationToken);
+
+        if (operation is null)
+        {
+            _context.DownloadOperations.Add(new DownloadOperationEntity
+            {
+                OperationId = operationId,
+                PackageId = packageId,
+                State = state,
+                TransferEngine = transferEngine,
+            });
+        }
+        else
+        {
+            operation.State = state;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken)
     {
         var row = await _context.TrustAnchors

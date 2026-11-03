@@ -203,9 +203,9 @@ public sealed class ConnectionStatusPanelViewModel
     /// </summary>
     public bool ShowsRetryCountdown => !IsAvailable && _availability.RetryCountdown is not null;
 
-    /// <summary>
+/// <summary>
     /// Applies the availability of the server to the panel (AC1, AC3, AC4).
-    ///
+    /// </summary>
     /// <param name="availability">Availability of the server of the event.</param>
     public void ApplyAvailability(ServerAvailability availability)
     {

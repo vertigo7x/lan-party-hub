@@ -210,6 +210,31 @@ public static class ErrorCatalog
     /// </summary>
     public const string ClientVersionIncompatibleCode = "CLIENT_VERSION_INCOMPATIBLE";
 
+    /// <summary>
+    /// The body of the registration of a download intention is not a well formed JSON
+    /// document, or one of its fields does not have the shape that the contract declares
+    /// (AD-5).
+    /// </summary>
+    public const string DownloadBodyMalformedCode = "DOWNLOAD_BODY_MALFORMED";
+
+    /// <summary>
+    /// The registration of a download intention does not name the package that the client
+    /// wants to download (AD-5, AD-7).
+    /// </summary>
+    public const string DownloadPackageMissingCode = "DOWNLOAD_PACKAGE_MISSING";
+
+    /// <summary>
+    /// The package of a download intention is not published in the catalog of the event, or
+    /// it has no bytes in the repository of the server (AD-7, AD-9, AD-22).
+    /// </summary>
+    public const string DownloadPackageNotFoundCode = "DOWNLOAD_PACKAGE_NOT_FOUND";
+
+    /// <summary>
+    /// The range that the client asked for is not satisfacible: it starts beyond the end
+    /// of the content, so the server cannot serve it (AD-20, AC7).
+    /// </summary>
+    public const string DownloadRangeNotSatisfiableCode = "DOWNLOAD_RANGE_NOT_SATISFIABLE";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -417,6 +442,26 @@ public static class ErrorCatalog
             "Este cliente no es compatible con el servidor",
             "La versión del protocolo que declara el cliente no está en el rango de versiones que soporta el servidor.",
             "Actualiza el cliente con el binario que distribuye la organización del evento y vuelve a intentarlo."),
+        new(
+            DownloadBodyMalformedCode,
+            "El cuerpo de la intención de descarga no se puede leer",
+            "El cuerpo de la petición no es un JSON válido o alguno de sus campos no tiene la forma que el contrato declara.",
+            "Revisa el JSON del cuerpo de la intención de descarga y los campos que el contrato declara, y vuelve a intentarlo."),
+        new(
+            DownloadPackageMissingCode,
+            "La petición no lleva el paquete de la descarga",
+            "El cuerpo de la intención de descarga no lleva el identificador del paquete que el cliente quiere.",
+            "Añade el identificador del paquete al cuerpo de la petición y vuelve a intentarlo."),
+        new(
+            DownloadPackageNotFoundCode,
+            "El paquete de la descarga no está en el catálogo",
+            "El paquete que la intención de descarga nombra no está publicado en el catálogo del evento o no tiene bytes en el repositorio del servidor.",
+            "Sincroniza el catálogo y elige un paquete que esté publicado: no se ha escrito ninguna fila."),
+        new(
+            DownloadRangeNotSatisfiableCode,
+            "El rango del contenido no es satisfacible",
+            "El rango que el cliente pidió empieza más allá del final del contenido que el servidor tiene publicado.",
+            "Descarga el paquete de cero: el servidor no puede servir ese tramo y el offset guardado ya no vale."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

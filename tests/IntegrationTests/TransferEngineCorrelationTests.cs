@@ -118,5 +118,7 @@ public sealed class TransferEngineCorrelationTests
         public string? ClientId { get; }
 
         public string? OperationId { get; }
+
+        public string? MachineName => null;
     }
 }

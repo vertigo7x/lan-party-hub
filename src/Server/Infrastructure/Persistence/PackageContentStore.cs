@@ -51,6 +51,52 @@ public sealed class PackageContentStore : IPackageContentStore
         return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<PackageContentStream?> OpenAsync(string packageId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+
+        // La comprobación del identificador es la MISMA que la de la lectura entera: el
+        // identificador del paquete es el nombre de un archivo del repositorio y viene del
+        // cuerpo de la petición, así que un identificador que no sea un nombre plano no
+        // nombra un paquete de este repositorio (AD-9).
+        if (!IsPlainFileName(packageId))
+        {
+            return null;
+        }
+
+        var path = Path.Combine(_dataDirectory.PackagesPath, packageId);
+
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        // AD-20: el contenido se abre como FLUJO y no se lee entero en memoria: un paquete
+        // de varios gigabytes no cabe en la memoria del servidor y la ruta HTTP con Range
+        // lo sirve por tramos.
+        var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+
+        try
+        {
+            var length = stream.Length;
+
+            return new PackageContentStream(stream, length);
+        }
+        catch
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+
+            throw;
+        }
+    }
+
     /// <summary>
     /// Tells whether a value is the plain name of a file, with no directory part and no
     /// relative path (AD-9).

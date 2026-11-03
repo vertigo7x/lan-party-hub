@@ -23,6 +23,7 @@ public sealed class DownloadStateMachineTests
     [Theory]
     [InlineData(DownloadState.Queued, DownloadState.Downloading)]
     [InlineData(DownloadState.Downloading, DownloadState.Paused)]
+    [InlineData(DownloadState.Downloading, DownloadState.Cancelled)]
     [InlineData(DownloadState.Downloading, DownloadState.Validating)]
     [InlineData(DownloadState.Downloading, DownloadState.Failed)]
     [InlineData(DownloadState.Paused, DownloadState.Downloading)]
@@ -103,6 +104,18 @@ public sealed class DownloadStateMachineTests
 
         Assert.False(accepted);
         Assert.Equal(DownloadState.Completed, machine.Current);
+    }
+
+    [Fact]
+    public void A_download_in_course_can_be_cancelled()
+    {
+        // AC5: una descarga EN CURSO se cancela, y «Cancelled» es terminal.
+        var machine = new DownloadStateMachine(DownloadState.Downloading);
+
+        machine.TransitionTo(DownloadState.Cancelled);
+
+        Assert.Equal(DownloadState.Cancelled, machine.Current);
+        Assert.True(machine.IsTerminal);
     }
 
     [Theory]

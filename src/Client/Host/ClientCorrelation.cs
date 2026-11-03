@@ -114,17 +114,25 @@ public sealed class ClientCorrelationFactory : IClientCorrelationScope
     private readonly ILoggerFactory _loggerFactory;
     private readonly Lock _lock = new();
 
-    private IDisposable? _scope;
+private IDisposable? _scope;
     private string? _clientId;
     private string? _operationId;
+    private string? _machineName;
 
-    /// <summary>Creates the factory of the correlation scope.</summary>
+    /// <summary>
+    /// Creates the factory of the correlation scope.
+    /// </summary>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
-    public ClientCorrelationFactory(ILoggerFactory loggerFactory)
+    /// <param name="machineName">
+    /// Human label of the team, used by the server to tell the clients apart in the
+    /// reparto of the link. It is not a credential (AD-14, AD-30).
+    /// </param>
+    public ClientCorrelationFactory(ILoggerFactory loggerFactory, string? machineName = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         _loggerFactory = loggerFactory;
+        _machineName = string.IsNullOrWhiteSpace(machineName) ? null : machineName.Trim();
     }
 
     /// <inheritdoc />
@@ -147,6 +155,18 @@ public sealed class ClientCorrelationFactory : IClientCorrelationScope
             lock (_lock)
             {
                 return _operationId;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public string? MachineName
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _machineName;
             }
         }
     }
