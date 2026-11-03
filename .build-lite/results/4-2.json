@@ -1,0 +1,29 @@
+{
+  "story": "4-2-direcci\u00f3n-manual-como-v\u00eda-permanente-y-equivalente",
+  "base": "73f87f1060821deb3ef7d5db13e8a9254a4cb56d",
+  "risk": [
+    "red o host",
+    "contrato compartido"
+  ],
+  "paths": [
+    ".build-lite/plans/4-2.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Connection/ConnectionAttempt.cs",
+    "src/Client/Application/Connection/ServerConnectionService.cs",
+    "src/Client/Application/Connection/ServerEndpointParser.cs",
+    "src/Client/Application/Ports/IServerConnector.cs",
+    "src/Client/Host/ClientCommandLine.cs",
+    "src/Client/Host/ConnectionComposition.cs",
+    "src/Client/Infrastructure/Networking/TcpServerConnector.cs",
+    "src/Client/Presentation/Connection/ConnectionSurface.cs",
+    "src/Client/Presentation/Connection/ConnectionSurfaceViewModel.cs",
+    "src/Client/Presentation/Design/DesignTokens.cs",
+    "src/Shared/Contracts/ErrorCatalog.cs",
+    "test-out.txt",
+    "tests/IntegrationTests/ManualConnectionTests.cs",
+    "tests/UnitTests/ConnectionSurfaceViewModelTests.cs",
+    "tests/UnitTests/ServerConnectionServiceTests.cs",
+    "tests/UnitTests/ServerEndpointParserTests.cs",
+    "tools/build-loop.py"
+  ]
+}
