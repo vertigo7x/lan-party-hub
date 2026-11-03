@@ -51,6 +51,7 @@ public sealed class ConnectionSurface : UserControl
     private readonly TextBlock _presentedFingerprint;
     private readonly TextBlock _anchorUnverifiedNotice;
     private readonly TextBlock _anchorMismatchNotice;
+    private readonly TextBlock _disabledReasonNotice;
     private readonly Func<string?, CancellationToken, Task>? _onManualAddress;
     private readonly Func<string?, CancellationToken, Task>? _onFixAnchor;
 
@@ -160,6 +161,14 @@ public sealed class ConnectionSurface : UserControl
             IsVisible = false,
         };
 
+        // AC4, UX-DR-29: el motivo de la acción deshabilitada es VISIBLE. El jugador tiene
+        // que saber por qué no puede actuar, y no solo ver un botón que no responde.
+        _disabledReasonNotice = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
         Content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -187,6 +196,7 @@ public sealed class ConnectionSurface : UserControl
                 _presentedFingerprint,
                 _anchorUnverifiedNotice,
                 _anchorMismatchNotice,
+                _disabledReasonNotice,
             },
         };
 
@@ -280,6 +290,17 @@ public sealed class ConnectionSurface : UserControl
             : string.Empty;
 
         _anchorMismatchNotice.IsVisible = _viewModel.ShowsAnchorMismatch;
+
+        // AC4, UX-DR-29: la acción que REQUIERE el servidor queda deshabilitada con su
+        // motivo visible. El motivo se muestra, así que el jugador sabe por qué no puede
+        // actuar.
+        _fixAnchor.IsEnabled = !_viewModel.DisablesServerActions;
+
+        _disabledReasonNotice.Text = _viewModel.ShowsDisabledReason
+            ? $"{ConnectionSurfaceViewModel.DisabledReasonLabelText}{_viewModel.DisabledReasonText}"
+            : string.Empty;
+
+        _disabledReasonNotice.IsVisible = _viewModel.ShowsDisabledReason;
     }
 
     /// <summary>

@@ -133,6 +133,23 @@ public sealed class ConnectionSurfaceViewModel
     /// </summary>
     public const string AnchorMismatchTitleText = "El ancla de confianza no coincide";
 
+    /// <summary>
+    /// Text of the reason that disables the actions that REQUIRE the server (AC4,
+    /// UX-DR-29).
+    ///
+    /// <para>
+    /// La acción deshabilitada muestra su MOTIVO: el jugador tiene que saber por qué no
+    /// puede actuar, y no solo ver un botón que no responde (AC4, UX-DR-29).
+    /// </para>
+    /// </summary>
+    public const string ServerUnavailableReasonText =
+        "El servidor no está disponible: la acción se habilitará cuando vuelva la conexión.";
+
+    /// <summary>
+    /// Text of the label of the notice of the disabled action (AC4, UX-DR-29).
+    /// </summary>
+    public const string DisabledReasonLabelText = "Por qué: ";
+
     private readonly List<ServerEndpoint> _servers = [];
 
     /// <summary>
@@ -256,6 +273,47 @@ public sealed class ConnectionSurfaceViewModel
     /// AD-27).
     /// </summary>
     public bool ShowsAnchorMismatch => PresentedAnchorFingerprint is not null;
+
+    /// <summary>
+    /// Whether the server is available (AC3, AC4).
+    ///
+    /// <para>
+    /// La disponibilidad del servidor es un estado DEL CLIENTE, y no del contrato de
+    /// <c>Shared</c>: el contrato no crece (AR-3, AD-18).
+    /// </para>
+    /// </summary>
+    public bool IsServerAvailable { get; private set; } = true;
+
+    /// <summary>
+    /// Text of the reason that disables the actions that REQUIRE the server, or an empty
+    /// text when the server IS available (AC4, UX-DR-29).
+    /// </summary>
+    public string DisabledReasonText =>
+        IsServerAvailable ? string.Empty : ServerUnavailableReasonText;
+
+    /// <summary>
+    /// Whether the surface has to show the reason of the disabled action (AC4, UX-DR-29).
+    /// </summary>
+    public bool ShowsDisabledReason => !IsServerAvailable;
+
+    /// <summary>
+    /// Whether the actions that REQUIRE the server have to be disabled (AC4, UX-DR-29).
+    /// </summary>
+    public bool DisablesServerActions => !IsServerAvailable;
+
+    /// <summary>
+    /// Applies the availability of the server to the surface, so the actions that REQUIRE
+    /// the server are disabled with su motivo visible (AC3, AC4, UX-DR-29).
+    ///
+    /// <param name="availability">Availability of the server of the event.</param>
+    public void ApplyAvailability(ServerAvailability availability)
+    {
+        ArgumentNullException.ThrowIfNull(availability);
+
+        IsServerAvailable = availability.Available;
+
+        Changed?.Invoke();
+    }
 
     /// <summary>
     /// Text of la ancla que no coincide: el fingerprint que presentó el servidor y el que

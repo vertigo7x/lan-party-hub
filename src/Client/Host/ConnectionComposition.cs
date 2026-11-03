@@ -89,6 +89,8 @@ public sealed class ConnectionComposition : IDisposable
             _httpClient,
             loggerFactory.CreateLogger<HttpServerVersionProbe>());
 
+        VersionProbe = versionProbe;
+
         // AD-27: la sonda del ancla de confianza lee la MISMA ruta que la de las versiones,
         // porque el servidor publica las dos cosas en ella. La sonda NO decide si el ancla
         // es la buena: solo devuelve lo que llegó (AD-27).
@@ -144,6 +146,16 @@ public sealed class ConnectionComposition : IDisposable
 
     /// <summary>The use case of the connection by the address that the player types.</summary>
     public ServerConnectionService ConnectionService { get; }
+
+    /// <summary>
+    /// The port of the probe of the versions of the server (AD-6).
+    ///
+    /// <para>
+    /// La sonda se expone porque el supervisor de la disponibilidad la usa para saber si el
+    /// servidor responde, y para leer el nombre y la versión que publica (AC1, AC4).
+    /// </para>
+    /// </summary>
+    public IServerVersionProbe VersionProbe { get; }
 
     /// <summary>
     /// The adapter that reads the ancla de confianza that the server publishes (AD-27).

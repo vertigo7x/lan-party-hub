@@ -31,7 +31,7 @@ namespace LANPartyHub.Client.Application.Connection;
 /// así que puede ejercitarse sin una red (AD-1).
 /// </para>
 /// </summary>
-public sealed class ServerConnectionService
+public sealed class ServerConnectionService : IServerConnectionGate
 {
     /// <summary>
     /// Time that the opening of the connection lasts at most, when the caller does not fix
@@ -81,8 +81,8 @@ public sealed class ServerConnectionService
     }
 
     /// <summary>
-    /// Connects with the server of the event at the address that the player typed, with
-    /// the default time limit (AC1, AC3).
+    /// Connects with the server of the event at the address that the player typed, with the
+    /// default time limit (AC1, AC3).
     /// </summary>
     /// <param name="address">Text of the address, in the form <c>host:puerto</c>.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -91,6 +91,65 @@ public sealed class ServerConnectionService
         string? address,
         CancellationToken cancellationToken) =>
         ConnectAsync(address, DefaultTimeout, cancellationToken);
+
+    /// <summary>
+    /// Opens the connection with the server of the event at the given endpoint, and passes
+    /// its gate: the version (AD-6) and the ancla de confianza fijada (AD-27).
+    ///
+    /// <para>
+    /// AC5: esta es la puerta que REPETE la reconexión. El cliente que vuelve NO hereda
+    /// la confianza de la sesión anterior, porque el servidor que responde puede ser otro
+    /// (AD-6, AD-27).
+    /// </para>
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <param name="timeout">Time that the opening lasts at most.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The attempt of the connection.</returns>
+    public async Task<ConnectionAttempt> OpenAsync(
+        ServerEndpoint endpoint,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+
+        await _connector
+            .ConnectAsync(endpoint, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        // AD-6, FR-4: la conexión se abrió, así que ahora hay que comprobar que el
+        // servidor ACEPTA la versión del cliente. El servidor decide, y el cliente solo
+        // interpreta su respuesta.
+        var probe = await _versionProbe
+            .ProbeAsync(endpoint, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!probe.Compatible)
+        {
+            _logger.LogWarning(
+                "El cliente {ClientVersion} no es compatible con el servidor {ServerVersion}: el intento termina como desconectado.",
+                _versions.ClientVersion,
+                probe.ServerVersion ?? "(desconocida)");
+
+            return ConnectionAttempt.Incompatible(
+                endpoint,
+                ErrorCatalog.Resolve(ErrorCatalog.ClientVersionIncompatibleCode),
+                _versions.ClientVersion,
+                probe.ServerVersion);
+        }
+
+        // AD-27: la conexión se valida contra el ancla de confianza que YA está fijada.
+        var anchorValidation = await ValidateFixedAnchorAsync(endpoint, timeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (anchorValidation is not null)
+        {
+            return anchorValidation;
+        }
+
+        return ConnectionAttempt.Succeeded(endpoint);
+    }
 
     /// <summary>
     /// Connects with the server of the event at the address that the player typed, with the

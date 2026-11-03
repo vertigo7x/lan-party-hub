@@ -4,11 +4,14 @@ using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using LANPartyHub.Client.Presentation.Status;
+using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LANPartyHub.Client;
@@ -27,7 +30,9 @@ public sealed class App : Avalonia.Application
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
+    private readonly IUiThread _uiThread;
     private ConnectionSurfaceViewModel? _connectionViewModel;
+    private ServerAvailabilityMonitor? _availabilityMonitor;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -50,12 +55,18 @@ public sealed class App : Avalonia.Application
         ClientSettings? settings,
         string? startupError,
         CatalogSyncComposition? catalogSync = null,
-        ConnectionComposition? connection = null)
+        ConnectionComposition? connection = null,
+        IUiThread? uiThread = null)
     {
         _settings = settings;
         _startupError = startupError;
         _catalogSync = catalogSync;
         _connection = connection;
+
+        // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
+        // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
+        // un control de Avalonia SOLO se toca desde el hilo que lo posee (AC3, AC4, AC5).
+        _uiThread = uiThread ?? new AvaloniaUiThread();
     }
 
     /// <inheritdoc />
@@ -97,36 +108,173 @@ public sealed class App : Avalonia.Application
             // y el resultado llega cuando la búsqueda termina (AC1, AC3).
             _ = DiscoverServersAsync(connectionViewModel);
 
+            // AC1: el panel de la conexión es PERSISTENTE y vive en la columna derecha
+            // fija de la ventana. No se colapsa, no se esconde en un menú ni en un modal
+            // (AC1, UX-DR-11).
+            var statusViewModel = new ConnectionStatusPanelViewModel();
+            var statusPanel = new ConnectionStatusPanel(statusViewModel);
+
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
             // goes to the log.
             var window = _startupError is null
-                ? (Window)new MainWindow(_settings, SynchronizeNowAsync, catalogSurface, connectionSurface)
+                ? (Window)new MainWindow(
+                    _settings,
+                    SynchronizeNowAsync,
+                    catalogSurface,
+                    connectionSurface,
+                    statusPanel)
                 : new StartupErrorWindow(_startupError);
 
             desktop.MainWindow = window;
 
             // El aviso de la sincronización pendiente se actualiza con el estado que
             // publica la composición, y NO bloquea la navegación (AC3, UX-DR-32).
+            //
+            // La publicación llega desde el grupo de hilos cuando la reconexión resincroniza
+            // el catálogo, así que el aviso se ENCOLA en el hilo de la interfaz: tocar el
+            // banner desde el hilo que no lo posee lo deja sin repintar para siempre
+            // (AC3, AC4, AC5).
             if (_catalogSync is not null && window is MainWindow mainWindow)
             {
-                _catalogSync.StateChanged += state => mainWindow.ShowSyncState(state);
+                _catalogSync.StateChanged += state =>
+                    _uiThread.Post(() => mainWindow.ShowSyncState(state));
             }
 
             // AD-6, FR-4: el servidor puede rechazar la versión del cliente con un 426.
             // La sincronización publica ese diagnóstico y la superficie de Conexión lo
             // muestra con las dos versiones y el siguiente paso (AD-6, UX-DR-31).
+            //
+            // El diagnóstico se publica desde el grupo de hilos cuando la sincronización
+            // la resuelve la reconexión, así que se ENCOLA en el hilo de la interfaz antes
+            // de tocar la superficie (AC3, AC4, AC5).
             if (_catalogSync is not null)
             {
                 _catalogSync.Service.VersionIncompatible += failure =>
-                    connectionViewModel.ApplyVersionIncompatibility(
-                        failure.ClientVersion,
-                        failure.ServerVersion);
+                    _uiThread.Post(() =>
+                        connectionViewModel.ApplyVersionIncompatibility(
+                            failure.ClientVersion,
+                            failure.ServerVersion));
             }
+
+            // AC3, AC4, AC5: el supervisor de la disponibilidad vigila el servidor y
+            // publica su estado al panel PERSISTENTE, a la superficie de Conexión y al
+            // aviso de la sincronización. La caída del servidor NO interrumpe al jugador:
+            // no hay ningún modal (AC3, UX-DR-29).
+            StartAvailabilitySupervision(statusViewModel, connectionViewModel, ResolveBanner(window));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    /// <summary>
+    /// Starts the supervision of the availability of the event server and wires its state to
+    /// the panel, to the surface of the connection and to the notice of the synchronization
+    /// (AC3, AC4, AC5).
+    ///
+    /// <param name="statusViewModel">View model of the persistent panel of the connection.</param>
+    /// <param name="connectionViewModel">View model of the surface of the connection.</param>
+    /// <param name="banner">Notice of the pending synchronization, when the window has one.</param>
+    private void StartAvailabilitySupervision(
+        ConnectionStatusPanelViewModel statusViewModel,
+        ConnectionSurfaceViewModel connectionViewModel,
+        CatalogSyncBanner? banner)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        var monitor = new ServerAvailabilityMonitor(
+            _connection.VersionProbe,
+            _catalogSync,
+            NullLogger<ServerAvailabilityMonitor>.Instance);
+
+        _availabilityMonitor = monitor;
+
+        monitor.AvailabilityChanged += availability =>
+        {
+            // El supervisor publica su estado desde el GRUPO DE HILOS: el bucle de la
+            // supervisión va con `ConfigureAwait(false)`. Los controles de Avalonia SOLO
+            // se tocan desde el hilo que los posee, así que TODA la notificación se
+            // encola en el hilo de la interfaz antes de tocar un control. Sin esto, el
+            // `SetValue` del punto de presencia lanza `InvalidOperationException`, la
+            // supervisión queda fallida y el panel NO se repinta ni reconecta nunca
+            // (AC3, AC4, AC5).
+            _uiThread.Post(() =>
+            {
+                // El panel PERSISTENTE muestra el punto de presencia, el nombre del
+                // servidor, la dirección en uso, la versión y la última operación
+                // (AC1, UX-DR-11).
+                statusViewModel.ApplyAvailability(availability);
+
+                // Las acciones que REQUIEREN el servidor quedan deshabilitadas con su
+                // motivo visible (AC4, UX-DR-29).
+                connectionViewModel.ApplyAvailability(availability);
+
+                if (banner is null)
+                {
+                    return;
+                }
+
+                if (availability.Available)
+                {
+                    banner.Enable();
+
+                    return;
+                }
+
+                banner.DisableWithReason(CatalogSyncBanner.ServerUnavailableReasonText);
+            });
+        };
+
+        var endpoint = ResolveEndpoint();
+
+        if (endpoint is null)
+        {
+            return;
+        }
+
+        _ = monitor.StartAsync(endpoint, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Resolves the endpoint of the event server that the client is using, or <c>null</c>
+    /// when the client does not know any (AC1).
+    /// </summary>
+    /// <returns>The endpoint of the event server, or <c>null</c>.</returns>
+    private ServerEndpoint? ResolveEndpoint()
+    {
+        if (_connectionViewModel?.EndpointInUse is { } inUse)
+        {
+            return inUse;
+        }
+
+        var address = _catalogSync?.ServerAddress;
+
+        if (address is null)
+        {
+            return null;
+        }
+
+        return ServerEndpointParser.TryParse(
+            $"{address.Host}:{address.Port}",
+            out var endpoint,
+            out _)
+            ? endpoint
+            : null;
+    }
+
+    /// <summary>
+    /// The notice of the pending synchronization of the catalog of the window, when the
+    /// window carries one (AC3, UX-DR-32).
+    /// </summary>
+    /// <param name="window">Window of the player.</param>
+    /// <returns>The notice, or <c>null</c> when the window does not carry one.</returns>
+    private static CatalogSyncBanner? ResolveBanner(Window window) =>
+        window is MainWindow mainWindow
+            ? mainWindow.SyncBanner
+            : null;
 
     /// <summary>
     /// Reads the installations that the client registered and hands them to the surface of

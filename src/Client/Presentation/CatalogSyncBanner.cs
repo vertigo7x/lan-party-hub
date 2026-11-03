@@ -31,8 +31,21 @@ public sealed class CatalogSyncBanner : StackPanel
     /// </summary>
     public const string SynchronizeNowAction = "Sincronizar ahora";
 
+    /// <summary>
+    /// Text of the reason that disables the synchronization while the server is not
+    /// available (AC4, UX-DR-29).
+    ///
+    /// <para>
+    /// La acción deshabilitada muestra su MOTIVO: el jugador tiene que saber por qué no
+    /// puede sincronizar ahora (AC4, UX-DR-29).
+    /// </para>
+    /// </summary>
+    public const string ServerUnavailableReasonText =
+        "El servidor no está disponible: la sincronización se reintentará automáticamente.";
+
     private readonly TextBlock _message;
     private readonly Button _synchronize;
+    private readonly TextBlock _disabledReason;
 
     /// <summary>Creates the notice of the pending synchronization.</summary>
     /// <param name="onSynchronizeNow">
@@ -63,8 +76,54 @@ public sealed class CatalogSyncBanner : StackPanel
             await onSynchronizeNow().ConfigureAwait(true);
         };
 
+        // AC4, UX-DR-29: el motivo de la acción deshabilitada es VISIBLE: el jugador tiene
+        // que saber por qué no puede sincronizar ahora.
+        _disabledReason = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
         Children.Add(_message);
         Children.Add(_synchronize);
+        Children.Add(_disabledReason);
+    }
+
+    /// <summary>
+    /// The action that synchronizes the catalog now, so it can be inspected and driven from
+    /// the outside (AC4).
+    /// </summary>
+    public Button SynchronizeAction => _synchronize;
+
+    /// <summary>
+    /// The reason that disables the action, so it can be inspected and driven from the
+    /// outside (AC4, UX-DR-29).
+    /// </summary>
+    public TextBlock DisabledReason => _disabledReason;
+
+    /// <summary>
+    /// Disables the synchronization with its reason VISIBLE, because the server is not
+    /// available (AC4, UX-DR-29).
+    ///
+    /// <param name="reason">Reason of the disabled action.</param>
+    public void DisableWithReason(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        _synchronize.IsEnabled = false;
+        _disabledReason.Text = reason;
+        _disabledReason.IsVisible = true;
+    }
+
+    /// <summary>
+    /// Enables the synchronization again, because the server is available (AC4).
+    /// </summary>
+    public void Enable()
+    {
+        _synchronize.IsEnabled = true;
+        _disabledReason.Text = string.Empty;
+        _disabledReason.IsVisible = false;
     }
 
     /// <summary>

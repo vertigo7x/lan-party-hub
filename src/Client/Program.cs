@@ -5,6 +5,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
 using LANPartyHub.Client.Infrastructure.Logging;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Presentation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -54,21 +55,25 @@ public static class Program
 
             var startup = StartClientAsync(args, correlationScope, loggerFactory).GetAwaiter().GetResult();
 
-            // AD-5, AD-26: la composición de la sincronización del catálogo vive mientras
-            // vive la ventana del jugador, porque la sincronización tiene que reaccionar al
-            // disparo del hub mientras el cliente corre. Se abre DESPUÉS del startup, que
-            // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
-            catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory);
-
             // AD-3: la composición del descubrimiento vive mientras vive la ventana del
             // jugador, porque la superficie de Conexión consume su resultado. Un fallo al
-            // abrirla NO impide que el cliente arranque: la vía manual sigue operativa
+            // abrirla NO impide que el cliente arrancar: la vía manual sigue operativa
             // (AC4).
             //
             // AD-27: la composición recibe la ruta de la base de datos del cliente, que es
             // donde vive el ancla de confianza YA FIJADA. Las conexiones posteriores se
             // validan contra ese valor persistido (AD-27).
+            //
+            // AC5: la composición se abre ANTES que la de la sincronización, porque la
+            // reconexión repite la puerta de versión (AD-6) y la del ancla fijado (AD-27),
+            // y esa puerta vive en el caso de uso de la conexión.
             connection = OpenConnection(correlationScope, loggerFactory, startup.StateDatabasePath);
+
+            // AD-5, AD-26: la composición de la sincronización del catálogo vive mientras
+            // vive la ventana del jugador, porque la sincronización tiene que reaccionar al
+            // disparo del hub mientras el cliente corre. Se abre DESPUÉS del startup, que
+            // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
+            catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory, connection);
 
             BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
                 .StartWithClassicDesktopLifetime(args);
@@ -299,11 +304,16 @@ public static class Program
     /// <param name="startup">Outcome of the startup of the client.</param>
     /// <param name="correlationScope">Scope that correlates the log of the client.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="connection">
+    /// Composition of the conexión, whose case de uso es la puerta de versión (AD-6) y la
+    /// del ancla fijado (AD-27) que la reconexión repite (AC5).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static CatalogSyncComposition? OpenCatalogSync(
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        ConnectionComposition? connection = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -322,7 +332,9 @@ public static class Program
                 new Uri(startup.ServerAddress, UriKind.Absolute),
                 startup.StateDatabasePath,
                 correlationScope,
-                loggerFactory);
+                loggerFactory,
+                connection?.ConnectionService,
+                new AvaloniaUiThread());
 
             composition.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         }

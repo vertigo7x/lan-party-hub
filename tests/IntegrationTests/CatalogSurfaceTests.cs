@@ -6,6 +6,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using LANPartyHub.Client.Infrastructure.Persistence.Entities;
+using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Host;
@@ -267,7 +268,9 @@ public sealed class CatalogSurfaceTests : IDisposable
             new Uri($"http://{host.BoundAddress}:{host.Port}"),
             databasePath,
             correlation,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            connectionGate: null,
+            new AvaloniaUiThread());
 
         // La primera sincronización ocurre durante el ARRANQUE, antes de que exista la
         // ventana: el estado que lleva el snapshot se publica sin ningún suscriptor.
@@ -310,7 +313,9 @@ public sealed class CatalogSurfaceTests : IDisposable
             new Uri("http://127.0.0.1:1"),
             databasePath,
             correlation,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            connectionGate: null,
+            new AvaloniaUiThread());
 
         var viewModel = new CatalogSurfaceViewModel();
 
