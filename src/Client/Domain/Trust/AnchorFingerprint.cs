@@ -202,7 +202,7 @@ public sealed class AnchorFingerprint
     {
         var trimmed = publicKey.Trim();
 
-        byte[] raw;
+        byte[]? raw = null;
 
         try
         {
@@ -211,20 +211,32 @@ public sealed class AnchorFingerprint
         catch (FormatException)
         {
             // La clave puede venir en hexadecimal, que es como la muestran algunas
-            // herramientas de la organización.
+            // herramientas de la organización. Se intenta abajo.
+        }
+
+        // AD-27: una clave en hexadecimal tiene 64 caracteres, y el alfabeto de base64
+        // también los acepta, así que la decodificación en base64 PUEDE tener éxito y
+        // devolver 48 bytes en lugar de 32. La forma del valor decide, no el orden de los
+        // intentos: si lo que salió de base64 no es una clave de Ed25519, se prueba con
+        // hexadecimal antes de rechazar el valor (AD-27).
+        if (raw is null || raw.Length != PublicKeyLength)
+        {
             try
             {
                 raw = Convert.FromHexString(trimmed);
             }
             catch (FormatException exception)
             {
-                throw new FormatException(
-                    "La clave pública del ancla de confianza no es ni base64 ni hexadecimal.",
-                    exception);
+                if (raw is null)
+                {
+                    throw new FormatException(
+                        "La clave pública del ancla de confianza no es ni base64 ni hexadecimal.",
+                        exception);
+                }
             }
         }
 
-        if (raw.Length != PublicKeyLength)
+        if (raw is null || raw.Length != PublicKeyLength)
         {
             throw new FormatException(
                 $"La clave pública del ancla de confianza tiene que tener {PublicKeyLength} bytes.");

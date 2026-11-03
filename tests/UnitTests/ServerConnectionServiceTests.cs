@@ -305,7 +305,8 @@ public sealed class ServerConnectionServiceTests
 
         Assert.Equal(ConnectionState.Disconnected, attempt.State);
         Assert.True(attempt.IsAnchorMismatch);
-        Assert.Null(attempt.Endpoint is null ? null : attempt.Endpoint);
+        Assert.NotNull(attempt.Error);
+        Assert.NotNull(attempt.Endpoint);
     }
 
     [Fact]

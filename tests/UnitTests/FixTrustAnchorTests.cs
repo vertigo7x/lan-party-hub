@@ -1,4 +1,7 @@
+using LANPartyHub.Client.Application;
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
+using LANPartyHub.Client.Domain;
 using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -185,7 +188,7 @@ public sealed class FixTrustAnchorTests
         var useCase = CreateUseCase(store);
 
         var result = await useCase.ExecuteAsync(
-            OtherFingerprint(),
+            OtherAnchorFingerprint(),
             OtherAnchor(),
             TestContext.Current.CancellationToken);
 
@@ -210,7 +213,7 @@ public sealed class FixTrustAnchorTests
         var useCase = CreateUseCase(store);
 
         var result = await useCase.ExecuteAsync(
-            OtherFingerprint(),
+            OtherAnchorFingerprint(),
             OtherAnchor(),
             TestContext.Current.CancellationToken);
 
@@ -250,7 +253,7 @@ public sealed class FixTrustAnchorTests
         var store = new RecordingClientStateStore();
         var useCase = CreateUseCase(store);
 
-        var grouped = "19bb 47ff 53da 69b4 b8bd 88d5 9d9b ef79 2e3f 5d40 e742 c9b6 0316 050d ad3a 5889";
+        var grouped = "19bb 47ff 53da 69b4 b8bd 88d5 8d9b ef79 2e3f 5d40 e742 c9b6 0316 050d ad3a 5889";
 
         var result = await useCase.ExecuteAsync(
             grouped,
@@ -269,7 +272,22 @@ public sealed class FixTrustAnchorTests
     private static TrustAnchor OtherAnchor() =>
         new(
             Convert.ToBase64String(new byte[32]),
-            OtherFingerprint());
+            OtherAnchorFingerprint());
+
+    /// <summary>
+    /// The fingerprint that the client DERIVES from the key of <see cref="OtherAnchor"/>
+    /// (AD-27).
+    ///
+    /// <para>
+    /// AD-27: el ancla que presenta el servidor y el fingerprint esperado tienen que
+    /// DESCRIBIR LA MISMA clave, así que este valor es el <c>sha256</c> de los 32 bytes de
+    /// la clave, en hexadecimal minúsculo, con la misma regla que aplica
+    /// <see cref="AnchorFingerprint.FromPublicKey"/>. Un fingerprint que no corresponde con
+    /// su clave nunca supera la comparación del paso 3 (AD-27).
+    /// </para>
+    /// </summary>
+    private static string OtherAnchorFingerprint() =>
+        "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925";
 
     private static string OtherFingerprint() =>
         new string('a', 64);

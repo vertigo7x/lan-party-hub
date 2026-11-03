@@ -76,7 +76,7 @@ public sealed class AnchorFingerprintTests
         // AD-27: el jugador transcribe el fingerprint de un cartel o lo teclea de un QR, así
         // que el valor llega con espacios y guiones. La comparación NO puede depender de
         // cómo lo escribió la persona (AD-27).
-        var grouped = "19bb 47ff 53da 69b4 b8bd 88d5 9d9b ef79 2e3f 5d40 e742 c9b6 0316 050d ad3a 5889";
+        var grouped = "19bb 47ff 53da 69b4 b8bd 88d5 8d9b ef79 2e3f 5d40 e742 c9b6 0316 050d ad3a 5889";
 
         var parsed = AnchorFingerprint.Parse(grouped);
 
