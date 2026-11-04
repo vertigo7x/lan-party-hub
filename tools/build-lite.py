@@ -707,6 +707,21 @@ class Slot:
         return self.finished and self.error == "" and self.result is not None
 
 
+def slot_is_exclusive(slot: Slot) -> bool:
+    """Whether a running slot is allowed to share the worker window."""
+    return slot.metadata is None or bool(slot.metadata.sensitive_surfaces())
+
+
+def active_window_is_exclusive(active: Sequence[Slot]) -> bool:
+    """Whether an active worker forbids planning or admitting another story.
+
+    An ambiguous plan and every sensitive surface run alone. Planning another
+    story while one is active cannot change that decision, and it can hold the
+    scheduler in a long planner call instead of harvesting the worker result.
+    """
+    return any(slot_is_exclusive(slot) for slot in active)
+
+
 def pending_dependency(
     metadata: PlanMetadata,
     pending_keys: dict[str, str],
@@ -771,7 +786,7 @@ def eligibility(
         other = slot.metadata
         if other is None:
             return False, f"story {slot.story.short_id} has invalid metadata and runs exclusively"
-        if other.sensitive_surfaces():
+        if slot_is_exclusive(slot):
             return False, f"story {slot.story.short_id} has a sensitive surface and runs exclusively"
     sensitive = metadata.sensitive_surfaces()
     if sensitive:
@@ -952,8 +967,15 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
     done_keys: set[str] = set()
     started = 0
     limit = args.max_stories if args.max_stories else len(queue)
+    planned: dict[str, tuple[PlanMetadata | None, str]] = {}
 
     pending_keys = {story.key: story.short_id for story in queue}
+
+    def plan_for(story) -> tuple[PlanMetadata | None, str]:
+        """Plan each queued story at most once during a scheduler run."""
+        if story.key not in planned:
+            planned[story.key] = plan_story(story)
+        return planned[story.key]
 
     def harvest() -> None:
         """Move the workers that finished into the integration queue."""
@@ -1005,7 +1027,7 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
                 queue.clear()
                 break
             story = queue.pop(0)
-            metadata, reason = plan_story(story)
+            metadata, reason = plan_for(story)
             if metadata is None:
                 log(f"{story.short_id}: {reason}; the story runs alone")
             eligible, why = eligibility(metadata, reason, [], pending_keys, done_keys)
@@ -1015,14 +1037,20 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
             admit(story, metadata)
             continue
 
+        if active_window_is_exclusive(active):
+            # Do not spend time planning stories that cannot run until the
+            # exclusive worker is harvested.
+            time.sleep(1)
+            continue
+
         # There is room in the window: admit the next story when it can prove
         # its independence from the workers that are running.
         room = MAX_PARALLEL_WORKERS - len(active)
         while room > 0 and queue and started < limit:
-            story = next((candidate for candidate in queue if eligibility(*plan_story(candidate), active, pending_keys, done_keys)[0]), None)
+            story = next((candidate for candidate in queue if eligibility(*plan_for(candidate), active, pending_keys, done_keys)[0]), None)
             if story is None:
                 break
-            metadata, reason = plan_story(story)
+            metadata, reason = plan_for(story)
             eligible, why = eligibility(metadata, reason, active, pending_keys, done_keys)
             if not eligible:
                 # The story cannot run next to the workers that are running.
@@ -1155,6 +1183,22 @@ def self_test_scheduler() -> list[str]:
             failures.append("a story with a sensitive surface was admitted to the parallel window")
         if "persistence" not in why:
             failures.append("a sensitive surface did not record its reason")
+
+        sensitive_slot = Slot(story=object(), tree=object(), metadata=metadata)
+        if not active_window_is_exclusive([sensitive_slot]):
+            failures.append("a sensitive active worker did not block further planning")
+
+    ambiguous_slot = Slot(story=object(), tree=object(), metadata=None)
+    if not active_window_is_exclusive([ambiguous_slot]):
+        failures.append("an ambiguous active worker did not block further planning")
+
+    independent_slot = Slot(
+        story=object(),
+        tree=object(),
+        metadata=PlanMetadata(writes=("src/Server/Program.cs",)),
+    )
+    if active_window_is_exclusive([independent_slot]):
+        failures.append("an independent active worker blocked further planning")
 
     # A pending dependency runs alone.
     metadata, _ = metadata_of(

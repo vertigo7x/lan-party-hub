@@ -44,7 +44,7 @@ Esto cumple `docs/plan.md` §8: los S0/S1 no se fusionan abiertos, cada hallazgo
 
 El driver puede mantener una ventana deslizante de hasta cuatro workers para historias cuya independencia esté demostrada por el bloque JSON del plan (`reads`, `writes`, `shared_surfaces`, `depends_on`). Cada worker usa una rama y un worktree bajo `.build-lite/worktrees/`.
 
-Los cambios de contratos, persistencia, red, instalación, seguridad o firma, los planes inválidos y las huellas que se intersectan se ejecutan en exclusiva. Un fallo preserva worktree, rama y logs; no borra evidencia.
+Los cambios de contratos, persistencia, red, instalación, seguridad o firma, los planes inválidos y las huellas que se intersectan se ejecutan en exclusiva. Mientras haya un worker exclusivo activo, el coordinador no planifica candidatas: espera y recoge su resultado antes de volver a admitir trabajo. Un fallo preserva worktree, rama y logs; no borra evidencia.
 
 ## Ramas, PR y merge
 

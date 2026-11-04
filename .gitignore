@@ -179,6 +179,8 @@ _bmad/**/*.log
 .build-loop/
 .build-lite/logs/
 .build-lite/worktrees/
+# Los planes son caché local del scheduler; los resultados publicados sí se versionan.
+.build-lite/plans/
 .tmp-review/
 
 # ── Backups, temporales y varios ────────────────────────────────
