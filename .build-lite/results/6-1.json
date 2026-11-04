@@ -1,0 +1,41 @@
+{
+  "story": "6-1-verificaci\u00c3\u00b3n-de-integridad-y-de-autenticidad-antes-de-instal",
+  "base": "6556d0929f3eb0a9f09caf08377b21d6521e2268",
+  "risk": [
+    "firma de paquete",
+    "red o host",
+    "persistencia",
+    "contrato compartido",
+    "instalaci\u00f3n"
+  ],
+  "paths": [
+    "src/Client/Application/Downloads/DownloadCoordinator.cs",
+    "src/Client/Application/Integrity/PackageValidationResult.cs",
+    "src/Client/Application/Integrity/ValidatePackage.cs",
+    "src/Client/Application/Ports/IManifestCache.cs",
+    "src/Client/Application/Ports/IManifestSignatureVerifier.cs",
+    "src/Client/Application/Ports/ISignedManifestClient.cs",
+    "src/Client/Domain/Integrity/PackageIntegrity.cs",
+    "src/Client/Host/DownloadComposition.cs",
+    "src/Client/Infrastructure/Networking/SignedManifestHttpClient.cs",
+    "src/Client/Infrastructure/Persistence/ManifestCache.cs",
+    "src/Client/Infrastructure/Trust/Ed25519ManifestVerifier.cs",
+    "src/Client/LANPartyHub.Client.csproj",
+    "src/Client/Program.cs",
+    "src/Server/Application/Packages/GetSignedManifest.cs",
+    "src/Server/Application/Ports/IPackageRepository.cs",
+    "src/Server/Host/PackageManifestEndpoint.cs",
+    "src/Server/Infrastructure/Persistence/PackageRepository.cs",
+    "src/Server/Program.cs",
+    "src/Shared/Contracts/InstallationManifest.cs",
+    "tests/IntegrationTests/DownloadIntegrityTests.cs",
+    "tests/IntegrationTests/LogContentTests.cs",
+    "tests/IntegrationTests/PackageManifestEndpointTests.cs",
+    "tests/UnitTests/CatalogWithdrawalTests.cs",
+    "tests/UnitTests/DownloadCoordinatorTests.cs",
+    "tests/UnitTests/Ed25519ManifestVerifierTests.cs",
+    "tests/UnitTests/PackageIntegrityTests.cs",
+    "tests/UnitTests/PackagePublicationDomainTests.cs",
+    "tests/UnitTests/PackageValidationTests.cs"
+  ]
+}
