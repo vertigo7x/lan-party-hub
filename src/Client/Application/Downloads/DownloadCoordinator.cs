@@ -901,13 +901,28 @@ public sealed class DownloadCoordinator
             return;
         }
 
-        // AD-8, AD-27: el paquete está DAÑADO. El archivo parcial se descarta, el registro
+        // AD-8, AD-27: la integridad NO cuadra. El archivo parcial se descarta, el registro
         // de progreso se reinicia a cero y la operación queda como FALLIDA, que no es
         // reparable por reanudación.
-        _logger.LogWarning(
-            "El paquete {PackageId} de la operación {OperationId} está dañado: se descarta el archivo parcial y la operación no se puede reanudar.",
-            handle.PackageId,
-            handle.OperationId);
+        //
+        // La corrupción y la falta de autenticidad son DOS fallos DISTINTOS, con dos
+        // códigos estables distintos, así que el log los distingue: un constructor que
+        // los colapsa pierde la información que separa un ataque de un archivo dañado
+        // (AD-15, AD-25, AD-27).
+        if (result.IsCorrupted)
+        {
+            _logger.LogWarning(
+                "El paquete {PackageId} de la operación {OperationId} está dañado: se descarta el archivo parcial y la operación no se puede reanudar.",
+                handle.PackageId,
+                handle.OperationId);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "El paquete {PackageId} de la operación {OperationId} no es de fiar: se descarta el archivo parcial y la operación no se puede reanudar.",
+                handle.PackageId,
+                handle.OperationId);
+        }
 
         await DeletePartialAsync(handle).ConfigureAwait(false);
 

@@ -80,6 +80,10 @@ public sealed class LogContentTests : IDisposable
         "WithdrawnOperations",
         "WithdrawnInstallations",
         "AnchorFingerprint",
+        "PackageId",
+        "SchemaVersion",
+        "ActualSha256",
+        "ExpectedSha256",
     ];
 
     /// <summary>
