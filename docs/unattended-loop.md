@@ -40,9 +40,15 @@ Los cambios internos y sus pruebas no consumen una revisión LLM cuando las veri
 
 Esto cumple `docs/plan.md` §8: los S0/S1 no se fusionan abiertos, cada hallazgo requiere evidencia y no hay revisiones completas repetidas sin cambios relevantes.
 
+## Ejecución paralela
+
+El driver puede mantener una ventana deslizante de hasta cuatro workers para historias cuya independencia esté demostrada por el bloque JSON del plan (`reads`, `writes`, `shared_surfaces`, `depends_on`). Cada worker usa una rama y un worktree bajo `.build-lite/worktrees/`.
+
+Los cambios de contratos, persistencia, red, instalación, seguridad o firma, los planes inválidos y las huellas que se intersectan se ejecutan en exclusiva. Un fallo preserva worktree, rama y logs; no borra evidencia.
+
 ## Ramas, PR y merge
 
-El driver procesa una historia por vez, desde `origin/main`, en `story/<epica>-<historia>-<slug>`. Antes de abrir el PR vuelve a ejecutar las verificaciones. Si `main` avanzó durante la historia, rebasa la rama y repite las verificaciones sin crear una nueva conversación de IA.
+Cada worker parte de `origin/main`, en `story/<epica>-<historia>-<slug>`. El coordinador integra resultados de uno en uno: antes de abrir el PR vuelve a ejecutar las verificaciones y, si `main` avanzó durante la historia, rebasa la rama y las repite sin crear una nueva conversación de IA.
 
 El resultado se registra en `.build-lite/results/<epica>-<historia>.json`. Si las puertas pasan, el driver actualiza `sprint-status.yaml`, hace push, abre un PR y lo fusiona con squash. No hay push directo a `main`.
 
