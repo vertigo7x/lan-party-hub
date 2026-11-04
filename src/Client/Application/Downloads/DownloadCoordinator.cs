@@ -633,6 +633,27 @@ public sealed class DownloadCoordinator
 
             long? total = handle.TotalBytes;
 
+            // AD-11, AD-20: cuando el offset persistido YA IGUALA el total, los bytes
+            // están completos en el parcial y la descarga NO se vuelve a transferir:
+            // pedir «bytes=<total>-» haría que el servidor respondiera 416, y esa falla
+            // no es de transporte, así que la operación pasaría a «Failed» y la
+            // descarga COMPLETA se perdería igual (AD-20, AD-24).
+            //
+            // En su lugar se pasa DIRECTAMENTE a validar los bytes ya descargados, que es
+            // lo que decide si el paquete es íntegro (AD-8).
+            if (total is not null && offset == total.Value)
+            {
+                _logger.LogInformation(
+                    "La operación {OperationId} del paquete {PackageId} ya tiene los {Bytes} bytes completos: se validan sin volver a transferring.",
+                    handle.OperationId,
+                    handle.PackageId,
+                    offset);
+
+                await ValidateTransferredBytesAsync(handle, partialPath, transferToken).ConfigureAwait(false);
+
+                return;
+            }
+
             // AD-20: la reanudaciÃ³n pide el rango que empieza en el offset acumulado, y
             // el rango NO declara su final: viaja como Â«bytes=&lt;offset&gt;-Â», asÃ­ que el
             // servidor sirve el resto del contenido y el motor lee el total del
@@ -851,8 +872,16 @@ public sealed class DownloadCoordinator
             return;
         }
 
-        await PersistStateAsync(handle).ConfigureAwait(false);
-
+        // AD-10, AD-11: el estado intermedio «Validating» NO se persiste. Ese estado no
+        // es REANUDABLE (la recuperación sólo admite Queued, Downloading y Paused) ni
+        // es TERMINAL, así que persistirlo dejaba la operación en un limbo: un cierre del
+        // cliente durante el hash (decenas de segundos en un paquete de GB) la abandonaba
+        // para siempre, sin fallar y sin reanudar, con su parcial huérfano en
+        // «downloads/».
+        //
+        // Lo que se persiste sigue siendo «Downloading», que ES reanudable: el siguiente
+        // arranque recupera la operación y vuelve a validar los bytes ya descargados
+        // (AD-11, AD-24).
         Publish(handle);
 
         PackageValidationResult result;
