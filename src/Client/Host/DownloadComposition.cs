@@ -1,19 +1,29 @@
 using LANPartyHub.Client.Application.Downloads;
+using LANPartyHub.Client.Application.Integrity;
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Infrastructure.Networking;
+using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Infrastructure.Trust;
 using Microsoft.Extensions.Logging;
 
 namespace LANPartyHub.Client.Host;
 
 /// <summary>
-/// Composition of the downloads of the client (AD-4, AD-10, AD-14, AD-20, AD-24).
+/// Composition of the downloads of the client (AD-2, AD-4, AD-8, AD-10, AD-14, AD-20,
+/// AD-24).
 ///
 /// <para>
 /// La composición entrega el puerto <see cref="IDownloadIntentClient"/> con SU ÚNICA
 /// implementación, el adaptador que habla HTTP con el servidor del evento, y construye el
 /// coordinador de las descargas con los límites de concurrencia que fija la configuración
 /// efectiva (AD-14, AC10).
+/// </para>
+/// <para>
+/// La composición también entrega la VALIDACIÓN del paquete: el manifiesto firmado se pide
+/// al servidor, su firma se valida contra el ancla ya fijada y su hash se compara con los
+/// bytes descargados (AD-2, AD-8).
 /// </para>
 /// <para>
 /// La composición es el ÚNICO sitio que conoce los adaptadores: el coordinador depende
@@ -47,6 +57,11 @@ public sealed class DownloadComposition : IDisposable
     /// (AD-4).
     /// </param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="trustAnchorReader">
+    /// Port of the read of the ancla de confianza ya fijada. It is OPTIONAL, y cuando no
+    /// llega la validación no puede pronunciarse sobre la autenticidad del manifiesto
+    /// (AD-27).
+    /// </param>
     /// <param name="maxConcurrentDownloads">
     /// Number of downloads that the client runs at the same time (AD-14).
     /// </param>
@@ -64,6 +79,7 @@ public sealed class DownloadComposition : IDisposable
         IClientDataLayout layout,
         ITransferEngine engine,
         ILoggerFactory loggerFactory,
+        ITrustAnchorReader? trustAnchorReader = null,
         int maxConcurrentDownloads = DownloadCoordinator.DefaultMaxConcurrentDownloads,
         int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections,
         IServerVersionProbe? versionProbe = null)
@@ -117,12 +133,28 @@ public sealed class DownloadComposition : IDisposable
                     "No se pudo abrir el publicador del progreso de las descargas: las descargas siguen sin publicar su progreso.");
         }
 
+        // AD-2, AD-8, AD-20: el manifiesto firmado se pide al servidor por su propia ruta,
+        // y su texto canónico se cachea sólo DESPUÉS de que la firma haya validado.
+        var manifestClient = new SignedManifestHttpClient(_httpClient);
+        var manifestCache = new ManifestCache(layout);
+        var verifier = new Ed25519ManifestVerifier();
+
+        Validation = trustAnchorReader is null
+            ? null
+            : new ValidatePackage(
+                manifestClient,
+                verifier,
+                manifestCache,
+                trustAnchorReader,
+                loggerFactory.CreateLogger<ValidatePackage>());
+
         Coordinator = new DownloadCoordinator(
             engine,
             Intents,
             stateStore,
             layout,
             loggerFactory.CreateLogger<DownloadCoordinator>(),
+            Validation,
             maxConcurrentDownloads,
             maxTotalConnections,
             reporter,
@@ -140,6 +172,12 @@ public sealed class DownloadComposition : IDisposable
     /// implementation.
     /// </summary>
     public IDownloadIntentClient Intents { get; }
+
+    /// <summary>
+    /// Use case of the validation of the package, or <c>null</c> when the client has no way
+    /// to read the ancla de confianza ya fijada (AD-2, AD-8, AD-27).
+    /// </summary>
+    public ValidatePackage? Validation { get; }
 
     /// <summary>
     /// The coordinator of the download operations of the client.

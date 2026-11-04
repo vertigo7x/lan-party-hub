@@ -44,6 +44,27 @@ public interface IPackageRepository
     Task<PackageDescriptorRow?> FindAsync(string packageId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads the signed installation manifest of a published package (AD-2, AD-20).
+    ///
+    /// <para>
+    /// The manifest travels APARTE de los bytes del paquete, y el servidor lo sirve como
+    /// un artefacto con su firma: el cliente valida la firma y la versión del esquema
+    /// ANTES de descargar nada (AD-8, AD-20).
+    /// </para>
+    /// <para>
+    /// La fila que devuelve lleva el texto CANÓNICO del manifiesto, que es exactamente el
+    /// que la firma cubre, así que el verificador recomputa los mismos bytes (AD-2).
+    /// </para>
+    /// </summary>
+    /// <param name="packageId">Identifier of the package whose manifest is read.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The signed manifest of the package, or <c>null</c> when the server does not hold a
+    /// signed manifest for that package.
+    /// </returns>
+    Task<SignedManifestRow?> FindManifestAsync(string packageId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Reads every published package of the event. The reading is what fills the list of
     /// the section of packages of the organizer, and it is not a route of the API: the
     /// routes that publish the catalog belong to the stories that follow (AD-1, AD-5).

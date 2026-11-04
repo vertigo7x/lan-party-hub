@@ -85,9 +85,19 @@ public sealed record InstallationManifest(
     /// <summary>
     /// Signed envelope of the installation manifest (AD-2). It is the only object that
     /// carries a signature, and the key identifier lives only here.
+    ///
+    /// <para>
+    /// The manifest travels as the CANONICAL TEXT that was signed, not as a parsed object.
+    /// The signature covers exactly those bytes, so the verifier has to check the bytes
+    /// that arrive and not a form that this side recomputed: two canonicalizers could
+    /// produce two different texts for one manifest and only one of them would verify
+    /// (AD-2). The text is readable back with
+    /// <c>JsonSerializer.Deserialize&lt;InstallationManifest&gt;</c>, and the client reads
+    /// the <c>schemaVersion</c> that it declares (AD-8).
+    /// </para>
     /// </summary>
-    /// <param name="Manifest">The canonical manifest that was signed.</param>
+    /// <param name="Manifest">The canonical JSON text of the manifest that was signed.</param>
     /// <param name="Signature">Ed25519 signature over the canonical JSON of the manifest.</param>
     /// <param name="KeyId">Identifier of the key that produced the signature.</param>
-    public sealed record SignedEnvelope(InstallationManifest Manifest, string Signature, string KeyId);
+    public sealed record SignedEnvelope(string Manifest, string Signature, string KeyId);
 }

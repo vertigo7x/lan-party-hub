@@ -109,6 +109,32 @@ public sealed class PackageRepository : IPackageRepository
     }
 
     /// <inheritdoc />
+    public async Task<SignedManifestRow?> FindManifestAsync(string packageId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+
+        // The canonical text is served AS IT WAS SIGNED: the bytes that the verifier
+        // receives are exactly the bytes that the signature covers (AD-2, AD-20).
+        var entity = await _context.InstallationManifests
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.PackageId == packageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            return null;
+        }
+
+        return new SignedManifestRow(
+            entity.ManifestId,
+            entity.PackageId,
+            entity.SchemaVersion,
+            entity.CanonicalManifest,
+            entity.Signature,
+            entity.KeyId);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<PackageDescriptorRow>> ListAsync(CancellationToken cancellationToken)
     {
         var entities = await _context.PackageDescriptors

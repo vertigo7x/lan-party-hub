@@ -78,6 +78,18 @@
     <PackageReference Include="Haukcode.Mdns" Version="1.0.22" />
   </ItemGroup>
 
+  <!--
+    AD-2, AD-8: the verification of the signature of the installation manifest is Ed25519
+    over its canonical form, and the BCL of .NET 10 does not bring a public Ed25519 API, so
+    the cryptography comes from BouncyCastle. The package enters isolated behind the port
+    of verification (IManifestSignatureVerifier), so its types never leave
+    src/Client/Infrastructure/Trust and the use cases never know the library. The version
+    is the same one that the server signs with, so the two sides speak the same Ed25519.
+  -->
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Shared\LANPartyHub.Shared.csproj" />
   </ItemGroup>

@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Integrity;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.StateMachines;
 using LANPartyHub.Shared.Contracts;
@@ -6,8 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace LANPartyHub.Client.Application.Downloads;
 
 /// <summary>
-/// Coordinator of the download operations of the client (AD-4, AD-10, AD-11, AD-14, AD-20,
-/// AD-24, AC1..AC10).
+/// Coordinator of the download operations of the client (AD-4, AD-8, AD-10, AD-11, AD-14,
+/// AD-20, AD-24, AC1..AC10).
 ///
 /// <para>
 /// El coordinador es el ÃšNICO dueÃ±o de las descargas del cliente: registra la intenciÃ³n
@@ -26,6 +27,11 @@ namespace LANPartyHub.Client.Application.Downloads;
 /// <para>
 /// AD-24: las operaciones que tocan el MISMO RECURSO se serializan, y las de recursos
 /// distintos COEXISTEN: el recurso de una descarga es su paquete.
+/// </para>
+/// <para>
+/// AD-8: el manifiesto se pide y se valida ANTES de registrar la intención, de modo que
+/// un manifiesto que no es de fiar no deja NINGUNA escritura en disco: ni manifiesto en la
+/// caché, ni archivo parcial, ni operación registrada (AD-2, AD-8, AD-27).
 /// </para>
 /// </summary>
 public sealed class DownloadCoordinator
@@ -54,6 +60,7 @@ public sealed class DownloadCoordinator
     private readonly IClientDataLayout _layout;
     private readonly IDownloadProgressReporter? _reporter;
     private readonly IServerVersionProbe? _versionProbe;
+    private readonly ValidatePackage? _validation;
     private readonly ILogger<DownloadCoordinator> _logger;
     private readonly int _maxConcurrentDownloads;
     private readonly int _maxTotalConnections;
@@ -78,6 +85,13 @@ public sealed class DownloadCoordinator
     /// (AD-22).
     /// </param>
     /// <param name="logger">Log of the coordinator.</param>
+    /// <param name="validation">
+    /// Use case of the validation of the package, which checks the authenticity of the
+    /// signed manifest BEFORE the intention is registered and the integrity of the bytes
+    /// AFTER the transfer (AD-2, AD-8). It may be <c>null</c>, and then the coordinator
+    /// no valida nada: el puerto es opcional porque la validación es una historia
+    /// posterior a la descarga.
+    /// </param>
     /// <param name="maxConcurrentDownloads">
     /// Number of downloads that the client runs at the same time. It is CONFIGURABLE and
     /// tiene valor por defecto (AD-14, AC10).
@@ -102,6 +116,7 @@ public sealed class DownloadCoordinator
         IClientStateStore stateStore,
         IClientDataLayout layout,
         ILogger<DownloadCoordinator> logger,
+        ValidatePackage? validation = null,
         int maxConcurrentDownloads = DefaultMaxConcurrentDownloads,
         int maxTotalConnections = DefaultMaxTotalConnections,
         IDownloadProgressReporter? reporter = null,
@@ -133,6 +148,7 @@ public sealed class DownloadCoordinator
         _layout = layout;
         _reporter = reporter;
         _versionProbe = versionProbe;
+        _validation = validation;
         _logger = logger;
         _maxConcurrentDownloads = maxConcurrentDownloads;
         _maxTotalConnections = maxTotalConnections;
@@ -160,16 +176,26 @@ public sealed class DownloadCoordinator
     /// Starts the download of a package and returns its handle (AC1, AC2).
     ///
     /// <para>
-    /// La secuencia es la del caso de uso: el cliente REGISTRA la intenciÃ³n con el
-    /// servidor, PERSISTE la operaciÃ³n con su identificador, y solo entonces pide los
-    /// bytes. La operaciÃ³n es una unidad de trabajo con su propio <c>operationId</c> y su
-    /// registro de estado persistido (AC1, AC10).
+    /// La secuencia es la del caso de uso: el cliente VALIDA el manifiesto firmado, REGISTRA
+    /// la intención con el servidor, PERSISTE la operación con su identificador, y solo
+    /// entonces pide los bytes. La operación es una unidad de trabajo con su propio
+    /// <c>operationId</c> y su registro de estado persistido (AC1, AC10).
+    /// </para>
+    /// <para>
+    /// AD-2, AD-8: la validación del manifiesto PRECEDE al registro de la intención, de
+    /// modo que un manifiesto que no valida contra el ancla fijada no deja ninguna
+    /// escritura en disco: ni manifiesto en la caché, ni archivo parcial, ni operación
+    /// registrada.
     /// </para>
     /// </summary>
     /// <param name="packageId">Opaque identifier of the package that the client wants.</param>
     /// <param name="contentUri">Absolute URL of the content of the package.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The handle of the started operation.</returns>
+    /// <exception cref="PackageValidationFailedException">
+    /// The signed manifest of the package is not trustworthy, or it declares a schema
+    /// version that the client does not support. Nothing was written on disk.
+    /// </exception>
     public async Task<DownloadOperationHandle> StartAsync(
         string packageId,
         Uri contentUri,
@@ -178,9 +204,28 @@ public sealed class DownloadCoordinator
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentNullException.ThrowIfNull(contentUri);
 
-        // AC1: el cliente registra la intenciÃ³n con el servidor y obtiene el
-        // operationId. El servidor persiste el REFLEJO de la intenciÃ³n, no el estado de
-        // la operaciÃ³n (AD-10, AD-22).
+        // AD-2, AD-8: la firma y la versión del esquema se comprueban ANTES de registrar
+        // la intención. Si la comprobación falla, la operación NO se registra y NO se
+        // escribe nada en disco (AD-27).
+        if (_validation is not null)
+        {
+            var authenticity = await _validation
+                .ValidateManifestAsync(packageId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!authenticity.IsValid)
+            {
+                _logger.LogWarning(
+                    "El manifiesto firmado del paquete {PackageId} no ha superado la validación de autenticidad: no se registra ninguna operación y no se escribe nada en disco.",
+                    packageId);
+
+                throw new PackageValidationFailedException(packageId, authenticity);
+            }
+        }
+
+        // AC1: el cliente registra la intención con el servidor y obtiene el
+        // operationId. El servidor persiste el REFLEJO de la intención, no el estado de
+        // la operación (AD-10, AD-22).
         var operationId = await _intents
             .RegisterAsync(packageId, cancellationToken)
             .ConfigureAwait(false);
@@ -588,6 +633,27 @@ public sealed class DownloadCoordinator
 
             long? total = handle.TotalBytes;
 
+            // AD-11, AD-20: cuando el offset persistido YA IGUALA el total, los bytes
+            // están completos en el parcial y la descarga NO se vuelve a transferir:
+            // pedir «bytes=<total>-» haría que el servidor respondiera 416, y esa falla
+            // no es de transporte, así que la operación pasaría a «Failed» y la
+            // descarga COMPLETA se perdería igual (AD-20, AD-24).
+            //
+            // En su lugar se pasa DIRECTAMENTE a validar los bytes ya descargados, que es
+            // lo que decide si el paquete es íntegro (AD-8).
+            if (total is not null && offset == total.Value)
+            {
+                _logger.LogInformation(
+                    "La operación {OperationId} del paquete {PackageId} ya tiene los {Bytes} bytes completos: se validan sin volver a transferring.",
+                    handle.OperationId,
+                    handle.PackageId,
+                    offset);
+
+                await ValidateTransferredBytesAsync(handle, partialPath, transferToken).ConfigureAwait(false);
+
+                return;
+            }
+
             // AD-20: la reanudaciÃ³n pide el rango que empieza en el offset acumulado, y
             // el rango NO declara su final: viaja como Â«bytes=&lt;offset&gt;-Â», asÃ­ que el
             // servidor sirve el resto del contenido y el motor lee el total del
@@ -663,6 +729,13 @@ public sealed class DownloadCoordinator
                 .ConfigureAwait(false);
 
             Publish(handle);
+
+            // AD-8: la transferencia TERMINÓ y el archivo parcial se cierra ANTES de
+            // calcular su hash, porque el hash se calcula sobre el ARCHIVO, no sobre el
+            // contenido que todavía puede estar buffered.
+            await destination.DisposeAsync().ConfigureAwait(false);
+
+            await ValidateTransferredBytesAsync(handle, partialPath, transferToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (handle.IsCancelRequested)
         {
@@ -754,6 +827,185 @@ public sealed class DownloadCoordinator
         }
     }
 
+    /// <summary>
+    /// Validates the INTEGRITY of the bytes that were transferred and closes the operation
+    /// (AD-8, AC2, AC3).
+    ///
+    /// <para>
+    /// AD-8: la máquina de estados va de <c>Downloading</c> a <c>Validating</c> y de ahí
+    /// a <c>Completed</c> o a <c>Failed</c>. La comprobación del <c>sha256</c> contra el
+    /// manifiesto FIRMADO es la que decide, y es una comprobación DISTINTA de la de
+    /// autenticidad (AD-2).
+    /// </para>
+    /// <para>
+    /// AC2: un paquete alterado se RECHAZA antes de la instalación, el archivo parcial se
+    /// descarta y la operación se marca como fallida y NO reparable por reanudación
+    /// (AD-8, AD-27). El registro de progreso se reinicia a cero, así que la descarga
+    /// siguiente del mismo paquete empieza de CERO y no reutiliza el offset de un paquete
+    /// dañado.
+    /// </para>
+    /// </summary>
+    /// <param name="handle">Handle of the operation.</param>
+    /// <param name="partialPath">Absolute path of the partial file of the package.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the operation has been closed.</returns>
+    private async Task ValidateTransferredBytesAsync(
+        DownloadOperationHandle handle,
+        string partialPath,
+        CancellationToken cancellationToken)
+    {
+        if (_validation is null)
+        {
+            // Sin el caso de uso de la validación no hay nada que comprobar, así que la
+            // operación se cierra como completada (AD-8).
+            handle.StateMachine.TryTransitionTo(DownloadState.Completed);
+
+            await PersistStateAsync(handle).ConfigureAwait(false);
+
+            Publish(handle);
+
+            return;
+        }
+
+        if (!handle.StateMachine.TryTransitionTo(DownloadState.Validating))
+        {
+            return;
+        }
+
+        // AD-10, AD-11: el estado intermedio «Validating» NO se persiste. Ese estado no
+        // es REANUDABLE (la recuperación sólo admite Queued, Downloading y Paused) ni
+        // es TERMINAL, así que persistirlo dejaba la operación en un limbo: un cierre del
+        // cliente durante el hash (decenas de segundos en un paquete de GB) la abandonaba
+        // para siempre, sin fallar y sin reanudar, con su parcial huérfano en
+        // «downloads/».
+        //
+        // Lo que se persiste sigue siendo «Downloading», que ES reanudable: el siguiente
+        // arranque recupera la operación y vuelve a validar los bytes ya descargados
+        // (AD-11, AD-24).
+        Publish(handle);
+
+        PackageValidationResult result;
+
+        try
+        {
+            await using var content = new FileStream(
+                partialPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true);
+
+            result = await _validation
+                .ValidateIntegrityAsync(handle.PackageId, content, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La validación NO pudo leer los bytes: es una falla de la operación, y el
+            // parcial se conserva como en cualquier otra falla (AD-11).
+            _logger.LogWarning(
+                exception,
+                "No se pudo verificar la integridad del paquete {PackageId} de la operación {OperationId}.",
+                handle.PackageId,
+                handle.OperationId);
+
+            handle.StateMachine.TryTransitionTo(DownloadState.Failed);
+
+            await PersistStateAsync(handle).ConfigureAwait(false);
+
+            Publish(handle);
+
+            return;
+        }
+
+        if (result.IsValid)
+        {
+            handle.StateMachine.TryTransitionTo(DownloadState.Completed);
+
+            await PersistStateAsync(handle).ConfigureAwait(false);
+
+            Publish(handle);
+
+            return;
+        }
+
+        // AD-8, AD-27: la integridad NO cuadra. El archivo parcial se descarta, el registro
+        // de progreso se reinicia a cero y la operación queda como FALLIDA, que no es
+        // reparable por reanudación.
+        //
+        // La corrupción y la falta de autenticidad son DOS fallos DISTINTOS, con dos
+        // códigos estables distintos, así que el log los distingue: un constructor que
+        // los colapsa pierde la información que separa un ataque de un archivo dañado
+        // (AD-15, AD-25, AD-27).
+        if (result.IsCorrupted)
+        {
+            _logger.LogWarning(
+                "El paquete {PackageId} de la operación {OperationId} está dañado: se descarta el archivo parcial y la operación no se puede reanudar.",
+                handle.PackageId,
+                handle.OperationId);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "El paquete {PackageId} de la operación {OperationId} no es de fiar: se descarta el archivo parcial y la operación no se puede reanudar.",
+                handle.PackageId,
+                handle.OperationId);
+        }
+
+        await DeletePartialAsync(handle).ConfigureAwait(false);
+
+        await _stateStore.SaveProgressAsync(
+            handle.OperationId,
+            0,
+            handle.TotalBytes,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+        handle.ResetProgress();
+
+        handle.StateMachine.TryTransitionTo(DownloadState.Failed);
+
+        await PersistStateAsync(handle).ConfigureAwait(false);
+
+        Publish(handle);
+    }
+
+    /// <summary>
+    /// Reads the total size of the content when the client does not know it, asking the
+    /// server por el rango que empieza en el offset (AD-20).
+    /// </summary>
+    /// <param name="handle">Handle of the operation.</param>
+    /// <param name="offset">Offset accumulated so far.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The total size of the content, or <c>null</c> when it cannot be read.</returns>
+    private async Task<long?> ProbeTotalAsync(
+        DownloadOperationHandle handle,
+        long offset,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var probe = new MemoryStream();
+
+            var outcome = await _engine
+                .TransferAsync(handle.ContentUri, offset, offset, probe, cancellationToken)
+                .ConfigureAwait(false);
+
+            return outcome.TotalBytes;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // El total no es imprescindible para transferir: el motor lo declara en la
+            // respuesta del tramo y la interfaz lo muestra cuando llega (AD-20).
+            _logger.LogWarning(
+                exception,
+                "No se pudo leer el tamaño total del paquete {PackageId}.",
+                handle.PackageId);
+
+            return null;
+        }
+    }
 
     /// <summary>
     /// Persists the state of an operation (AD-10, AD-11).
@@ -1211,4 +1463,40 @@ public sealed class DownloadOperationHandle
 
         _publish?.Invoke(this);
     }
+}
+
+/// <summary>
+/// The signed manifest of a package did not pass the validation of authenticity
+/// (AD-2, AD-8, AC3, AC4).
+///
+/// <para>
+/// La excepción se lanza ANTES de registrar la intención de la descarga, así que no hay
+/// operación registrada, ni archivo parcial, ni manifiesto en la caché: el rechazo
+/// precede a persistir (AD-2, AD-27).
+/// </para>
+/// <para>
+/// La excepción lleva el RESULTADO de la validación, con su error del catálogo y su causa,
+/// así que el diagnóstico distingue la corrupción de la falta de autenticidad (AC6).
+/// </para>
+/// </summary>
+public sealed class PackageValidationFailedException : Exception
+{
+    /// <summary>Creates the exception of a package that is not trustworthy.</summary>
+    /// <param name="packageId">Opaque identifier of the package that failed the validation.</param>
+    /// <param name="result">Result of the validation that rejected the package.</param>
+    public PackageValidationFailedException(string packageId, PackageValidationResult result)
+        : base($"El manifiesto firmado del paquete '{packageId}' no ha superado la validación.")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentNullException.ThrowIfNull(result);
+
+        PackageId = packageId;
+        Result = result;
+    }
+
+    /// <summary>Opaque identifier of the package that failed the validation.</summary>
+    public string PackageId { get; }
+
+    /// <summary>Result of the validation that rejected the package.</summary>
+    public PackageValidationResult Result { get; }
 }
