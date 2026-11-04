@@ -271,6 +271,9 @@ public sealed class CatalogWithdrawalTests
         public Task<PackageDescriptorRow?> FindAsync(string packageId, CancellationToken cancellationToken) =>
             Task.FromResult<PackageDescriptorRow?>(null);
 
+        public Task<SignedManifestRow?> FindManifestAsync(string packageId, CancellationToken cancellationToken) =>
+            Task.FromResult<SignedManifestRow?>(null);
+
         public Task<IReadOnlyList<PackageDescriptorRow>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PackageDescriptorRow>>(AddedDescriptors);
 

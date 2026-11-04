@@ -391,6 +391,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
             store,
             effectiveLayout,
             NullLogger<DownloadCoordinator>.Instance,
+            validation: null,
             maxConcurrentDownloads,
             maxTotalConnections);
     }

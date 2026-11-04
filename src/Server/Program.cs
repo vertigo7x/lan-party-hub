@@ -220,6 +220,11 @@ public partial class Program
         builder.Services.AddScoped<ListPackages>();
         builder.Services.AddScoped<WithdrawGame>();
 
+        // AD-2, AD-8, AD-20: el manifiesto firmado viaja APARTE de los bytes del paquete,
+        // y el cliente lo pide antes de descargar para validar la firma y la versión del
+        // esquema antes de que exista un archivo parcial (AD-8).
+        builder.Services.AddScoped<GetSignedManifest>();
+
         // AD-10, AD-22: la superficie de las descargas. El servidor registra la
         // INTENCIÓN de la descarga y NOTHING del estado de la operación: la operación la
         // ejecuta el cliente y su estado es del cliente (AD-10).
@@ -335,6 +340,10 @@ public partial class Program
         // descarga y la que sirve los bytes del paquete con soporte de Range requests.
         DownloadsEndpoint.Map(app);
         PackageContentEndpoint.Map(app);
+
+        // AD-2, AD-8, AD-20: la superficie del cliente que sirve el manifiesto firmado del
+        // paquete, que es lo que el cliente valida antes de descargar (AD-8).
+        PackageManifestEndpoint.Map(app);
 
         app.MapHub<CatalogHub>(CatalogHub.Route);
 

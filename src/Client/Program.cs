@@ -456,13 +456,19 @@ public static class Program
                 startup.DataFolder,
                 startup.InstallDirectory);
 
+            // AD-2, AD-27: la validación de la autenticidad se hace contra el ancla de
+            // confianza YA FIJADA, que vive en la base de datos del cliente. El store es
+            // el que la lee, así que la composición lo recibe como el port que es (AD-27).
+            var stateStore = new ClientStateStore(context);
+
             composition = new DownloadComposition(
                 new Uri(startup.ServerAddress, UriKind.Absolute),
                 correlationScope,
-                new ClientStateStore(context),
+                stateStore,
                 layout,
                 transfer.Engine,
                 loggerFactory,
+                stateStore,
                 startup.MaxConcurrentDownloads,
                 startup.MaxTotalConnections,
                 connection?.VersionProbe);
