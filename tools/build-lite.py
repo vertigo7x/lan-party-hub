@@ -722,6 +722,11 @@ def active_window_is_exclusive(active: Sequence[Slot]) -> bool:
     return any(slot_is_exclusive(slot) for slot in active)
 
 
+def admission_is_closed(failures: Sequence[tuple[str, str]]) -> bool:
+    """A run never starts or integrates another story after its first failure."""
+    return bool(failures)
+
+
 def pending_dependency(
     metadata: PlanMetadata,
     pending_keys: dict[str, str],
@@ -744,7 +749,7 @@ def pending_dependency(
             if key == short or key.startswith(f"{short.replace('.', '-')}-"):
                 return short
         # A dependency absent from the queue was completed before this run.
-        return ""
+        continue
     return ""
 
 
@@ -992,6 +997,21 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
                 failures.append((slot.story.short_id, slot.error or "the worker failed"))
         active = still_active
 
+    def preserve_unintegrated_work() -> None:
+        """Wait for and preserve work that must not be integrated after failure."""
+        nonlocal active, finished
+        for slot in active:
+            slot.join()
+            legacy.preserve_pending_work(slot.story, cwd=slot.tree.path)
+            preserve_worktree(slot.tree)
+            log(f"{slot.story.short_id}: preserved after another story failed")
+        for result in finished:
+            legacy.preserve_pending_work(result.story, cwd=result.worktree.path)
+            preserve_worktree(result.worktree)
+            log(f"{result.story.short_id}: verified work preserved after another story failed")
+        active.clear()
+        finished.clear()
+
     def admit(story, metadata: PlanMetadata | None) -> Slot:
         """Start the worker of a story in its own worktree."""
         nonlocal started
@@ -1004,6 +1024,13 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
 
     while queue or active or finished:
         harvest()
+        if admission_is_closed(failures):
+            # A failed story closes the admission window. Let any workers that
+            # were already running finish so their committed work can remain in
+            # its worktree, but never integrate or start another story.
+            log("the scheduler is closing admission after a failed story")
+            preserve_unintegrated_work()
+            break
         if finished:
             # The integration is serial: one story at a time against main.
             result = finished.pop(0)
@@ -1032,7 +1059,7 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
                 log(f"{story.short_id}: {reason}; the story runs alone")
             eligible, why = eligibility(metadata, reason, [], pending_keys, done_keys)
             if not eligible and metadata is not None and "depends on" in why:
-                failures.append((story.short_id, why))
+                log(f"{story.short_id}: blocked, {why}")
                 continue
             admit(story, metadata)
             continue
@@ -1217,6 +1244,10 @@ def self_test_scheduler() -> list[str]:
         if not eligible:
             failures.append("a story whose dependency is done was kept out of the parallel window")
 
+        metadata = PlanMetadata(depends_on=("4.4", "5.3"))
+        if pending_dependency(metadata, {"5-3-recuperacion": "5.3"}, set()) != "5.3":
+            failures.append("a completed dependency prevented checking a later pending dependency")
+
     # Two stories that write the same path never run at the same time.
     left, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/Application/Catalog/"], '
@@ -1275,6 +1306,13 @@ def self_test_scheduler() -> list[str]:
         failures.append("the worktree of a failed story was removed")
     elif tree.path.exists() and not any(WORKTREE_ROOT.glob("9-9")):
         failures.append("the worktree of a failed story was not preserved")
+
+    # A failure closes the scheduler admission window before another story can
+    # be planned or started.
+    if not admission_is_closed([("5.3", "verification failed")]):
+        failures.append("a failed worker did not close the admission window")
+    if admission_is_closed([]):
+        failures.append("an error-free scheduler closed the admission window")
 
     shutil.rmtree(tree.path, ignore_errors=True)
 
