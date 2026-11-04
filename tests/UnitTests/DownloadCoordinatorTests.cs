@@ -44,7 +44,9 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         // AD-10, AD-11: la operación y su estado se persisten, con el motor que la
         // transfiere.
-        var operation = Assert.Single(store.SavedOperations);
+        var operation = Assert.Single(
+            store.SavedOperations,
+            operation => operation.State == DownloadState.Queued.ToString());
         Assert.Equal("operacion-1", operation.OperationId);
         Assert.Equal("paquete-1", operation.PackageId);
         Assert.Equal(TransferEngineRegistry.HttpRangeTransferEngine, operation.TransferEngine);
@@ -61,7 +63,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         using var gate = new TransferGate();
 
-        var engine = new GatedTransferEngine(gate, totalBytes: 1000);
+        var engine = new GatedTransferEngine(gate, totalBytes: 1_000_000_000);
 
         var coordinatorWithEngine = CreateCoordinator(intents, store, engine);
 
@@ -70,9 +72,9 @@ public sealed class DownloadCoordinatorTests : IDisposable
             new Uri("http://192.168.1.10:5000/api/v1/packages/paquete-1/content"),
             TestContext.Current.CancellationToken);
 
-        gate.Release(400);
+        gate.Release(400_000_000);
 
-        await WaitUntilAsync(() => handle.BytesPersisted == 400);
+        await WaitUntilAsync(() => handle.BytesPersisted == 400_000_000);
 
         Assert.Equal(40, handle.Progress.Percentage);
         Assert.Equal("0,4 GB de 1,0 GB", handle.Progress.SizesText);
@@ -446,20 +448,28 @@ public sealed class DownloadCoordinatorTests : IDisposable
     private sealed class TransferGate : IDisposable
     {
         private readonly SemaphoreSlim _gate = new(0);
-        private readonly List<long> _written = [];
+        private readonly Queue<long> _written = [];
         private readonly Lock _lock = new();
 
         public void Release(long bytes)
         {
             lock (_lock)
             {
-                _written.Add(bytes);
+                _written.Enqueue(bytes);
             }
 
             _gate.Release();
         }
 
-        public Task WaitAsync(CancellationToken cancellationToken) => _gate.WaitAsync(cancellationToken);
+        public async Task<long> WaitAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            lock (_lock)
+            {
+                return _written.Dequeue();
+            }
+        }
 
         public void Dispose() => _gate.Dispose();
     }
@@ -503,13 +513,13 @@ public sealed class DownloadCoordinatorTests : IDisposable
                 _requestedStarts.Add(startInclusive);
             }
 
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var byteCount = await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            var written = new byte[64];
+            var written = new byte[1];
 
             await destination.WriteAsync(written.AsMemory(), cancellationToken).ConfigureAwait(false);
 
-            return new TransferOutcome(written.Length, _totalBytes, RangeHonoured: true);
+            return new TransferOutcome(byteCount, _totalBytes, RangeHonoured: true);
         }
     }
 

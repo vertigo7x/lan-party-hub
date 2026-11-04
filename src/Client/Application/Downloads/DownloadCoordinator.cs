@@ -180,7 +180,7 @@ public sealed class DownloadCoordinator
 
         handle.Attach(Publish);
 
-        _ = RunAsync(handle, cancellationToken);
+        handle.TrackRun(RunAsync(handle, cancellationToken));
 
         return handle;
     }
@@ -207,6 +207,12 @@ public sealed class DownloadCoordinator
 
         handle.RequestPause();
 
+        // La pausa debe interrumpir la lectura que está en curso para que el recurso se
+        // libere y la reanudación pueda abrir el mismo parcial desde el offset persistido.
+        handle.CancelActiveTransfer();
+
+        await handle.WaitForActiveRunAsync().ConfigureAwait(false);
+
         await PersistStateAsync(handle).ConfigureAwait(false);
 
         Publish(handle);
@@ -224,22 +230,20 @@ public sealed class DownloadCoordinator
     /// <param name="handle">Handle of the operation to resume.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes when the operation has resumed.</returns>
-    public async Task ResumeAsync(DownloadOperationHandle handle, CancellationToken cancellationToken)
+    public Task ResumeAsync(DownloadOperationHandle handle, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(handle);
 
-        if (!handle.StateMachine.TryTransitionTo(DownloadState.Downloading))
+        if (!handle.StateMachine.CanTransitionTo(DownloadState.Downloading))
         {
-            return;
+            return Task.CompletedTask;
         }
 
         handle.ClearPause();
 
-        await PersistStateAsync(handle).ConfigureAwait(false);
+        handle.TrackRun(RunAsync(handle, cancellationToken));
 
-        Publish(handle);
-
-        _ = RunAsync(handle, cancellationToken);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -268,6 +272,12 @@ public sealed class DownloadCoordinator
         }
 
         handle.RequestCancel();
+
+        // El archivo parcial puede estar abierto por la transferencia. Se cancela ANTES de
+        // borrarlo para que Windows libere el handle y la cancelación sea efectiva (AC5).
+        handle.CancelActiveTransfer();
+
+        await handle.WaitForActiveRunAsync().ConfigureAwait(false);
 
         await PersistStateAsync(handle).ConfigureAwait(false);
 
@@ -316,16 +326,29 @@ public sealed class DownloadCoordinator
         // AD-24: el recurso de una descarga es su PAQUETE, y las operaciones que tocan el
         // mismo recurso se serializan. Las de recursos distintos COEXISTEN.
         var resourceLock = AcquireResourceLock(handle.PackageId);
-
-        await resourceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var runCancellation = handle.BeginRun(cancellationToken);
+        var resourceAcquired = false;
 
         try
         {
-            await RunTransferAsync(handle, cancellationToken).ConfigureAwait(false);
+            await resourceLock.WaitAsync(runCancellation.Token).ConfigureAwait(false);
+            resourceAcquired = true;
+
+            await RunTransferAsync(handle, runCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (handle.IsPauseRequested || handle.IsCancelRequested)
+        {
+            // La operación se canceló mientras esperaba el recurso de su paquete; nunca
+            // llegó a abrir el archivo parcial ni a iniciar una transferencia.
         }
         finally
         {
-            resourceLock.Release();
+            if (resourceAcquired)
+            {
+                resourceLock.Release();
+            }
+
+            handle.EndRun(runCancellation);
         }
     }
 
@@ -343,26 +366,31 @@ public sealed class DownloadCoordinator
             return;
         }
 
-        await PersistStateAsync(handle).ConfigureAwait(false);
-
-        Publish(handle);
-
-        var partialPath = _layout.PartialFilePath(handle.PackageId);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(partialPath)!);
-
-        // AD-14: los límites son POR CLIENTE. La descarga espera su turno y su conexión
-        // espera la suya, así que un cliente no abre más descargas ni más conexiones de
-        // las que su límite admite (AD-14, AC10).
-        await _concurrencySlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var transferCancellation = handle.BeginTransfer(cancellationToken);
+        var transferToken = transferCancellation.Token;
+        var concurrencyAcquired = false;
+        var connectionAcquired = false;
 
         try
         {
-            await _connectionSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await PersistStateAsync(handle).ConfigureAwait(false);
 
-            try
-            {
-                var offset = handle.BytesPersisted;
+            Publish(handle);
+
+            var partialPath = _layout.PartialFilePath(handle.PackageId);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(partialPath)!);
+
+            // AD-14: los límites son POR CLIENTE. La descarga espera su turno y su conexión
+            // espera la suya, así que un cliente no abre más descargas ni más conexiones de
+            // las que su límite admite (AD-14, AC10).
+            await _concurrencySlots.WaitAsync(transferToken).ConfigureAwait(false);
+            concurrencyAcquired = true;
+
+            await _connectionSlots.WaitAsync(transferToken).ConfigureAwait(false);
+            connectionAcquired = true;
+
+            var offset = handle.BytesPersisted;
 
                 long? total = handle.TotalBytes;
 
@@ -370,7 +398,7 @@ public sealed class DownloadCoordinator
                 {
                     // La reanudación pide el rango que empieza en el offset acumulado: el
                     // motor HTTP lo sirve con un Range sobre ese offset (AD-20, AD-24).
-                    total = await ProbeTotalAsync(handle, offset, cancellationToken).ConfigureAwait(false);
+                    total = await ProbeTotalAsync(handle, offset, transferToken).ConfigureAwait(false);
                 }
 
                 await using var destination = new FileStream(
@@ -386,7 +414,7 @@ public sealed class DownloadCoordinator
                 var end = total is { } declared ? declared - 1 : long.MaxValue - 1;
 
                 var outcome = await _engine
-                    .TransferAsync(handle.ContentUri, offset, end, destination, cancellationToken)
+                    .TransferAsync(handle.ContentUri, offset, end, destination, transferToken)
                     .ConfigureAwait(false);
 
                 if (!outcome.RangeHonoured)
@@ -408,15 +436,10 @@ public sealed class DownloadCoordinator
                     handle.OperationId,
                     transferred,
                     total,
-                    cancellationToken)
+                    transferToken)
                     .ConfigureAwait(false);
 
-                Publish(handle);
-            }
-            finally
-            {
-                _connectionSlots.Release();
-            }
+            Publish(handle);
         }
         catch (OperationCanceledException) when (handle.IsCancelRequested)
         {
@@ -465,7 +488,17 @@ public sealed class DownloadCoordinator
         }
         finally
         {
-            _concurrencySlots.Release();
+            if (connectionAcquired)
+            {
+                _connectionSlots.Release();
+            }
+
+            if (concurrencyAcquired)
+            {
+                _concurrencySlots.Release();
+            }
+
+            handle.EndTransfer(transferCancellation);
         }
     }
 
@@ -606,6 +639,9 @@ public sealed class DownloadOperationHandle
     private long? _totalBytes;
     private bool _pauseRequested;
     private bool _cancelRequested;
+    private CancellationTokenSource? _transferCancellation;
+    private CancellationTokenSource? _runCancellation;
+    private Task? _activeRun;
 
     /// <summary>Creates the handle of an operation.</summary>
     /// <param name="operationId">Opaque identifier of the operation.</param>
@@ -731,6 +767,100 @@ public sealed class DownloadOperationHandle
         lock (_lock)
         {
             _cancelRequested = true;
+        }
+    }
+
+    /// <summary>Starts the cancellation scope of one transfer attempt.</summary>
+    /// <param name="cancellationToken">Token of the application lifetime.</param>
+    /// <returns>The source that owns this transfer attempt.</returns>
+    internal CancellationTokenSource BeginTransfer(CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _transferCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+            return _transferCancellation;
+        }
+    }
+
+    /// <summary>Cancels the current run, whether it is waiting or transferring bytes.</summary>
+    internal void CancelActiveTransfer()
+    {
+        lock (_lock)
+        {
+            _runCancellation?.Cancel();
+            _transferCancellation?.Cancel();
+        }
+    }
+
+    /// <summary>Starts the cancellation scope of one run, including its resource wait.</summary>
+    /// <param name="cancellationToken">Token of the application lifetime.</param>
+    /// <returns>The source that owns this run.</returns>
+    internal CancellationTokenSource BeginRun(CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+            return _runCancellation;
+        }
+    }
+
+    /// <summary>Closes the cancellation scope when its run ended.</summary>
+    /// <param name="runCancellation">Source created for that run.</param>
+    internal void EndRun(CancellationTokenSource runCancellation)
+    {
+        lock (_lock)
+        {
+            if (ReferenceEquals(_runCancellation, runCancellation))
+            {
+                _runCancellation = null;
+            }
+        }
+
+        runCancellation.Dispose();
+    }
+
+    /// <summary>Closes the cancellation scope when its transfer attempt ended.</summary>
+    /// <param name="transferCancellation">Source created for that attempt.</param>
+    internal void EndTransfer(CancellationTokenSource transferCancellation)
+    {
+        lock (_lock)
+        {
+            if (ReferenceEquals(_transferCancellation, transferCancellation))
+            {
+                _transferCancellation = null;
+            }
+        }
+
+        transferCancellation.Dispose();
+    }
+
+    /// <summary>Tracks the task that owns the current attempt over this package.</summary>
+    /// <param name="run">Task that is transferring or waiting for the package resource.</param>
+    internal void TrackRun(Task run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        lock (_lock)
+        {
+            _activeRun = run;
+        }
+    }
+
+    /// <summary>Waits until the current attempt released its partial file and resource lock.</summary>
+    internal async Task WaitForActiveRunAsync()
+    {
+        Task? run;
+
+        lock (_lock)
+        {
+            run = _activeRun;
+        }
+
+        if (run is not null)
+        {
+            await run.ConfigureAwait(false);
         }
     }
 

@@ -22,6 +22,7 @@ public sealed class DownloadStateMachineTests
 
     [Theory]
     [InlineData(DownloadState.Queued, DownloadState.Downloading)]
+    [InlineData(DownloadState.Queued, DownloadState.Cancelled)]
     [InlineData(DownloadState.Downloading, DownloadState.Paused)]
     [InlineData(DownloadState.Downloading, DownloadState.Cancelled)]
     [InlineData(DownloadState.Downloading, DownloadState.Validating)]

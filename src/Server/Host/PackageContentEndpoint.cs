@@ -129,9 +129,11 @@ public static class PackageContentEndpoint
 
             await using (content.Content)
             {
-                var range = ParseRange(context.Request.Headers.Range, content.Length);
+                var rangeHeader = context.Request.Headers.Range;
+                var hasRange = !string.IsNullOrWhiteSpace(rangeHeader);
+                var range = ParseRange(rangeHeader, content.Length);
 
-                if (range is null)
+                if (hasRange && range is null)
                 {
                     // AD-20, AC7: el rango no es satisfacible, así que la respuesta es un
                     // 416 y NO un 200 con el contenido entero: el cliente tiene que saber
@@ -159,17 +161,19 @@ public static class PackageContentEndpoint
                     .AcquireAsync(clientId, context.RequestAborted)
                     .ConfigureAwait(false);
 
-                if (range is not null)
+                if (hasRange)
                 {
+                    var requestedRange = range!;
+
                     context.Response.StatusCode = StatusCodes.Status206PartialContent;
                     context.Response.Headers.ContentRange =
-                        $"bytes {range.Start}-{range.End}/{content.Length}";
-                    context.Response.ContentLength = range.Length;
+                        $"bytes {requestedRange.Start}-{requestedRange.End}/{content.Length}";
+                    context.Response.ContentLength = requestedRange.Length;
 
                     await CopyRangeAsync(
                         context,
                         content,
-                        range,
+                        requestedRange,
                         logger)
                         .ConfigureAwait(false);
 

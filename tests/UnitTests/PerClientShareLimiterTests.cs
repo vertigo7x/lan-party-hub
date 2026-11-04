@@ -99,12 +99,12 @@ public sealed class PerClientShareLimiterTests
         lease.Dispose();
 
         var first = await limiter.AcquireAsync("cliente-1", TestContext.Current.CancellationToken);
-        var second = await limiter.AcquireAsync("cliente-1", TestContext.Current.CancellationToken);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
         Assert.NotNull(first);
-        Assert.NotNull(second);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => limiter.AcquireAsync("cliente-1", cancellation.Token));
 
         first.Dispose();
-        second.Dispose();
     }
 }

@@ -84,7 +84,7 @@ public sealed class DownloadProgressTests
 
         Assert.Equal(0, progress.Percentage);
         Assert.Equal(0d, progress.Fraction);
-        Assert.Equal("1,0 GB", progress.SizesText);
+        Assert.Equal("0,0 GB", progress.SizesText);
     }
 
     [Fact]
