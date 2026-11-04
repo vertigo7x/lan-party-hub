@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Shared.Contracts;
@@ -32,15 +33,15 @@ public sealed class ServerAvailabilityMonitorTests
         var probe = new ScriptedVersionProbe { Reachable = false };
         var monitor = CreateMonitor(probe);
 
-        var published = new List<ServerAvailability>();
-        monitor.AvailabilityChanged += published.Add;
+        var published = new ConcurrentQueue<ServerAvailability>();
+        monitor.AvailabilityChanged += published.Enqueue;
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
 
         await probe.WaitForProbesAsync(1, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(published);
-        Assert.False(published[0].Available);
+        Assert.False(published.First().Available);
     }
 
     [Fact]
@@ -50,8 +51,8 @@ public sealed class ServerAvailabilityMonitorTests
         var probe = new ScriptedVersionProbe { Reachable = false };
         var monitor = CreateMonitor(probe);
 
-        var published = new List<ServerAvailability>();
-        monitor.AvailabilityChanged += published.Add;
+        var published = new ConcurrentQueue<ServerAvailability>();
+        monitor.AvailabilityChanged += published.Enqueue;
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
 
@@ -69,8 +70,8 @@ public sealed class ServerAvailabilityMonitorTests
         var probe = new ScriptedVersionProbe { Reachable = false };
         var monitor = CreateMonitor(probe);
 
-        var published = new List<ServerAvailability>();
-        monitor.AvailabilityChanged += published.Add;
+        var published = new ConcurrentQueue<ServerAvailability>();
+        monitor.AvailabilityChanged += published.Enqueue;
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
 
@@ -117,8 +118,8 @@ public sealed class ServerAvailabilityMonitorTests
 
         var monitor = CreateMonitor(probe);
 
-        var published = new List<ServerAvailability>();
-        monitor.AvailabilityChanged += published.Add;
+        var published = new ConcurrentQueue<ServerAvailability>();
+        monitor.AvailabilityChanged += published.Enqueue;
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
 
@@ -138,7 +139,7 @@ public sealed class ServerAvailabilityMonitorTests
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The availability that says that the server is available.</returns>
     private static async Task<ServerAvailability> WaitForAvailableAsync(
-        List<ServerAvailability> published,
+        IEnumerable<ServerAvailability> published,
         CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -173,8 +174,8 @@ public sealed class ServerAvailabilityMonitorTests
 
         var monitor = CreateMonitor(probe);
 
-        var published = new List<ServerAvailability>();
-        monitor.AvailabilityChanged += published.Add;
+        var published = new ConcurrentQueue<ServerAvailability>();
+        monitor.AvailabilityChanged += published.Enqueue;
 
         await monitor.StartAsync(Endpoint, TestContext.Current.CancellationToken);
 
