@@ -64,7 +64,7 @@ development_status:
 
   epic-5: in-progress
   5-1-abstracciÃ³n-de-transferencia-con-un-Ãºnico-camino-http: done
-  5-2-descarga-del-paquete-con-progreso-pausa-y-reanudaciÃ³n: backlog
+  5-2-descarga-del-paquete-con-progreso-pausa-y-reanudaciÃ³n: done
   5-3-persistencia-del-progreso-y-recuperaciÃ³n-tras-reinicio: backlog
   epic-5-retrospective: optional
 
