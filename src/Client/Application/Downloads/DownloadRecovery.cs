@@ -62,6 +62,31 @@ public static class DownloadRecovery
     }
 
     /// <summary>
+    /// Tells whether a failure is a failure of the TRANSPORT and not a failure of the
+    /// operation itself (AD-11, AD-24, SM-2).
+    ///
+    /// <para>
+    /// Un fallo de transporte NO es una falla de la descarga: el servidor no estaba, la
+    /// red se cayó o la respuesta tardó. La operación NO se pierde: sus bytes ya
+    /// descargados siguen en el parcial y su offset persistido sigue siendo válido, así
+    /// que el siguiente arranque reintenta el <c>Range</c> desde ese offset (AD-20, SM-2).
+    /// </para>
+    /// <para>
+    /// Un fallo que NO es de transporte (un 416, un estado inválido, un bug) sí es una
+    /// falla de la operación: la operación pasa a <c>Failed</c>, que es TERMINAL y no se
+    /// reanuda (AC5).
+    /// </para>
+    /// </summary>
+    /// <param name="exception">Failure that the transfer raised.</param>
+    /// <returns><c>true</c> when the failure is a failure of the transport.</returns>
+    public static bool IsTransportFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is TransferTransportException;
+    }
+
+    /// <summary>
     /// Reads the effective offset of a persisted operation. The offset is el que la
     /// reconciliación YA corrigió contra el archivo parcial, así que la recuperación NO lo
     /// recalcula: lo lee tal cual (AD-11, AD-24).

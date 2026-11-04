@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using LANPartyHub.Client.Application.Downloads;
 using LANPartyHub.Client.Infrastructure.Networking;
 using Xunit;
 
@@ -209,6 +210,57 @@ public sealed class HttpRangeTransferEngineTests
                 TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task The_engine_translates_a_failure_of_the_transport()
+    {
+        // AD-1, AD-11, AD-24, SM-2: un fallo de TRANSPORTE (el servidor no está, la red
+        // se cayó, la respuesta tardó) no es una falla de la operación. El adaptador lo
+        // traduce al fallo que la capa de APLICACIÓN entiende, así que el coordinador
+        // puede dejar la operación reanudable en vez de terminarla.
+        var handler = new FailingHandler(new HttpRequestException("El servidor no está."));
+
+        var engine = new HttpRangeTransferEngine(new HttpClient(handler));
+
+        using var destination = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<TransferTransportException>(
+            () => engine.TransferAsync(
+                new Uri("http://192.168.1.10:5000/api/v1/packages/pkg-1/content"),
+                startInclusive: 0,
+                endInclusive: 7,
+                destination,
+                TestContext.Current.CancellationToken));
+
+        // La causa original se conserva, para que el diagnóstico no pierda el detalle.
+        Assert.IsType<HttpRequestException>(exception.InnerException);
+
+        // La política de reintento es de la capa de APLICACIÓN, así que la clasificación
+        // del fallo vive ahí (AD-1).
+        Assert.True(DownloadRecovery.IsTransportFailure(exception));
+    }
+
+    [Fact]
+    public async Task The_engine_translates_a_timeout_of_the_transport()
+    {
+        // AD-11, AD-24: un tiempo de espera agotado es un fallo de TRANSPORTE, así que la
+        // operación sigue siendo reanudable.
+        var handler = new FailingHandler(new TaskCanceledException("La respuesta tardó.", new TimeoutException()));
+
+        var engine = new HttpRangeTransferEngine(new HttpClient(handler));
+
+        using var destination = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<TransferTransportException>(
+            () => engine.TransferAsync(
+                new Uri("http://168.168.1.10:5000/api/v1/packages/pkg-1/content"),
+                startInclusive: 0,
+                endInclusive: 7,
+                destination,
+                TestContext.Current.CancellationToken));
+
+        Assert.True(DownloadRecovery.IsTransportFailure(exception));
+    }
+
     /// <summary>
     /// Handler that records the requests that the engine builds and answers with what the
     /// test declares.
@@ -234,5 +286,21 @@ public sealed class HttpRangeTransferEngineTests
 
             return Task.FromResult(_answer(request));
         }
+    }
+
+    /// <summary>
+    /// Handler whose transport ALWAYS fails, para que el efecto de un fallo de transporte
+    /// sea observable (AD-11, AD-24).
+    /// </summary>
+    private sealed class FailingHandler : HttpMessageHandler
+    {
+        private readonly Exception _failure;
+
+        public FailingHandler(Exception failure) => _failure = failure;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(_failure);
     }
 }

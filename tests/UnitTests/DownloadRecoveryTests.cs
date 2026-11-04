@@ -429,6 +429,145 @@ public sealed class DownloadRecoveryTests : IDisposable
         Assert.Equal(3_000 + ProgressCountingStream.PersistenceInterval, persisted[0]);
     }
 
+    [Fact]
+    public async Task A_transport_failure_leaves_the_operation_resumable()
+    {
+        // AD-11, AD-24, SM-2: si el servidor NO estÃ¡, el fallo NO es una falla de la
+        // operaciÃ³n: la operaciÃ³n conserva su estado REANUDABLE, asÃ­ que el siguiente
+        // arranque la recupera y reintenta el Range desde el offset persistido.
+        var store = new RecordingStateStore();
+
+        var coordinator = CreateCoordinator(
+            store,
+            new RecordingIntentClient(),
+            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+
+        var handle = await coordinator.StartAsync(
+            "paquete-1",
+            new Uri(ContentUri),
+            TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => handle.StateMachine.Current != DownloadState.Downloading);
+
+        // El estado NO es terminal: <c>Failed</c> no se recuperaria nunca mÃ¡s.
+        Assert.Equal(DownloadState.Paused, handle.StateMachine.Current);
+        Assert.False(handle.StateMachine.IsTerminal);
+
+        // El estado persistido es REANUDABLE, asÃ­ que la recuperaciÃ³n lo recoge.
+        Assert.True(DownloadRecovery.IsResumableState(DownloadState.Paused));
+    }
+
+    [Fact]
+    public async Task A_transport_failure_persists_a_resumable_state_and_not_a_failed_one()
+    {
+        // AD-11, AD-24: lo que se persiste decide si la operaciÃ³n se recupera. Un
+        // <c>Failed</c> escrito en la fila deja el parcial huÃ©rfano, asÃ­ que un fallo de
+        // transporte NO puede persistir ese estado.
+        var store = new RecordingStateStore();
+
+        var coordinator = CreateCoordinator(
+            store,
+            new RecordingIntentClient(),
+            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+
+        var handle = await coordinator.StartAsync(
+            "paquete-1",
+            new Uri(ContentUri),
+            TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => store.SavedOperations.Any(saved => saved.State == DownloadState.Paused.ToString()));
+
+        Assert.DoesNotContain(store.SavedOperations, saved => saved.State == DownloadState.Failed.ToString());
+    }
+
+    [Fact]
+    public async Task A_transport_failure_leaves_the_operation_recoverable_after_a_restart()
+    {
+        // AC2, SM-2: el ciclo completo. La descarga falla por transporte, el estado
+        // persistido es reanudable, y el siguiente arranque RECUPERA la operaciÃ³n y pide
+        // el Range desde el offset persistido en vez de dejar el parcial huÃ©rfano.
+        var store = new RecordingStateStore();
+
+        var coordinator = CreateCoordinator(
+            store,
+            new RecordingIntentClient(),
+            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+
+        var handle = await coordinator.StartAsync(
+            "paquete-1",
+            new Uri(ContentUri),
+            TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => store.SavedOperations.Any(saved => saved.State == DownloadState.Paused.ToString()));
+
+        var persisted = store.SavedOperations.Last(saved => saved.State == DownloadState.Paused.ToString());
+
+        // El SIGUIENTE arranque: la operaciÃ³n persistida se recupera porque su estado es
+        // reanudable (AC2, AD-10).
+        var nextBoot = new RecordingStateStore();
+        nextBoot.PersistedOperations.Add(
+            new PersistedDownloadOperation(
+                persisted.OperationId,
+                persisted.PackageId,
+                persisted.State,
+                TransferEngineRegistry.HttpRangeTransferEngine,
+                300,
+                1000));
+
+        var engine = new RecordingTransferEngine(totalBytes: 1000);
+
+        var recoveredCoordinator = CreateCoordinator(
+            new RecordingStateStoreWithOperations(nextBoot),
+            new RecordingIntentClient(),
+            engine);
+
+        var recovered = await recoveredCoordinator.RecoverAsync(
+            _ => new Uri(ContentUri),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(recovered);
+
+        await WaitUntilAsync(() => engine.RequestedStarts.Count > 0);
+
+        // La reanudaciÃ³n pide el rango desde el offset persistido: NUNCA desde cero.
+        Assert.Equal(300, engine.RequestedStarts[0]);
+    }
+
+    [Fact]
+    public async Task A_failure_that_is_not_a_transport_failure_still_fails_the_operation()
+    {
+        // AC5: un fallo que NO es de transporte (un 416, un estado invÃ¡lido, un bug) sÃ­ es
+        // una falla de la operaciÃ³n: pasa a <c>Failed</c>, que es terminal.
+        var store = new RecordingStateStore();
+
+        var coordinator = CreateCoordinator(
+            store,
+            new RecordingIntentClient(),
+            new FailingTransferEngine(new InvalidOperationException("El servidor no pudo servir el tramo.")));
+
+        var handle = await coordinator.StartAsync(
+            "paquete-1",
+            new Uri(ContentUri),
+            TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+
+        Assert.True(handle.StateMachine.IsTerminal);
+        Assert.Contains(store.SavedOperations, saved => saved.State == DownloadState.Failed.ToString());
+    }
+
+    [Fact]
+    public void The_transport_failures_are_the_ones_of_the_network()
+    {
+        // AD-11, AD-24: la clasificaciÃ³n de un fallo de TRANSPORTE es explÃ­cita, asÃ­ que
+        // un fallo de la operaciÃ³n no se confunde con una red caÃ­da.
+        Assert.True(DownloadRecovery.IsTransportFailure(
+            new TransferTransportException("El transporte no pudo traer los bytes.")));
+
+        Assert.False(DownloadRecovery.IsTransportFailure(new InvalidOperationException("El estado no es vÃ¡lido.")));
+        Assert.False(DownloadRecovery.IsTransportFailure(new TransferRangeNotSatisfiableException(0, 10)));
+    }
+
     private static PersistedDownloadOperation Persisted(
         string operationId,
         string packageId,
@@ -536,6 +675,26 @@ public sealed class DownloadRecoveryTests : IDisposable
 
             return Task.FromResult(new TransferOutcome(0L, _totalBytes, RangeHonoured: true));
         }
+    }
+
+    /// <summary>
+    /// Engine that siempre falla con la excepción que le fijaron, para que el efecto de
+    /// un fallo de TRANSPORTE y el de un fallo de la operación sean observables por
+    /// separado (AD-11, AD-24).
+    /// </summary>
+    private sealed class FailingTransferEngine : ITransferEngine
+    {
+        private readonly Exception _failure;
+
+        public FailingTransferEngine(Exception failure) => _failure = failure;
+
+        public Task<TransferOutcome> TransferAsync(
+            Uri contentUri,
+            long startInclusive,
+            long endInclusive,
+            Stream destination,
+            CancellationToken cancellationToken) =>
+            Task.FromException<TransferOutcome>(_failure);
     }
 
     /// <summary>
@@ -665,6 +824,8 @@ public sealed class DownloadRecoveryTests : IDisposable
     {
         public List<PersistedDownloadOperation> PersistedOperations { get; } = [];
 
+        public List<(string OperationId, string PackageId, string State)> SavedOperations { get; } = [];
+
         public Task MigrateAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<ClientIdentity?> LoadIdentityAsync(CancellationToken cancellationToken) =>
@@ -689,8 +850,12 @@ public sealed class DownloadRecoveryTests : IDisposable
             string packageId,
             string state,
             string transferEngine,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            SavedOperations.Add((operationId, packageId, state));
+
+            return Task.CompletedTask;
+        }
 
         public Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken) =>
             Task.FromResult<PinnedTrustAnchor?>(null);

@@ -694,6 +694,35 @@ public sealed class DownloadCoordinator
         }
         catch (Exception exception)
         {
+            // AD-11, AD-24, SM-2: un fallo de TRANSPORTE (el servidor no estÃ¡, la red se
+            // cayÃ³, la respuesta tardÃ³) NO es una falla de la operaciÃ³n. La operaciÃ³n
+            // conserva su parcial y su offset persistido, y su estado sigue siendo
+            // REANUDABLE, asÃ­ que el siguiente arranque reintenta el <c>Range</c> desde el
+            // offset persistido en vez de dejar el parcial huÃ©rfano (AD-20, AC2).
+            //
+            // Un fallo que NO es de transporte sÃ­ es una falla de la operaciÃ³n: pasa a
+            // <c>Failed</c>, que es TERMINAL y no se reanuda (AC5).
+            if (DownloadRecovery.IsTransportFailure(exception))
+            {
+                _logger.LogWarning(
+                    exception,
+                    "La descarga {OperationId} del paquete {PackageId} fallÃ³ por transporte y queda reanudable desde {Bytes} bytes.",
+                    handle.OperationId,
+                    handle.PackageId,
+                    handle.BytesPersisted);
+
+                // <c>Downloading</c> a <c>Paused</c> es una transiciÃ³n DECLARADA de la
+                // tabla de la mÃ¡quina, y <c>Paused</c> es REANUDABLE: la operaciÃ³n se
+                // persiste asÃ­ y el siguiente arranque la recupera (AD-10, AD-11).
+                handle.StateMachine.TryTransitionTo(DownloadState.Paused);
+
+                await PersistStateAsync(handle).ConfigureAwait(false);
+
+                Publish(handle);
+
+                return;
+            }
+
             // AC5: una FALLA conserva el parcial y su offset, a diferencia de la
             // cancelaciÃ³n: la operaciÃ³n no queda reintentable por reanudaciÃ³n desde este
             // estado, pero los bytes descargados no se pierden (AD-11, AD-24).
