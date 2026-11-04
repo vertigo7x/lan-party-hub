@@ -19,10 +19,16 @@ namespace LANPartyHub.Client.Host;
 /// La composición es el ÚNICO sitio que conoce los adaptadores: el coordinador depende
 /// de los puertos y nunca de ellos (AD-1).
 /// </para>
+/// <para>
+/// AD-22: la composición entrega el puerto <see cref="IDownloadProgressReporter"/> con su
+/// adaptador sobre el hub del estado del cliente, así que el progreso de la descarga se
+/// publica con el contrato exacto <c>DownloadProgressUpdated</c>.
+/// </para>
 /// </summary>
 public sealed class DownloadComposition : IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly ClientStateHubPublisher? _publisher;
 
     /// <summary>Creates the composition of the downloads.</summary>
     /// <param name="serverAddress">
@@ -47,6 +53,10 @@ public sealed class DownloadComposition : IDisposable
     /// <param name="maxTotalConnections">
     /// Number of connections that the client opens in total (AD-14).
     /// </param>
+    /// <param name="versionProbe">
+    /// Port of the probe of the versions of the server, or <c>null</c> when the client
+    /// does not check the compatibility before reanudar (AD-6, AC5).
+    /// </param>
     public DownloadComposition(
         Uri serverAddress,
         IClientRequestHeaders headers,
@@ -55,7 +65,8 @@ public sealed class DownloadComposition : IDisposable
         ITransferEngine engine,
         ILoggerFactory loggerFactory,
         int maxConcurrentDownloads = DownloadCoordinator.DefaultMaxConcurrentDownloads,
-        int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections)
+        int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections,
+        IServerVersionProbe? versionProbe = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -80,7 +91,31 @@ public sealed class DownloadComposition : IDisposable
             BaseAddress = serverAddress,
         };
 
-        Intents = new DownloadIntentHttpClient(_httpClient);
+        Intents = new DownloadIntentHttpClient(_httpClient, versions);
+
+        // AD-22: el publicador del progreso vive sobre el hub del estado del cliente. Un
+        // fallo al abrirlo NO impide que las descargas sigan: lo que sobrevive al
+        // reinicio es el offset persistido en el disco del cliente (AD-11).
+        IDownloadProgressReporter? reporter = null;
+
+        try
+        {
+            _publisher = new ClientStateHubPublisher(
+                serverAddress,
+                loggerFactory.CreateLogger<ClientStateHubPublisher>());
+
+            reporter = _publisher;
+        }
+        catch (Exception exception)
+        {
+            _publisher = null;
+
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.Downloads")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir el publicador del progreso de las descargas: las descargas siguen sin publicar su progreso.");
+        }
 
         Coordinator = new DownloadCoordinator(
             engine,
@@ -89,7 +124,15 @@ public sealed class DownloadComposition : IDisposable
             layout,
             loggerFactory.CreateLogger<DownloadCoordinator>(),
             maxConcurrentDownloads,
-            maxTotalConnections);
+            maxTotalConnections,
+            reporter,
+            versionProbe);
+
+        // La ruta del contenido la construye el servidor con el identificador del paquete
+        // (AD-20), así que la recuperación la resuelve desde la dirección del servidor.
+        ContentUriResolver = packageId => new Uri(
+            serverAddress,
+            $"/api/v1/packages/{Uri.EscapeDataString(packageId)}/content");
     }
 
     /// <summary>
@@ -103,6 +146,17 @@ public sealed class DownloadComposition : IDisposable
     /// </summary>
     public DownloadCoordinator Coordinator { get; }
 
+    /// <summary>
+    /// Resolver of the absolute URL of the content of a package, which la recuperación
+    /// usa para rehidratar las operaciones persistidas (AD-20, AD-24).
+    /// </summary>
+    public Func<string, Uri> ContentUriResolver { get; }
+
     /// <inheritdoc />
-    public void Dispose() => _httpClient.Dispose();
+    public void Dispose()
+    {
+        _publisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        _httpClient.Dispose();
+    }
 }

@@ -10,17 +10,17 @@ namespace LANPartyHub.Client.Application.Downloads;
 /// AD-24, AC1..AC10).
 ///
 /// <para>
-/// El coordinador es el ÚNICO dueño de las descargas del cliente: registra la intención
+/// El coordinador es el ÃšNICO dueÃ±o de las descargas del cliente: registra la intenciÃ³n
 /// con el servidor, pide los bytes por el puerto de la transferencia, persiste el offset
-/// acumulado, y gobierna la pausa, la reanudación y la cancelación (AC1, AC2, AC3, AC4).
+/// acumulado, y gobierna la pausa, la reanudaciÃ³n y la cancelaciÃ³n (AC1, AC2, AC3, AC4).
 /// </para>
 /// <para>
-/// El coordinador depende de los PUERTOS y nunca de un adaptador, así que su secuencia se
+/// El coordinador depende de los PUERTOS y nunca de un adaptador, asÃ­ que su secuencia se
 /// puede ejercitar sin un servidor y sin un disco (AD-1).
 /// </para>
 /// <para>
-/// AD-14: los límites de concurrencia son POR CLIENTE y son configurables con valor por
-/// defecto. El coordinador limita las descargas SIMULTÁNEAS y las conexiones TOTALES que
+/// AD-14: los lÃ­mites de concurrencia son POR CLIENTE y son configurables con valor por
+/// defecto. El coordinador limita las descargas SIMULTÃNEAS y las conexiones TOTALES que
 /// el cliente abre, de modo que un cliente no agota el enlace del evento.
 /// </para>
 /// <para>
@@ -42,16 +42,25 @@ public sealed class DownloadCoordinator
     /// </summary>
     public const int DefaultMaxTotalConnections = 4;
 
+    /// <summary>
+    /// End of a range that NO declares its final byte, so the request travels as
+    /// «bytes=&lt;start&gt;-» y el servidor sirve el resto del contenido (AD-20).
+    /// </summary>
+    public const long UnboundedRangeEnd = long.MaxValue;
+
     private readonly ITransferEngine _engine;
     private readonly IDownloadIntentClient _intents;
     private readonly IClientStateStore _stateStore;
     private readonly IClientDataLayout _layout;
+    private readonly IDownloadProgressReporter? _reporter;
+    private readonly IServerVersionProbe? _versionProbe;
     private readonly ILogger<DownloadCoordinator> _logger;
     private readonly int _maxConcurrentDownloads;
     private readonly int _maxTotalConnections;
 
     private readonly Dictionary<string, DownloadOperationHandle> _operations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SemaphoreSlim> _resourceLocks = new(StringComparer.Ordinal);
+    private readonly HashSet<Task> _pendingReports = [];
     private readonly SemaphoreSlim _concurrencySlots;
     private readonly SemaphoreSlim _connectionSlots;
     private readonly Lock _lock = new();
@@ -63,6 +72,11 @@ public sealed class DownloadCoordinator
     /// <param name="intents">Port of the registration of the intention of a download.</param>
     /// <param name="stateStore">Access to the database of the client.</param>
     /// <param name="layout">Layout of the data folder of the client.</param>
+    /// <param name="reporter">
+    /// Port of the publication of the progress, or <c>null</c> when the client does not
+    /// publish it. La publicaciÃ³n NUNCA es una condiciÃ³n para que la descarga siga
+    /// (AD-22).
+    /// </param>
     /// <param name="logger">Log of the coordinator.</param>
     /// <param name="maxConcurrentDownloads">
     /// Number of downloads that the client runs at the same time. It is CONFIGURABLE and
@@ -72,6 +86,16 @@ public sealed class DownloadCoordinator
     /// Number of connections that the client opens in total. It is CONFIGURABLE y tiene
     /// valor por defecto (AD-14, AC10).
     /// </param>
+    /// <param name="reporter">
+    /// Port of the publication of the progress, or <c>null</c> when the client does not
+    /// publish it. La publicaciÃ³n NUNCA es una condiciÃ³n para que la descarga siga
+    /// (AD-22).
+    /// </param>
+    /// <param name="versionProbe">
+    /// Port of the probe of the versions of the server, or <c>null</c> when the client
+    /// does not check the compatibility before reanudar. La incompatibilidad NO es un
+    /// estado: es un diagnÃ³stico (AD-6, AC5).
+    /// </param>
     public DownloadCoordinator(
         ITransferEngine engine,
         IDownloadIntentClient intents,
@@ -79,7 +103,9 @@ public sealed class DownloadCoordinator
         IClientDataLayout layout,
         ILogger<DownloadCoordinator> logger,
         int maxConcurrentDownloads = DefaultMaxConcurrentDownloads,
-        int maxTotalConnections = DefaultMaxTotalConnections)
+        int maxTotalConnections = DefaultMaxTotalConnections,
+        IDownloadProgressReporter? reporter = null,
+        IServerVersionProbe? versionProbe = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(intents);
@@ -91,20 +117,22 @@ public sealed class DownloadCoordinator
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maxConcurrentDownloads),
-                "El límite de descargas simultáneas tiene que ser mayor que cero.");
+                "El lÃ­mite de descargas simultÃ¡neas tiene que ser mayor que cero.");
         }
 
         if (maxTotalConnections < 1)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maxTotalConnections),
-                "El límite de conexiones totales tiene que ser mayor que cero.");
+                "El lÃ­mite de conexiones totales tiene que ser mayor que cero.");
         }
 
         _engine = engine;
         _intents = intents;
         _stateStore = stateStore;
         _layout = layout;
+        _reporter = reporter;
+        _versionProbe = versionProbe;
         _logger = logger;
         _maxConcurrentDownloads = maxConcurrentDownloads;
         _maxTotalConnections = maxTotalConnections;
@@ -132,9 +160,9 @@ public sealed class DownloadCoordinator
     /// Starts the download of a package and returns its handle (AC1, AC2).
     ///
     /// <para>
-    /// La secuencia es la del caso de uso: el cliente REGISTRA la intención con el
-    /// servidor, PERSISTE la operación con su identificador, y solo entonces pide los
-    /// bytes. La operación es una unidad de trabajo con su propio <c>operationId</c> y su
+    /// La secuencia es la del caso de uso: el cliente REGISTRA la intenciÃ³n con el
+    /// servidor, PERSISTE la operaciÃ³n con su identificador, y solo entonces pide los
+    /// bytes. La operaciÃ³n es una unidad de trabajo con su propio <c>operationId</c> y su
     /// registro de estado persistido (AC1, AC10).
     /// </para>
     /// </summary>
@@ -150,9 +178,9 @@ public sealed class DownloadCoordinator
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentNullException.ThrowIfNull(contentUri);
 
-        // AC1: el cliente registra la intención con el servidor y obtiene el
-        // operationId. El servidor persiste el REFLEJO de la intención, no el estado de
-        // la operación (AD-10, AD-22).
+        // AC1: el cliente registra la intenciÃ³n con el servidor y obtiene el
+        // operationId. El servidor persiste el REFLEJO de la intenciÃ³n, no el estado de
+        // la operaciÃ³n (AD-10, AD-22).
         var operationId = await _intents
             .RegisterAsync(packageId, cancellationToken)
             .ConfigureAwait(false);
@@ -168,7 +196,7 @@ public sealed class DownloadCoordinator
             _operations[operationId] = handle;
         }
 
-        // AD-10, AD-11: la operación y su estado se persisten, así que un reinicio del
+        // AD-10, AD-11: la operaciÃ³n y su estado se persisten, asÃ­ que un reinicio del
         // equipo la encuentra en el estado en el que estaba.
         await _stateStore.SaveOperationAsync(
             operationId,
@@ -186,11 +214,177 @@ public sealed class DownloadCoordinator
     }
 
     /// <summary>
+    /// Recovers the download operations that survived a restart of the machine
+    /// (AC2, AC3, AD-11, AD-20, AD-24, SM-2).
+    ///
+    /// <para>
+    /// La recuperaciÃ³n REHIDRATA las operaciones persistidas en operaciones VIVAS: cada
+    /// una conserva su <c>operationId</c> y su <c>packageId</c>, y su offset efectivo es el
+    /// que la reconciliaciÃ³n YA corrigiÃ³ contra el archivo parcial. La rehidrataciÃ³n NO
+    /// recalcula el offset: lo LEE (AD-11).
+    /// </para>
+    /// <para>
+    /// La operaciÃ³n recuperada NO registra una intenciÃ³n nueva con el servidor: la
+    /// intenciÃ³n ya estÃ¡ registrada y volver a llamarla la duplicarÃ­a. La reanudaciÃ³n pide
+    /// el rango que empieza en el offset efectivo, asÃ­ que el motor lo sirve con un
+    /// <c>Range</c> sobre ese offset y no desde cero (AC1, AD-20, AD-24).
+    /// </para>
+    /// <para>
+    /// Una operaciÃ³n TERMINAL no se recupera: una descarga completada, cancelada o fallida
+    /// no se reanuda (AD-10, AC5). Su registro queda en la base de datos (AD-24).
+    /// </para>
+    /// </summary>
+    /// <param name="contentUriResolver">
+    /// Resolver of the absolute URL of the content of a package, because the url NO vive en
+    /// la base de datos del cliente.
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the recovery.</param>
+    /// <returns>The handles of the recovered operations, in the order of their identifier.</returns>
+    public async Task<IReadOnlyList<DownloadOperationHandle>> RecoverAsync(
+        Func<string, Uri> contentUriResolver,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(contentUriResolver);
+
+        var persisted = await _stateStore
+            .LoadDownloadOperationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var recovered = new List<DownloadOperationHandle>();
+
+        foreach (var operation in persisted)
+        {
+            // El motor que la operaciÃ³n declara tiene que existir en la versiÃ³n activa: la
+            // reconciliaciÃ³n ya rechazÃ³ las que no, y una operaciÃ³n de otro motor no se
+            // rehidrata (AD-24).
+            if (!TransferEngineRegistry.IsActive(operation.TransferEngine))
+            {
+                continue;
+            }
+
+            var state = DownloadRecovery.ResolveState(operation.State);
+
+            if (state is null || !DownloadRecovery.IsResumableState(state.Value))
+            {
+                // Una operaciÃ³n terminal o en un estado que la mÃ¡quina no conoce NO se
+                // reanuda, y su registro NO se borra (AD-10, AD-24).
+                continue;
+            }
+
+            Uri contentUri;
+
+            try
+            {
+                contentUri = contentUriResolver(operation.PackageId);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "No se recuperÃ³ la operaciÃ³n {OperationId}: la URL del contenido del paquete {PackageId} no se pudo resolver.",
+                    operation.OperationId,
+                    operation.PackageId);
+
+                continue;
+            }
+
+            var handle = DownloadRecovery.Rehydrate(operation, contentUri, state.Value);
+
+            // Una operaciÃ³n que estaba DESCARGANDO fue interrumpida por el reinicio, asÃ­
+            // que su estado real es Â«PausadaÂ». La transiciÃ³n estÃ¡ declarada en la tabla de
+            // la mÃ¡quina, asÃ­ que la recuperaciÃ³n la usa en vez de inventar un estado
+            // (AD-10).
+            if (handle.StateMachine.Current == DownloadState.Downloading)
+            {
+                handle.StateMachine.TryTransitionTo(DownloadState.Paused);
+            }
+
+            lock (_lock)
+            {
+                _operations[handle.OperationId] = handle;
+            }
+
+            handle.Attach(Publish);
+
+            recovered.Add(handle);
+
+            _logger.LogInformation(
+                "Se recupera la operaciÃ³n {OperationId} del paquete {PackageId} desde el offset {Offset} bytes.",
+                handle.OperationId,
+                handle.PackageId,
+                handle.BytesPersisted);
+        }
+
+        // La reanudaciÃ³n de las operaciones recuperadas empieza DESPUÃ‰S de la
+        // rehidrataciÃ³n, asÃ­ que la vista ya puede presentar Â«Reanumando desde â€¦Â» con el
+        // offset persistido (AC2, UX-DR-6).
+        foreach (var handle in recovered)
+        {
+            Publish(handle);
+
+            await ResumeAsync(handle, cancellationToken).ConfigureAwait(false);
+        }
+
+        return recovered;
+    }
+
+    /// <summary>
+    /// Checks whether the client may resume its downloads against the server of the event
+    /// (AD-6, FR-4, AC5).
+    ///
+    /// <para>
+    /// Un cliente INCOMPATIBLE no inicia la descarga y no reanuda la que tenÃ­a: recibe el
+    /// diagnÃ³stico de incompatibilidad de versiÃ³n. El sondeo NO decide la compatibilidad:
+    /// la matriz vive SOLO en el servidor, asÃ­ que el cliente se limita a leer la
+    /// respuesta (AD-6).
+    /// </para>
+    /// <para>
+    /// Un servidor que NO responde no es una incompatibilidad: el jugador tiene que poder
+    /// reintentar, asÃ­ que el sondeo devuelve que la compatibilidad NO se pudo comprobar
+    /// (AC3, UX-DR-36).
+    /// </para>
+    /// </summary>
+    /// <param name="endpoint">Endpoint of the server of the event.</param>
+    /// <param name="cancellationToken">Token that cancels the probe.</param>
+    /// <returns>The outcome of the gate of the compatibility.</returns>
+    public async Task<DownloadCompatibilityGate> CheckCompatibilityAsync(
+        ServerEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+
+        if (_versionProbe is null)
+        {
+            // Sin sonda no hay veredicto, asÃ­ que la puerta se abre: la descarga se intenta
+            // y su propio fallo dice lo que pasÃ³ (AD-6).
+            return DownloadCompatibilityGate.Compatible();
+        }
+
+        var result = await _versionProbe
+            .ProbeAsync(endpoint, TimeSpan.FromSeconds(3), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.Reachable)
+        {
+            // El servidor no respondiÃ³: eso NO es una incompatibilidad y la operaciÃ³n
+            // queda persistida para el siguiente arranque (AD-11, AC3).
+            return DownloadCompatibilityGate.Unreachable();
+        }
+
+        if (!result.Compatible)
+        {
+            return DownloadCompatibilityGate.Incompatible(result.ServerVersion);
+        }
+
+        return DownloadCompatibilityGate.Compatible();
+    }
+
+    /// <summary>
     /// Pauses a download operation (AC3).
     ///
     /// <para>
     /// La pausa NO borra nada: el offset persistido se conserva y el archivo parcial se
-    /// queda en el disco, así que la reanudación continúa desde la MISMA posición sin
+    /// queda en el disco, asÃ­ que la reanudaciÃ³n continÃºa desde la MISMA posiciÃ³n sin
     /// volver a cero (AC3, AC4).
     /// </para>
     /// </summary>
@@ -207,8 +401,8 @@ public sealed class DownloadCoordinator
 
         handle.RequestPause();
 
-        // La pausa debe interrumpir la lectura que está en curso para que el recurso se
-        // libere y la reanudación pueda abrir el mismo parcial desde el offset persistido.
+        // La pausa debe interrumpir la lectura que estÃ¡ en curso para que el recurso se
+        // libere y la reanudaciÃ³n pueda abrir el mismo parcial desde el offset persistido.
         handle.CancelActiveTransfer();
 
         await handle.WaitForActiveRunAsync().ConfigureAwait(false);
@@ -222,7 +416,7 @@ public sealed class DownloadCoordinator
     /// Resumes a paused download operation from its persisted offset (AC3, AC4).
     ///
     /// <para>
-    /// La reanudación NO vuelve a cero: el motor pide el rango que empieza en el offset
+    /// La reanudaciÃ³n NO vuelve a cero: el motor pide el rango que empieza en el offset
     /// acumulado y el motor HTTP lo sirve con un <c>Range</c> sobre ese offset (AD-20,
     /// AD-24).
     /// </para>
@@ -250,9 +444,9 @@ public sealed class DownloadCoordinator
     /// Cancels a download operation and DELETES what it downloaded (AC4, AC5).
     ///
     /// <para>
-    /// Cancelar NO es fallar: la cancelación BORRA el archivo parcial y REINICIA el
-    /// registro de progreso persistido, así que <c>bytesPersisted</c> vuelve a cero y la
-    /// operación NO queda reintentable por reanudación, a diferencia de <c>Failed</c>
+    /// Cancelar NO es fallar: la cancelaciÃ³n BORRA el archivo parcial y REINICIA el
+    /// registro de progreso persistido, asÃ­ que <c>bytesPersisted</c> vuelve a cero y la
+    /// operaciÃ³n NO queda reintentable por reanudaciÃ³n, a diferencia de <c>Failed</c>
     /// (AC5, AD-11).
     /// </para>
     /// </summary>
@@ -263,9 +457,9 @@ public sealed class DownloadCoordinator
     {
         ArgumentNullException.ThrowIfNull(handle);
 
-        // La cancelación se pide desde cualquier estado que no sea terminal: una descarga
-        // EN CURSO también se cancela, y su transición es la que gana la tabla de la
-        // máquina (AC5).
+        // La cancelaciÃ³n se pide desde cualquier estado que no sea terminal: una descarga
+        // EN CURSO tambiÃ©n se cancela, y su transiciÃ³n es la que gana la tabla de la
+        // mÃ¡quina (AC5).
         if (!handle.StateMachine.TryTransitionTo(DownloadState.Cancelled))
         {
             return;
@@ -274,15 +468,15 @@ public sealed class DownloadCoordinator
         handle.RequestCancel();
 
         // El archivo parcial puede estar abierto por la transferencia. Se cancela ANTES de
-        // borrarlo para que Windows libere el handle y la cancelación sea efectiva (AC5).
+        // borrarlo para que Windows libere el handle y la cancelaciÃ³n sea efectiva (AC5).
         handle.CancelActiveTransfer();
 
         await handle.WaitForActiveRunAsync().ConfigureAwait(false);
 
         await PersistStateAsync(handle).ConfigureAwait(false);
 
-        // AC5: se borra el archivo parcial y se reinicia el registro de progreso, así que
-        // la descarga siguiente del mismo paquete empieza de CERO y no reutiliza ningún
+        // AC5: se borra el archivo parcial y se reinicia el registro de progreso, asÃ­ que
+        // la descarga siguiente del mismo paquete empieza de CERO y no reutiliza ningÃºn
         // offset de la descarga cancelada.
         await DeletePartialAsync(handle).ConfigureAwait(false);
 
@@ -338,8 +532,8 @@ public sealed class DownloadCoordinator
         }
         catch (OperationCanceledException) when (handle.IsPauseRequested || handle.IsCancelRequested)
         {
-            // La operación se canceló mientras esperaba el recurso de su paquete; nunca
-            // llegó a abrir el archivo parcial ni a iniciar una transferencia.
+            // La operaciÃ³n se cancelÃ³ mientras esperaba el recurso de su paquete; nunca
+            // llegÃ³ a abrir el archivo parcial ni a iniciar una transferencia.
         }
         finally
         {
@@ -381,9 +575,9 @@ public sealed class DownloadCoordinator
 
             Directory.CreateDirectory(Path.GetDirectoryName(partialPath)!);
 
-            // AD-14: los límites son POR CLIENTE. La descarga espera su turno y su conexión
-            // espera la suya, así que un cliente no abre más descargas ni más conexiones de
-            // las que su límite admite (AD-14, AC10).
+            // AD-14: los lÃ­mites son POR CLIENTE. La descarga espera su turno y su conexiÃ³n
+            // espera la suya, asÃ­ que un cliente no abre mÃ¡s descargas ni mÃ¡s conexiones de
+            // las que su lÃ­mite admite (AD-14, AC10).
             await _concurrencySlots.WaitAsync(transferToken).ConfigureAwait(false);
             concurrencyAcquired = true;
 
@@ -392,91 +586,120 @@ public sealed class DownloadCoordinator
 
             var offset = handle.BytesPersisted;
 
-                long? total = handle.TotalBytes;
+            long? total = handle.TotalBytes;
 
-                if (offset > 0)
+            // AD-20: la reanudaciÃ³n pide el rango que empieza en el offset acumulado, y
+            // el rango NO declara su final: viaja como Â«bytes=&lt;offset&gt;-Â», asÃ­ que el
+            // servidor sirve el resto del contenido y el motor lee el total del
+            // <c>Content-Range</c> de la respuesta (AD-20, AD-24).
+            //
+            // No hace falta SONDAR el total antes de transferir: la respuesta del tramo
+            // lo declara, y una peticiÃ³n de sondeo serÃ­a un bytes extra por cada
+            // reanudaciÃ³n (AD-20).
+            var end = UnboundedRangeEnd;
+
+            await using var destination = new FileStream(
+                partialPath,
+                FileMode.OpenOrCreate,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true);
+
+            destination.Seek(offset, SeekOrigin.Begin);
+
+            // AD-11, SM-2: el offset se PERSISTE mientras la descarga está en curso, no
+            // solo al final del tramo. Una descarga que se interrumpe a mitad conserva lo
+            // que ya está en el disco, así que la reanudación continúa desde ahí y no
+            // vuelve a cero (AC2).
+            //
+            // La escritura del offset usa el token NULO a propósito: la escritura tiene
+            // que SOBREVIVIR a la cancelación de la transferencia, porque el instante en
+            // que se corta la descarga es justo el instante en el que el offset escrito
+            // es el que decide de dónde se reanuda (AD-11, SM-2).
+            await using var counting = new ProgressCountingStream(
+                destination,
+                async (accumulated, declaredTotal) =>
                 {
-                    // La reanudación pide el rango que empieza en el offset acumulado: el
-                    // motor HTTP lo sirve con un Range sobre ese offset (AD-20, AD-24).
-                    total = await ProbeTotalAsync(handle, offset, transferToken).ConfigureAwait(false);
-                }
+                    await _stateStore.SaveProgressAsync(
+                        handle.OperationId,
+                        accumulated,
+                        declaredTotal,
+                        CancellationToken.None)
+                        .ConfigureAwait(false);
 
-                await using var destination = new FileStream(
-                    partialPath,
-                    FileMode.OpenOrCreate,
-                    FileAccess.Write,
-                    FileShare.Read,
-                    bufferSize: 81920,
-                    useAsync: true);
+                    // AD-20, UX-DR-5: el total DECLARADO se publica con el offset, así que
+                    // la interfaz muestra el porcentaje y el par de tamaños desde el
+                    // primer momento.
+                    handle.SetProgress(accumulated, declaredTotal ?? handle.TotalBytes);
+                },
+                offset,
+                total);
 
-                destination.Seek(offset, SeekOrigin.Begin);
+            var outcome = await _engine
+                .TransferAsync(handle.ContentUri, offset, end, counting, transferToken)
+                .ConfigureAwait(false);
 
-                var end = total is { } declared ? declared - 1 : long.MaxValue - 1;
+            if (!outcome.RangeHonoured)
+            {
+                // AD-20: un 200 significa que el servidor IGNORÓ el rango y sirvió el
+                // contenido entero, así que los bytes empiezan por el principio y el
+                // offset acumulado no aplica: la transferencia se rehace desde cero.
+                destination.Position = 0;
+                destination.SetLength(0);
+            }
 
-                var outcome = await _engine
-                    .TransferAsync(handle.ContentUri, offset, end, destination, transferToken)
-                    .ConfigureAwait(false);
+            var transferred = offset + outcome.BytesTransferred;
 
-                if (!outcome.RangeHonoured)
-                {
-                    // AD-20: un 200 significa que el servidor IGNORÓ el rango y sirvió el
-                    // contenido entero, así que los bytes empiezan por el principio y el
-                    // offset acumulado no aplica: la transferencia se rehace desde cero.
-                    destination.Position = 0;
-                    destination.SetLength(0);
-                }
+            total = outcome.TotalBytes ?? total;
 
-                var transferred = offset + outcome.BytesTransferred;
+            handle.SetProgress(transferred, total);
 
-                total = outcome.TotalBytes ?? total;
-
-                handle.SetProgress(transferred, total);
-
-                await _stateStore.SaveProgressAsync(
-                    handle.OperationId,
-                    transferred,
-                    total,
-                    transferToken)
-                    .ConfigureAwait(false);
+            await _stateStore.SaveProgressAsync(
+                handle.OperationId,
+                transferred,
+                total,
+                transferToken)
+                .ConfigureAwait(false);
 
             Publish(handle);
         }
         catch (OperationCanceledException) when (handle.IsCancelRequested)
         {
-            // La cancelación es una DECISIÓN del jugador y no una falla: el estado ya
-            // está en Cancelled y el parcial ya está borrado (AC5).
+            // La cancelaciÃ³n es una DECISIÃ“N del jugador y no una falla: el estado ya
+            // estÃ¡ en Cancelled y el parcial ya estÃ¡ borrado (AC5).
             _logger.LogInformation(
-                "La descarga {OperationId} del paquete {PackageId} se canceló.",
+                "La descarga {OperationId} del paquete {PackageId} se cancelÃ³.",
                 handle.OperationId,
                 handle.PackageId);
         }
         catch (OperationCanceledException) when (handle.IsPauseRequested)
         {
-            // La pausa es una DECISIÓN del jugador: el offset persistido se conserva y la
-            // reanudación continúa desde la misma posición (AC3, AC4).
+            // La pausa es una DECISIÃ“N del jugador: el offset persistido se conserva y la
+            // reanudaciÃ³n continÃºa desde la misma posiciÃ³n (AC3, AC4).
             _logger.LogInformation(
-                "La descarga {OperationId} del paquete {PackageId} se pausó en {Bytes} bytes.",
+                "La descarga {OperationId} del paquete {PackageId} se pausÃ³ en {Bytes} bytes.",
                 handle.OperationId,
                 handle.PackageId,
                 handle.BytesPersisted);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // El cliente se cierra: la operación se queda como estaba y el offset
-            // persistido conserva lo que se había descargado (AD-11).
+            // El cliente se cierra: la operaciÃ³n se queda como estaba y el offset
+            // persistido conserva lo que se habÃ­a descargado (AD-11).
             _logger.LogInformation(
-                "La descarga {OperationId} del paquete {PackageId} se interrumpió con el cierre del cliente.",
+                "La descarga {OperationId} del paquete {PackageId} se interrumpiÃ³ con el cierre del cliente.",
                 handle.OperationId,
                 handle.PackageId);
         }
         catch (Exception exception)
         {
             // AC5: una FALLA conserva el parcial y su offset, a diferencia de la
-            // cancelación: la operación no queda reintentable por reanudación desde este
+            // cancelaciÃ³n: la operaciÃ³n no queda reintentable por reanudaciÃ³n desde este
             // estado, pero los bytes descargados no se pierden (AD-11, AD-24).
             _logger.LogWarning(
                 exception,
-                "La descarga {OperationId} del paquete {PackageId} falló.",
+                "La descarga {OperationId} del paquete {PackageId} fallÃ³.",
                 handle.OperationId,
                 handle.PackageId);
 
@@ -502,41 +725,6 @@ public sealed class DownloadCoordinator
         }
     }
 
-    /// <summary>
-    /// Reads the total size of the content when the client does not know it, asking the
-    /// server por el rango que empieza en el offset (AD-20).
-    /// </summary>
-    /// <param name="handle">Handle of the operation.</param>
-    /// <param name="offset">Offset accumulated so far.</param>
-    /// <param name="cancellationToken">Token that cancels the operation.</param>
-    /// <returns>The total size of the content, or <c>null</c> when it cannot be read.</returns>
-    private async Task<long?> ProbeTotalAsync(
-        DownloadOperationHandle handle,
-        long offset,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var probe = new MemoryStream();
-
-            var outcome = await _engine
-                .TransferAsync(handle.ContentUri, offset, offset, probe, cancellationToken)
-                .ConfigureAwait(false);
-
-            return outcome.TotalBytes;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // El total no es imprescindible para transferir: el motor lo declara en la
-            // respuesta del tramo y la interfaz lo muestra cuando llega (AD-20).
-            _logger.LogWarning(
-                exception,
-                "No se pudo leer el tamaño total del paquete {PackageId}.",
-                handle.PackageId);
-
-            return null;
-        }
-    }
 
     /// <summary>
     /// Persists the state of an operation (AD-10, AD-11).
@@ -558,11 +746,11 @@ public sealed class DownloadCoordinator
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // La persistencia del estado NO puede impedir que la descarga siga: el
-            // registro del progreso es lo que la reanudación necesita, y se escribe
+            // registro del progreso es lo que la reanudaciÃ³n necesita, y se escribe
             // aparte (AD-11).
             _logger.LogWarning(
                 exception,
-                "No se pudo persistir el estado de la operación {OperationId}.",
+                "No se pudo persistir el estado de la operaciÃ³n {OperationId}.",
                 handle.OperationId);
         }
     }
@@ -617,17 +805,121 @@ public sealed class DownloadCoordinator
 
     /// <summary>
     /// Publishes the state and the progress of an operation (AC2, UX-DR-13).
+    ///
+    /// <para>
+    /// La publicaciÃ³n del estado va a la interfaz, y la del progreso va al servidor con
+    /// el CONTRATO EXACTO <see cref="DownloadProgressUpdated"/>: el identificador del
+    /// cliente, el de la operaciÃ³n, los bytes transferidos, el total y el estado de la
+    /// mÃ¡quina (AC5, AD-22).
+    /// </para>
+    /// <para>
+    /// La publicaciÃ³n al servidor NUNCA impide la descarga: una falla del hub se registra
+    /// y se sigue, porque lo que sobrevive al reinicio es el offset persistido en el disco
+    /// del cliente (AD-11, AD-22).
+    /// </para>
     /// </summary>
     /// <param name="handle">Handle of the operation.</param>
-    private void Publish(DownloadOperationHandle handle) => Changed?.Invoke(handle);
+    private void Publish(DownloadOperationHandle handle)
+    {
+        Changed?.Invoke(handle);
+
+        if (_reporter is null)
+        {
+            return;
+        }
+
+        // La publicaciÃ³n al servidor es ASÃNCRONA y no bloquea a la interfaz: la tarea se
+        // REGISTRA para que el cierre del cliente pueda esperarla y para que la prueba
+        // pueda observarla (AD-22).
+        var report = ReportAsync(handle);
+
+        lock (_lock)
+        {
+            _pendingReports.Add(report);
+        }
+
+        _ = report.ContinueWith(
+            completed =>
+            {
+                lock (_lock)
+                {
+                    _pendingReports.Remove(completed);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Waits until every publication of the progress that is in flight has finished
+    /// (AD-22).
+    /// </summary>
+    /// <returns>A task that completes when the publications have finished.</returns>
+    public async Task WaitForPendingReportsAsync()
+    {
+        Task[] pending;
+
+        lock (_lock)
+        {
+            pending = _pendingReports.ToArray();
+        }
+
+        if (pending.Length > 0)
+        {
+            await Task.WhenAll(pending).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Reports the progress of an operation to the server (AC5, AD-22).
+    /// </summary>
+    /// <param name="handle">Handle of the operation.</param>
+    /// <returns>A task that completes when the progress has been reported.</returns>
+    private async Task ReportAsync(DownloadOperationHandle handle)
+    {
+        try
+        {
+            var clientId = await _stateStore
+                .LoadIdentityAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (clientId is null)
+            {
+                return;
+            }
+
+            var progress = handle.Progress;
+
+            await _reporter!
+                .ReportAsync(
+                    new DownloadProgressUpdated(
+                        clientId.CanonicalId,
+                        handle.OperationId,
+                        progress.BytesTransferred,
+                        progress.TotalBytes ?? 0L,
+                        handle.StateMachine.Current),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La proyecciÃ³n del progreso NO puede impedir que la descarga siga: el offset
+            // persistido es lo que sobrevive al reinicio (AD-11, AD-22).
+            _logger.LogWarning(
+                exception,
+                "No se pudo reportar el progreso de la operaciÃ³n {OperationId}.",
+                handle.OperationId);
+        }
+    }
 }
 
 /// <summary>
 /// Handle of a download operation of the client (AD-10, AC2).
 ///
 /// <para>
-/// El handle es la operación VIVA del cliente: lleva su identificador, su máquina de
-/// estados, su offset acumulado y las peticiones de pausa y cancelación (AD-10, AD-11).
+/// El handle es la operaciÃ³n VIVA del cliente: lleva su identificador, su mÃ¡quina de
+/// estados, su offset acumulado y las peticiones de pausa y cancelaciÃ³n (AD-10, AD-11).
 /// </para>
 /// </summary>
 public sealed class DownloadOperationHandle

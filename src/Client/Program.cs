@@ -99,7 +99,7 @@ public static class Program
             //
             // Un fallo al abrirla NO impide que el cliente arrancar: las descargas son un
             // complemento del cliente y no su motivo de vida (AD-1).
-            downloads = OpenDownloads(startup, transfer, correlationScope, loggerFactory);
+            downloads = OpenDownloads(startup, transfer, correlationScope, loggerFactory, connection);
 
             BuildAvaloniaApp(
                 startup.Settings,
@@ -410,12 +410,17 @@ public static class Program
     /// <param name="transfer">Composition of the transfer of bytes of the client.</param>
     /// <param name="correlationScope">Scope that correlates the log of the client.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="connection">
+    /// Composition of the connection, whose sonda de versiones declara la puerta de
+    /// compatibilidad que las descargas repiten antes de reanudar (AD-6, AC5).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static DownloadComposition? OpenDownloads(
         ClientStartupResult startup,
         TransferComposition transfer,
         IClientCorrelationScope correlationScope,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        ConnectionComposition? connection = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(transfer);
@@ -459,7 +464,8 @@ public static class Program
                 transfer.Engine,
                 loggerFactory,
                 startup.MaxConcurrentDownloads,
-                startup.MaxTotalConnections);
+                startup.MaxTotalConnections,
+                connection?.VersionProbe);
         }
         catch (Exception exception)
         {

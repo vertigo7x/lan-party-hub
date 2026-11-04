@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using LANPartyHub.Client.Application.Downloads;
 using LANPartyHub.Client.Application.Ports;
 
 namespace LANPartyHub.Client.Infrastructure.Networking;
@@ -44,6 +45,12 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
 
     /// <summary>Header that declares the total size of the content.</summary>
     public const string ContentLengthHeaderName = "Content-Length";
+
+    /// <summary>
+    /// Sentinel that declares that the range ends at the END of the content, so the
+    /// request travels as <c>bytes=&lt;start&gt;-</c> (AD-20).
+    /// </summary>
+    public const long UnboundedEnd = long.MaxValue;
 
     private readonly HttpClient _httpClient;
 
@@ -93,7 +100,12 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
 
         using var request = new HttpRequestMessage(HttpMethod.Get, contentUri);
 
-        request.Headers.Range = new RangeHeaderValue(startInclusive, endInclusive);
+        // AD-20: el rango que llega al servidor es el que empieza en el offset
+        // acumulado. Un rango SIN final declarado viaja como «bytes=&lt;start&gt;-», que es
+        // la forma en la que el servidor sirve el resto del contenido (AD-20).
+        request.Headers.Range = endInclusive == UnboundedEnd
+            ? new RangeHeaderValue(startInclusive, null)
+            : new RangeHeaderValue(startInclusive, endInclusive);
 
         using var response = await _httpClient
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
@@ -115,11 +127,19 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
         // estaba.
         var rangeHonoured = response.StatusCode == HttpStatusCode.PartialContent;
 
-        var transferred = await CopyAsync(response, destination, cancellationToken).ConfigureAwait(false);
-
+        // AD-20: el total del contenido llega en la cabecera de la respuesta, ANTES del
+        // cuerpo, así que el motor lo declara al destino y el cliente puede mostrar el
+        // porcentaje y el par de tamaños mientras la descarga sigue en curso (UX-DR-5).
         var totalBytes = rangeHonoured
             ? ReadTotalBytes(response)
             : ReadContentLength(response);
+
+        if (destination is IContentTotalAware aware && totalBytes is { } declared)
+        {
+            aware.DeclareTotal(declared);
+        }
+
+        var transferred = await CopyAsync(response, destination, cancellationToken).ConfigureAwait(false);
 
         return new TransferOutcome(transferred, totalBytes, rangeHonoured);
     }
