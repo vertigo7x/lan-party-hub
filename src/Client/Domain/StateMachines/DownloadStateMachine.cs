@@ -17,8 +17,8 @@ public sealed class DownloadStateMachine
     private static readonly IReadOnlyDictionary<DownloadState, IReadOnlyList<DownloadState>> AllowedTransitions =
         new Dictionary<DownloadState, IReadOnlyList<DownloadState>>
         {
-            [DownloadState.Queued] = [DownloadState.Downloading],
-            [DownloadState.Downloading] = [DownloadState.Paused, DownloadState.Validating, DownloadState.Failed],
+            [DownloadState.Queued] = [DownloadState.Downloading, DownloadState.Cancelled],
+            [DownloadState.Downloading] = [DownloadState.Paused, DownloadState.Cancelled, DownloadState.Validating, DownloadState.Failed],
             [DownloadState.Paused] = [DownloadState.Downloading, DownloadState.Cancelled],
             [DownloadState.Validating] = [DownloadState.Completed, DownloadState.Failed],
             [DownloadState.Completed] = [],

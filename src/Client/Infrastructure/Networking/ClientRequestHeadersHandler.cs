@@ -35,6 +35,17 @@ public sealed class ClientRequestHeadersHandler : DelegatingHandler
     /// <summary>Header that carries the version of the protocol that the client speaks (AD-6).</summary>
     public const string ProtocolVersionHeaderName = "X-Protocol-Version";
 
+    /// <summary>
+    /// Header that carries the human label of the team (AD-14, AD-30).
+    ///
+    /// <para>
+    /// La etiqueta de la máquina NO es una credencial: es el nombre humano del equipo, y el
+    /// servidor la usa para el reparto equitativo del enlace, porque la UNIDAD de reparto
+    /// es el cliente y no la conexión (AD-14, AD-30).
+    /// </para>
+    /// </summary>
+    public const string MachineNameHeaderName = "X-Client-Machine-Name";
+
     private readonly IClientRequestHeaders _headers;
     private readonly IClientVersionProvider _versions;
 
@@ -61,6 +72,11 @@ public sealed class ClientRequestHeadersHandler : DelegatingHandler
 
         Stamp(request, ClientIdHeaderName, _headers.ClientId);
         Stamp(request, OperationIdHeaderName, _headers.OperationId);
+
+        // AD-14, AD-30: la etiqueta de la máquina es el nombre humano del equipo, y el
+        // servidor la usa para distinguir a los clientes en el reparto del enlace. No es
+        // una credencial: no habilita nada.
+        Stamp(request, MachineNameHeaderName, _headers.MachineName);
 
         // AD-6: TODA petición declara la versión del cliente y la versión del protocolo,
         // sin excepción: el servidor rechaza con 426 la que no las declara.

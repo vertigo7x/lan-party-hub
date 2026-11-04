@@ -57,6 +57,33 @@ public interface IClientStateStore
     Task SaveProgressAsync(string operationId, long bytesPersisted, long? totalBytes, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Records a download operation and the state that it is in (AD-10, AD-11, AD-24).
+    ///
+    /// <para>
+    /// La operación es la ENTIDAD LOCAL del cliente y su estado es del cliente: el
+    /// servidor solo proyecta el estado que el cliente publica (AD-10, AD-22). El registro
+    /// se escribe una vez por operación y su estado se ACTUALIZA cuando la operación
+    /// avanza, así que un reinicio del equipo encuentra la operación en el estado en el
+    /// que estaba (AD-11).
+    /// </para>
+    /// </summary>
+    /// <param name="operationId">Opaque identifier of the operation.</param>
+    /// <param name="packageId">Opaque identifier of the package that the operation transfers.</param>
+    /// <param name="state">State of the operation, as the name of the value of the machine state.</param>
+    /// <param name="transferEngine">
+    /// Identifier of the engine that transfers the bytes of the operation. It is the
+    /// identifier of la única implementación del puerto (AD-4, AD-24).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the operation is persisted.</returns>
+    Task SaveOperationAsync(
+        string operationId,
+        string packageId,
+        string state,
+        string transferEngine,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Reads the ancla de confianza that is already fixed, or <c>null</c> when the client
     /// has not fixed any (AD-27).
     ///

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.Downloads;
 
 namespace LANPartyHub.Client.Presentation.Status;
 
@@ -42,9 +43,18 @@ public sealed class ConnectionStatusPanel : UserControl
     private readonly TextBlock _serverVersion;
     private readonly TextBlock _lastOperation;
 
-    /// <summary>Creates the persistent panel of the connection.</summary>
+    /// <summary>
+/// Creates the persistent panel of the connection.
+    /// </summary>
     /// <param name="viewModel">View model of the panel.</param>
-    public ConnectionStatusPanel(ConnectionStatusPanelViewModel viewModel)
+    /// <param name="downloadProgress">
+    /// Control of the progress of the download in progress, or <c>null</c> when the panel
+    /// is built without it. UX-DR-11: el panel muestra abajo la operación en curso con su
+    /// barra.
+    /// </param>
+    public ConnectionStatusPanel(
+        ConnectionStatusPanelViewModel viewModel,
+        DownloadProgressControl? downloadProgress = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
@@ -115,6 +125,14 @@ public sealed class ConnectionStatusPanel : UserControl
                 BuildRow(ConnectionStatusPanelViewModel.LastOperationLabelText, _lastOperation),
             },
         };
+
+        // UX-DR-11: el panel muestra ABAJO la operación en curso con su barra, y su
+        // progreso. La operación en curso se dibuja con el MISMO view model que la barra
+        // y el texto, así que no pueden contradecirse (UX-DR-5, UX-DR-13).
+        if (downloadProgress is not null)
+        {
+            ((StackPanel)Content).Children.Add(downloadProgress);
+        }
 
         _viewModel.Changed += Render;
 

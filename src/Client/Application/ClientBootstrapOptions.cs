@@ -20,4 +20,14 @@ public sealed class ClientBootstrapOptions
 
     /// <summary>Theme of the interface of the client.</summary>
     public required string Theme { get; init; }
+
+    /// <summary>
+    /// Number of downloads that the client runs at the same time (AD-14, AC10).
+    /// </summary>
+    public int MaxConcurrentDownloads { get; init; } = 2;
+
+    /// <summary>
+    /// Number of connections that the client opens in total (AD-14, AC10).
+    /// </summary>
+    public int MaxTotalConnections { get; init; } = 4;
 }

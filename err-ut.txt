@@ -1,0 +1,7 @@
+[xUnit.net 00:00:02.64]     LANPartyHub.UnitTests.DownloadProgressTests.The_percentage_is_zero_while_the_total_is_unknown [FAIL]
+[xUnit.net 00:00:03.03]     LANPartyHub.UnitTests.DownloadCoordinatorTests.Cancelling_a_download_deletes_the_partial_and_resets_the_progress [FAIL]
+[xUnit.net 00:00:13.05]     LANPartyHub.UnitTests.DownloadCoordinatorTests.The_operations_of_the_same_package_are_serialized [FAIL]
+[xUnit.net 00:00:27.18]     LANPartyHub.UnitTests.DownloadCoordinatorTests.Resuming_a_download_continues_from_the_persisted_offset [FAIL]
+[xUnit.net 00:00:27.19]     LANPartyHub.UnitTests.DownloadCoordinatorTests.Starting_a_download_registers_the_intention_and_persists_the_operation [FAIL]
+[xUnit.net 00:00:37.21]     LANPartyHub.UnitTests.DownloadCoordinatorTests.Pausing_a_download_keeps_its_offset [FAIL]
+[xUnit.net 00:00:47.23]     LANPartyHub.UnitTests.DownloadCoordinatorTests.A_download_in_course_reports_its_progress [FAIL]

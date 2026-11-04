@@ -120,6 +120,8 @@ public sealed class ClientBootstrap
             StateDatabasePath = _layout.StateDatabasePath,
             ServerAddress = options.ServerAddress,
             Theme = options.Theme,
+            MaxConcurrentDownloads = options.MaxConcurrentDownloads,
+            MaxTotalConnections = options.MaxTotalConnections,
             Reconciliation = reconciliation,
         };
     }

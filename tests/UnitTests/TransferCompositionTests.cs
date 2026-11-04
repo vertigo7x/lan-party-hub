@@ -155,6 +155,8 @@ public sealed class TransferCompositionTests
         public string? ClientId { get; }
 
         public string? OperationId { get; }
+
+        public string? MachineName => null;
     }
 
     /// <summary>

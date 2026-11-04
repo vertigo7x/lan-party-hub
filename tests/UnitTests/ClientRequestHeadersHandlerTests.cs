@@ -176,6 +176,8 @@ public sealed class ClientRequestHeadersHandlerTests
         public string? ClientId { get; }
 
         public string? OperationId { get; }
+
+        public string? MachineName => null;
     }
 
     /// <summary>

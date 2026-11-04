@@ -27,4 +27,16 @@ public interface IClientRequestHeaders
     /// running one.
     /// </summary>
     string? OperationId { get; }
+
+    /// <summary>
+    /// Human label of the team, or <c>null</c> when the client does not know it yet
+    /// (AD-14, AD-30).
+    ///
+    /// <para>
+    /// La etiqueta es el nombre humano del equipo y no una credencial: el servidor la usa
+    /// para distinguir a los clientes en el reparto del enlace, porque la unidad de
+    /// reparto es el CLIENTE (AD-14, AD-30).
+    /// </para>
+    /// </summary>
+    string? MachineName { get; }
 }

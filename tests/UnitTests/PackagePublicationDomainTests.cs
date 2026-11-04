@@ -702,6 +702,12 @@ public sealed class PackagePublicationDomainTests
 
         public Task<byte[]?> ReadBytesAsync(string packageId, CancellationToken cancellationToken) =>
             Task.FromResult<byte[]?>(Bytes);
+
+        public Task<PackageContentStream?> OpenAsync(
+            string packageId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<PackageContentStream?>(
+                new PackageContentStream(new MemoryStream(Bytes, writable: false), Bytes.Length));
     }
 
     /// <summary>

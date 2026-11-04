@@ -10,6 +10,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using LANPartyHub.Client.Presentation.Downloads;
 using LANPartyHub.Client.Presentation.Status;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,6 +31,7 @@ public sealed class App : Avalonia.Application
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
+    private readonly DownloadComposition? _downloads;
     private readonly IUiThread _uiThread;
     private ConnectionSurfaceViewModel? _connectionViewModel;
     private ServerAvailabilityMonitor? _availabilityMonitor;
@@ -47,21 +49,27 @@ public sealed class App : Avalonia.Application
     /// Composition of the synchronization of the catalog, or <c>null</c> when the client
     /// was not able to open it.
     /// </param>
-    /// <param name="connection">
-    /// Composition of the discovery of the event server, or <c>null</c> when the client was
-    /// not able to open it.
+/// <param name="connection">
+    /// Composition of the discovery of the event server, or <c>null</c> when the client
+    /// was not able to open it.
+    /// </param>
+    /// <param name="downloads">
+    /// Composition of the downloads, or <c>null</c> when the client was not able to open
+    /// it.
     /// </param>
     public App(
         ClientSettings? settings,
         string? startupError,
         CatalogSyncComposition? catalogSync = null,
         ConnectionComposition? connection = null,
-        IUiThread? uiThread = null)
+        IUiThread? uiThread = null,
+        DownloadComposition? downloads = null)
     {
         _settings = settings;
         _startupError = startupError;
         _catalogSync = catalogSync;
         _connection = connection;
+        _downloads = downloads;
 
         // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
         // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
@@ -112,7 +120,17 @@ public sealed class App : Avalonia.Application
             // fija de la ventana. No se colapsa, no se esconde en un menú ni en un modal
             // (AC1, UX-DR-11).
             var statusViewModel = new ConnectionStatusPanelViewModel();
-            var statusPanel = new ConnectionStatusPanel(statusViewModel);
+
+            // AC2, AC3: el progreso de la descarga vive en el MISMO panel, con su barra y
+            // su texto, y los dos salen de UNA SOLA fuente: la barra nunca contradice al
+            // porcentaje (UX-DR-5, UX-DR-13).
+            //
+            // La superficie «Descargas» de la navegación es de otra historia (UX-DR-23),
+            // así que aquí la descarga se muestra en el panel que ya es persistente.
+            var downloadViewModel = new DownloadProgressViewModel();
+            var downloadControl = new DownloadProgressControl(downloadViewModel);
+
+            var statusPanel = new ConnectionStatusPanel(statusViewModel, downloadControl);
 
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
@@ -125,6 +143,11 @@ public sealed class App : Avalonia.Application
                     connectionSurface,
                     statusPanel)
                 : new StartupErrorWindow(_startupError);
+
+            // El overlay de la confirmación de la cancelación vive DENTRO de la ventana,
+            // así que las acciones se cablean cuando la ventana ya existe
+            // (UX-DR-16, UX-DR-22).
+            WireDownloadActions(downloadViewModel, downloadControl, window);
 
             desktop.MainWindow = window;
 
@@ -167,11 +190,121 @@ public sealed class App : Avalonia.Application
         base.OnFrameworkInitializationCompleted();
     }
 
+/// <summary>
+    /// Wires the actions of the progress of the download: «Pausar», «Reanudar» y
+    /// «Cancelar» (AC3, AC4, UX-DR-6, UX-DR-22).
+    ///
+    /// <para>
+    /// Cancelar pide CONFIRMACIÓN nombrando lo que se pierde, y la confirmación es un
+    /// overlay <c>dialog-surface</c> DENTRO de la ventana: no se abre una ventana nueva,
+    /// porque un diálogo nunca se apila sobre otro (UX-DR-16, UX-DR-22).
+    /// </para>
+    /// </summary>
+    /// <param name="viewModel">View model of the progress of the download.</param>
+    /// <param name="control">Control of the progress of the download.</param>
+    /// <param name="window">Window of the player, which hosts the overlay de confirmación.</param>
+    private void WireDownloadActions(
+        DownloadProgressViewModel viewModel,
+        DownloadProgressControl control,
+        Window window)
+    {
+        if (_downloads is null)
+        {
+            return;
+        }
+
+        var coordinator = _downloads.Coordinator;
+
+        // AC2, UX-DR-13: el coordinador publica el estado y el progreso, y la publicación
+        // llega desde el grupo de hilos: los controles de Avalonia SOLO se tocan desde el
+        // hilo que los posee, así que la notificación se encola.
+        coordinator.Changed += handle =>
+            _uiThread.Post(() => viewModel.Apply(handle));
+
+        control.PauseButton.Click += async (_, _) =>
+        {
+            var handle = viewModel.Handle;
+
+            if (handle is null)
+            {
+                return;
+            }
+
+            await coordinator.PauseAsync(handle).ConfigureAwait(true);
+        };
+
+        control.ResumeButton.Click += async (_, _) =>
+        {
+            var handle = viewModel.Handle;
+
+            if (handle is null)
+            {
+                return;
+            }
+
+            await coordinator.ResumeAsync(handle, CancellationToken.None).ConfigureAwait(true);
+        };
+
+        // AC4, UX-DR-22: la cancelación destruye trabajo no recuperable, así que la
+        // interfaz PIDE CONFIRMACIÓN y nombra lo que se pierde antes de cancelar.
+        control.CancelButton.Click += (_, _) => ShowCancelConfirmation(viewModel, coordinator, window);
+    }
+
     /// <summary>
+    /// Shows the overlay de confirmación de la cancelación (AC4, UX-DR-22).
+    ///
+    /// <param name="viewModel">View model of the progress of the download.</param>
+    /// <param name="coordinator">Coordinator of the downloads.</param>
+    /// <param name="window">Window of the player, which hosts the overlay.</param>
+    private static void ShowCancelConfirmation(
+        DownloadProgressViewModel viewModel,
+        Application.Downloads.DownloadCoordinator coordinator,
+        Window window)
+    {
+        var handle = viewModel.Handle;
+
+        if (handle is null)
+        {
+            return;
+        }
+
+        var dialog = new DownloadCancelDialog(viewModel);
+
+        // El overlay vive dentro de la ventana y no abre una ventana nueva: el cliente es
+        // una aplicación de escritorio con una sola ventana y un diálogo nunca se apila
+        // sobre otro (UX-DR-16, UX-DR-23).
+        var overlay = new Grid();
+
+        void CloseOverlay()
+        {
+            if (overlay.Parent is Panel parent)
+            {
+                parent.Children.Remove(overlay);
+            }
+        }
+
+        dialog.KeepButton.Click += (_, _) => CloseOverlay();
+
+        dialog.ConfirmButton.Click += async (_, _) =>
+        {
+            CloseOverlay();
+
+            await coordinator.CancelAsync(handle, CancellationToken.None).ConfigureAwait(true);
+        };
+
+        overlay.Children.Add(dialog);
+
+        if (window.Content is Panel panel)
+        {
+            panel.Children.Add(overlay);
+        }
+    }
+
+/// <summary>
     /// Starts the supervision of the availability of the event server and wires its state to
     /// the panel, to the surface of the connection and to the notice of the synchronization
     /// (AC3, AC4, AC5).
-    ///
+    /// </summary>
     /// <param name="statusViewModel">View model of the persistent panel of the connection.</param>
     /// <param name="connectionViewModel">View model of the surface of the connection.</param>
     /// <param name="banner">Notice of the pending synchronization, when the window has one.</param>

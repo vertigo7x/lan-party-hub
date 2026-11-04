@@ -332,6 +332,14 @@ public sealed class FixTrustAnchorTests
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
+        public Task SaveOperationAsync(
+            string operationId,
+            string packageId,
+            string state,
+            string transferEngine,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken) =>
             Task.FromResult(ExistingAnchor);
 

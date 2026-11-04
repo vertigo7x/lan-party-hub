@@ -1,3 +1,4 @@
+using System.Globalization;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -35,8 +36,38 @@ public sealed class ClientConfiguration
     /// <summary>Key of the theme of the interface, inside <see cref="SectionName"/>.</summary>
     public const string ThemeKey = "theme";
 
+    /// <summary>
+    /// Key of the number of downloads that the client runs at the same time, inside
+    /// <see cref="SectionName"/> (AD-14).
+    /// </summary>
+    public const string MaxConcurrentDownloadsKey = "maxConcurrentDownloads";
+
+    /// <summary>
+    /// Key of the number of connections that the client opens in total, inside
+    /// <see cref="SectionName"/> (AD-14).
+    /// </summary>
+    public const string MaxTotalConnectionsKey = "maxTotalConnections";
+
     /// <summary>Theme used when no source fixes it.</summary>
     public const string DefaultTheme = "System";
+
+    /// <summary>
+    /// Number of downloads that the client runs at the same time when no source fixes
+    /// another one (AD-14, AC10).
+    ///
+    /// <para>
+    /// El valor por defecto NO depende del resultado de ningún spike: los límites de
+    /// concurrencia son configurables y tienen valor por defecto aunque la medición del
+    /// ancho de banda real todavía no exista (AD-14, NFR-6).
+    /// </para>
+    /// </summary>
+    public const int DefaultMaxConcurrentDownloads = 2;
+
+    /// <summary>
+    /// Number of connections that the client opens in total when no source fixes another
+    /// one (AD-14, AC10).
+    /// </summary>
+    public const int DefaultMaxTotalConnections = 4;
 
     /// <summary>
     /// Name of the optional configuration file that sits next to the binary. It is named
@@ -45,12 +76,20 @@ public sealed class ClientConfiguration
     /// </summary>
     public const string FileName = "client.appsettings.json";
 
-    private ClientConfiguration(string dataFolder, string? serverAddress, string installDirectory, string theme)
+    private ClientConfiguration(
+        string dataFolder,
+        string? serverAddress,
+        string installDirectory,
+        string theme,
+        int maxConcurrentDownloads,
+        int maxTotalConnections)
     {
         DataFolder = dataFolder;
         ServerAddress = serverAddress;
         InstallDirectory = installDirectory;
         Theme = theme;
+        MaxConcurrentDownloads = maxConcurrentDownloads;
+        MaxTotalConnections = maxTotalConnections;
     }
 
     /// <summary>
@@ -74,6 +113,21 @@ public sealed class ClientConfiguration
 
     /// <summary>Theme of the interface of the client.</summary>
     public string Theme { get; }
+
+    /// <summary>
+    /// Number of downloads that the client runs at the same time (AD-14, AC10).
+    ///
+    /// <para>
+    /// El límite es POR CLIENTE y es configurable con valor por defecto, así que el
+    /// jugador puede bajarlo cuando la red del evento lo necesita (AD-14).
+    /// </para>
+    /// </summary>
+    public int MaxConcurrentDownloads { get; }
+
+    /// <summary>
+    /// Number of connections that the client opens in total (AD-14, AC10).
+    /// </summary>
+    public int MaxTotalConnections { get; }
 
     /// <summary>
     /// Registers the three configuration sources, in the order <c>file &gt; env &gt; flags</c>.
@@ -142,8 +196,24 @@ public sealed class ClientConfiguration
         var serverAddress = ResolveServerAddress(configuration, section);
         var installDirectory = ResolveInstallDirectory(configuration, section, dataFolder);
         var theme = ResolveTheme(configuration, section);
+        var maxConcurrentDownloads = ResolvePositiveLimit(
+            configuration,
+            section,
+            MaxConcurrentDownloadsKey,
+            DefaultMaxConcurrentDownloads);
+        var maxTotalConnections = ResolvePositiveLimit(
+            configuration,
+            section,
+            MaxTotalConnectionsKey,
+            DefaultMaxTotalConnections);
 
-        return new ClientConfiguration(Path.GetFullPath(dataFolder), serverAddress, installDirectory, theme);
+        return new ClientConfiguration(
+            Path.GetFullPath(dataFolder),
+            serverAddress,
+            installDirectory,
+            theme,
+            maxConcurrentDownloads,
+            maxTotalConnections);
     }
 
     /// <summary>
@@ -154,6 +224,8 @@ public sealed class ClientConfiguration
     {
         ServerAddress = ServerAddress,
         Theme = Theme,
+        MaxConcurrentDownloads = MaxConcurrentDownloads,
+        MaxTotalConnections = MaxTotalConnections,
     };
 
     private static string? ResolveServerAddress(IConfiguration configuration, IConfigurationSection section)
@@ -223,6 +295,52 @@ public sealed class ClientConfiguration
         }
 
         return rawTheme.Trim();
+    }
+
+    /// <summary>
+    /// Resolves a limit of concurrency that has to be a positive integer (AD-14).
+    ///
+    /// <para>
+    /// Un límite de CERO no limitaría nada: dejaría al cliente sin descargas o sin
+    /// conexiones. El valor por defecto se aplica cuando ninguna fuente fija otro, y el
+    /// valor por defecto NO depende del resultado de ningún spike (AD-14, NFR-6).
+    /// </para>
+    /// </summary>
+    /// <param name="configuration">Configuration with the three sources already registered.</param>
+    /// <param name="section">Section of the configuration that holds the settings.</param>
+    /// <param name="key">Key of the limit inside the section.</param>
+    /// <param name="defaultValue">Value used when no source fixes the limit.</param>
+    /// <returns>The effective limit of concurrency.</returns>
+    /// <exception cref="ClientStartupException">A source fixes an invalid value.</exception>
+    private static int ResolvePositiveLimit(
+        IConfiguration configuration,
+        IConfigurationSection section,
+        string key,
+        int defaultValue)
+    {
+        var rawLimit = section[key];
+
+        if (rawLimit is null)
+        {
+            return defaultValue;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawLimit))
+        {
+            throw new ClientStartupException(
+                $"Valor vacío en {DescribeSource(configuration, $"{SectionName}:{key}")}: el límite no puede estar vacío.");
+        }
+
+        var candidate = rawLimit.Trim();
+
+        if (!int.TryParse(candidate, NumberStyles.None, CultureInfo.InvariantCulture, out var limit)
+            || limit < 1)
+        {
+            throw new ClientStartupException(
+                $"Valor no válido '{rawLimit}' en {DescribeSource(configuration, $"{SectionName}:{key}")}: el límite debe ser un número entero mayor que cero.");
+        }
+
+        return limit;
     }
 
     /// <summary>

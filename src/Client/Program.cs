@@ -40,6 +40,7 @@ public static class Program
         CatalogSyncComposition? catalogSync = null;
         ConnectionComposition? connection = null;
         TransferComposition? transfer = null;
+        DownloadComposition? downloads = null;
 
         try
         {
@@ -52,7 +53,11 @@ public static class Program
             // AD-15, AD-23: the correlation scope belongs to the composition root, so it is
             // opened as soon as the identity of the team is known and it is closed when the
             // session ends.
-            correlationScope = new ClientCorrelationFactory(loggerFactory);
+            //
+            // AD-14, AD-30: la etiqueta de la máquina es el nombre humano del equipo, y el
+            // servidor la usa para distinguir a los clientes en el reparto del enlace. No
+            // es una credencial: no habilita nada.
+            correlationScope = new ClientCorrelationFactory(loggerFactory, Environment.MachineName);
 
             var startup = StartClientAsync(args, correlationScope, loggerFactory).GetAwaiter().GetResult();
 
@@ -87,7 +92,20 @@ public static class Program
             // compatibilidad de la petición.
             transfer = new TransferComposition(correlationScope);
 
-            BuildAvaloniaApp(startup.Settings, catalogSync: catalogSync, connection: connection)
+            // AD-5, AD-10, AD-14: la composición de las descargas. El cliente registra su
+            // intención con el servidor y pide los bytes por el puerto de la
+            // transferencia, con los límites de concurrencia que fija la configuración
+            // efectiva (AC10).
+            //
+            // Un fallo al abrirla NO impide que el cliente arrancar: las descargas son un
+            // complemento del cliente y no su motivo de vida (AD-1).
+            downloads = OpenDownloads(startup, transfer, correlationScope, loggerFactory);
+
+            BuildAvaloniaApp(
+                startup.Settings,
+                catalogSync: catalogSync,
+                connection: connection,
+                downloads: downloads)
                 .StartWithClassicDesktopLifetime(args);
 
             return 0;
@@ -109,6 +127,7 @@ public static class Program
         finally
         {
             catalogSync?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            downloads?.Dispose();
             transfer?.Dispose();
             correlationScope?.Dispose();
             loggerFactory?.Dispose();
@@ -124,12 +143,16 @@ public static class Program
     /// <param name="connection">
     /// Composition of the discovery of the event server, or <c>null</c> when there is none.
     /// </param>
+    /// <param name="downloads">
+    /// Composition of the downloads, or <c>null</c> when there is none.
+    /// </param>
     public static AppBuilder BuildAvaloniaApp(
         ClientSettings? settings = null,
         string? startupError = null,
         CatalogSyncComposition? catalogSync = null,
-        ConnectionComposition? connection = null) =>
-        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection)).UsePlatformDetect();
+        ConnectionComposition? connection = null,
+        DownloadComposition? downloads = null) =>
+        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection, downloads: downloads)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -363,6 +386,92 @@ public static class Program
                     "No se pudo abrir la sincronización del catálogo: el cliente sigue arrancando sin ella.");
 
             composition?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            composition = null;
+        }
+
+        return composition;
+    }
+
+    /// <summary>
+    /// Opens the composition of the downloads (AD-5, AD-10, AD-14, AC10).
+    ///
+    /// <para>
+    /// La composición se abre solo cuando el cliente conoce la dirección del servidor:
+    /// sin servidor no hay a quién descargar, y el cliente conserva lo que ya tenía
+    /// (AD-3).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arrancar: las descargas
+    /// son un complemento del cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="transfer">Composition of the transfer of bytes of the client.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static DownloadComposition? OpenDownloads(
+        ClientStartupResult startup,
+        TransferComposition transfer,
+        IClientCorrelationScope correlationScope,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(transfer);
+        ArgumentNullException.ThrowIfNull(correlationScope);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (string.IsNullOrWhiteSpace(startup.ServerAddress))
+        {
+            return null;
+        }
+
+        DownloadComposition? composition = null;
+
+        try
+        {
+            // AD-11: el coordinador persiste el offset acumulado en la base de datos del
+            // cliente, así que la composición abre su propio acceso a ella.
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = startup.StateDatabasePath,
+                Pooling = false,
+            }.ToString();
+
+            var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite(
+                    connectionString,
+                    sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                .Options;
+
+            var context = new ClientStateDbContext(options);
+
+            var layout = ClientDataLayout.Create(
+                startup.DataFolder,
+                startup.InstallDirectory);
+
+            composition = new DownloadComposition(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                correlationScope,
+                new ClientStateStore(context),
+                layout,
+                transfer.Engine,
+                loggerFactory,
+                startup.MaxConcurrentDownloads,
+                startup.MaxTotalConnections);
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede descargar, pero sigue siendo un cliente que arranca: la
+            // ventana se abre y el catálogo sigue disponible (AD-1).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.Downloads")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir la composición de las descargas: el cliente sigue arrancando sin ella.");
+
+            composition?.Dispose();
 
             composition = null;
         }

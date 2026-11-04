@@ -220,6 +220,17 @@ public partial class Program
         builder.Services.AddScoped<ListPackages>();
         builder.Services.AddScoped<WithdrawGame>();
 
+        // AD-10, AD-22: la superficie de las descargas. El servidor registra la
+        // INTENCIÓN de la descarga y NOTHING del estado de la operación: la operación la
+        // ejecuta el cliente y su estado es del cliente (AD-10).
+        builder.Services.AddScoped<IDownloadIntentRepository, DownloadIntentRepository>();
+        builder.Services.AddScoped<RegisterDownloadIntent>();
+
+        // AD-14: el reparto equitativo del enlace es POR CLIENTE, así que el servidor
+        // admite un número CONFIGURABLE de respuestas de rango simultáneas por cliente y
+        // todas las conexiones de un cliente beben del mismo cubo.
+        builder.Services.AddSingleton(new PerClientShareLimiter(configuration.MaxConcurrentDownloadsPerClient));
+
         // AD-5, AD-26: el hub del estado del cliente es el ÚNICO canal de push del
         // servidor al cliente. El trigger de la resincronización del catálogo es el
         // único evento servidor a cliente que viaja por él en esta historia, y lleva
@@ -319,6 +330,11 @@ public partial class Program
         // catálogo, y el hub del estado del cliente, que es el canal de push del servidor
         // al cliente.
         CatalogEndpoint.Map(app);
+
+        // AD-5, AD-10, AD-20: la superficie del cliente que registra la intención de una
+        // descarga y la que sirve los bytes del paquete con soporte de Range requests.
+        DownloadsEndpoint.Map(app);
+        PackageContentEndpoint.Map(app);
 
         app.MapHub<CatalogHub>(CatalogHub.Route);
 
