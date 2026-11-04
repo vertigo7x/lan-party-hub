@@ -1364,7 +1364,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         tree = worktree_for(stories[0])
         if legacy.worktree_registered(tree.path):
             metadata, _ = plan_story(stories[0])
-            result = run_worker(stories[0], prepare_worktree(stories[0]), metadata)
+            tree = prepare_worktree(stories[0])
+            if not legacy.git(
+                "merge-base", "--is-ancestor", f"origin/{BASE_BRANCH}", "HEAD", check=False, cwd=tree.path
+            ).ok:
+                legacy.rebase_onto_main(cwd=tree.path)
+            result = run_worker(stories[0], tree, metadata)
             integrate(result, args)
             if not args.no_merge:
                 discard_worktree(result.worktree)
