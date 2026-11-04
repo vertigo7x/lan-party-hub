@@ -431,6 +431,8 @@ def commit_story(story, cwd: Path | None = None) -> None:
     if not legacy.git("status", "--porcelain", cwd=cwd).stdout.strip():
         return
     legacy.git("add", "-A", cwd=cwd)
+    if not legacy.git("status", "--porcelain", cwd=cwd).stdout.strip():
+        return
     legacy.git("commit", "-m", f"feat({story.label}): {story.title}", cwd=cwd)
 
 
