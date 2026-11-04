@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
+using LANPartyHub.Client.Application.Downloads;
 using LANPartyHub.Client.Application.Ports;
 
 namespace LANPartyHub.Client.Infrastructure.Networking;
@@ -44,6 +46,12 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
 
     /// <summary>Header that declares the total size of the content.</summary>
     public const string ContentLengthHeaderName = "Content-Length";
+
+    /// <summary>
+    /// Sentinel that declares that the range ends at the END of the content, so the
+    /// request travels as <c>bytes=&lt;start&gt;-</c> (AD-20).
+    /// </summary>
+    public const long UnboundedEnd = long.MaxValue;
 
     private readonly HttpClient _httpClient;
 
@@ -93,11 +101,14 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
 
         using var request = new HttpRequestMessage(HttpMethod.Get, contentUri);
 
-        request.Headers.Range = new RangeHeaderValue(startInclusive, endInclusive);
+        // AD-20: el rango que llega al servidor es el que empieza en el offset
+        // acumulado. Un rango SIN final declarado viaja como «bytes=&lt;start&gt;-», que es
+        // la forma en la que el servidor sirve el resto del contenido (AD-20).
+        request.Headers.Range = endInclusive == UnboundedEnd
+            ? new RangeHeaderValue(startInclusive, null)
+            : new RangeHeaderValue(startInclusive, endInclusive);
 
-        using var response = await _httpClient
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         // AD-20: el servidor sirve el paquete por HTTP con Range requests. Un 416 dice
         // que el rango no es satisfacible, y el 5.2 decide qué significa para la
@@ -115,13 +126,85 @@ public sealed class HttpRangeTransferEngine : ITransferEngine
         // estaba.
         var rangeHonoured = response.StatusCode == HttpStatusCode.PartialContent;
 
-        var transferred = await CopyAsync(response, destination, cancellationToken).ConfigureAwait(false);
-
+        // AD-20: el total del contenido llega en la cabecera de la respuesta, ANTES del
+        // cuerpo, así que el motor lo declara al destino y el cliente puede mostrar el
+        // porcentaje y el par de tamaños mientras la descarga sigue en curso (UX-DR-5).
         var totalBytes = rangeHonoured
             ? ReadTotalBytes(response)
             : ReadContentLength(response);
 
+        if (destination is IContentTotalAware aware && totalBytes is { } declared)
+        {
+            aware.DeclareTotal(declared);
+        }
+
+        var transferred = await CopyAsync(response, destination, cancellationToken).ConfigureAwait(false);
+
         return new TransferOutcome(transferred, totalBytes, rangeHonoured);
+    }
+
+    /// <summary>
+    /// Sends the request and TRANSLATES a failure of the transport into the failure that
+    /// the Application layer understands (AD-1, AD-11, AD-24, SM-2).
+    ///
+    /// <para>
+    /// Un fallo de transporte (el servidor no está, la red se cayó, la respuesta tardó) NO
+    /// es una falla de la operación: el parcial y su offset persistido siguen valiendo, así
+    /// que el siguiente arranque reintenta el <c>Range</c> desde ese offset (SM-2). La
+    /// traducción la hace el ADAPTADOR porque es el único que sabe qué es un fallo de su
+    /// transporte (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="request">Request to send.</param>
+    /// <param name="cancellationToken">Token that cancels the transfer.</param>
+    /// <returns>The response of the server.</returns>
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsTransportFailure(exception, cancellationToken))
+        {
+            throw new TransferTransportException(
+                "El transporte no pudo traer los bytes del contenido.",
+                exception);
+        }
+    }
+
+    /// <summary>
+    /// Tells whether a failure is a failure of the TRANSPORT and not a CANCELLATION
+    /// (AD-11, AD-24).
+    ///
+    /// <para>
+    /// La cancelación NO es un fallo de transporte: la pidió el jugador o el cierre del
+    /// cliente, así que viaja intacta y la operación conserva su estado (AC3, AD-11).
+    /// </para>
+    /// <para>
+    /// El tiempo de espera agotado de <see cref="HttpClient"/> llega como una
+    /// <see cref="TaskCanceledException"/> que ENVUELVE un <see cref="TimeoutException"/>:
+    /// esa sí es un fallo de transporte, porque el token del llamante no está cancelado.
+    /// </para>
+    /// </summary>
+    /// <param name="exception">Failure that the transport raised.</param>
+    /// <param name="cancellationToken">Token of the caller.</param>
+    /// <returns><c>true</c> when the failure is a failure of the transport.</returns>
+    private static bool IsTransportFailure(Exception exception, CancellationToken cancellationToken)
+    {
+        if (exception is HttpRequestException or IOException or TimeoutException or SocketException)
+        {
+            return true;
+        }
+
+        // El tiempo de espera agotado del cliente HTTP llega como una cancelación con un
+        // TimeoutException dentro. El token del llamante NO está cancelado, así que no es
+        // una cancelación del jugador.
+        return exception is TaskCanceledException { InnerException: TimeoutException }
+            && !cancellationToken.IsCancellationRequested;
     }
 
     /// <summary>

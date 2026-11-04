@@ -1,0 +1,28 @@
+{
+  "story": "5-3-persistencia-del-progreso-y-recuperaci\u00c3\u00b3n-tras-reinicio",
+  "base": "c0f5a3f9450348cb35c859f39076b0d9bfe50a74",
+  "risk": [
+    "red o host",
+    "persistencia"
+  ],
+  "paths": [
+    ".build-lite/plans/5-3.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Downloads/DownloadCoordinator.cs",
+    "src/Client/Application/Downloads/DownloadRecovery.cs",
+    "src/Client/Application/Downloads/IContentTotalAware.cs",
+    "src/Client/Application/Downloads/ProgressCountingStream.cs",
+    "src/Client/Application/Ports/IDownloadProgressReporter.cs",
+    "src/Client/Host/DownloadComposition.cs",
+    "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
+    "src/Client/Infrastructure/Networking/DownloadIntentHttpClient.cs",
+    "src/Client/Infrastructure/Networking/HttpRangeTransferEngine.cs",
+    "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+    "src/Client/Presentation/Downloads/DownloadProgressControl.cs",
+    "src/Client/Presentation/Downloads/DownloadProgressViewModel.cs",
+    "src/Client/Program.cs",
+    "tests/IntegrationTests/ClientStateStoreConcurrencyTests.cs",
+    "tests/IntegrationTests/DownloadRestartRecoveryTests.cs",
+    "tests/UnitTests/DownloadRecoveryTests.cs"
+  ]
+}

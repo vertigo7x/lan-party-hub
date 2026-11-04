@@ -7,6 +7,7 @@ using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
+using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
@@ -151,6 +152,12 @@ public sealed class App : Avalonia.Application
 
             desktop.MainWindow = window;
 
+            // AD-11, AC2, SM-2: las descargas que sobrevivieron al último reinicio se
+            // RECUPERAN cuando la ventana ya está cableada, así que la operación se
+            // presenta como «Reanudando desde 42 % · 3,2 GB de 7,6 GB» con el offset
+            // persistido (UX-DR-6, UX-DR-45).
+            _ = RecoverDownloadsAsync(downloadViewModel);
+
             // El aviso de la sincronización pendiente se actualiza con el estado que
             // publica la composición, y NO bloquea la navegación (AC3, UX-DR-32).
             //
@@ -248,6 +255,80 @@ public sealed class App : Avalonia.Application
         // AC4, UX-DR-22: la cancelación destruye trabajo no recuperable, así que la
         // interfaz PIDE CONFIRMACIÓN y nombra lo que se pierde antes de cancelar.
         control.CancelButton.Click += (_, _) => ShowCancelConfirmation(viewModel, coordinator, window);
+    }
+
+    /// <summary>
+    /// Recovers the downloads that survived the last restart of the machine
+    /// (AC2, AD-11, AD-20, SM-2).
+    ///
+    /// <para>
+    /// La recuperación NO puede impedir que el cliente arranque: si el servidor no está,
+    /// la operación queda persistida y se reintenta en el siguiente arranque, así que el
+    /// offset no se pierde (AD-11).
+    /// </para>
+    /// <para>
+    /// AD-6, AC5: un cliente INCOMPATIBLE no reanuda la descarga y recibe el diagnóstico
+    /// de incompatibilidad de versión. La incompatibilidad NO es un estado: lo que el
+    /// jugador ve es el texto con las dos versiones y el siguiente paso (AD-27,
+    /// UX-DR-31).
+    /// </para>
+    /// <para>
+    /// La operación recuperada se presenta con la microcopy «Reanudando desde …», que NO
+    /// es un estado nuevo: el estado de la operación sigue siendo el que la máquina
+    /// declara (AD-10, UX-DR-45).
+    /// </para>
+    /// </summary>
+    /// <param name="viewModel">View model of the progress of the download.</param>
+    private async Task RecoverDownloadsAsync(DownloadProgressViewModel viewModel)
+    {
+        if (_downloads is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var endpoint = ResolveEndpoint();
+
+            if (endpoint is not null)
+            {
+                var gate = await _downloads.Coordinator
+                    .CheckCompatibilityAsync(endpoint, CancellationToken.None)
+                    .ConfigureAwait(true);
+
+                if (gate.IsIncompatible)
+                {
+                    // El cliente incompatible NO reanuda: la operación sigue persistida y
+                    // el diagnóstico se publica en la superficie de Conexión, que es
+                    // donde vive el diagnóstico de la versión (AD-6, AC5).
+                    _connectionViewModel?.ApplyVersionIncompatibility(
+                        ClientBuildVersion.Current,
+                        gate.ServerVersion);
+
+                    return;
+                }
+            }
+
+            var recovered = await _downloads.Coordinator
+                .RecoverAsync(_downloads.ContentUriResolver, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (recovered.Count == 0)
+            {
+                return;
+            }
+
+            // La microcopy de la reanudación se aplica ANTES de que la operación se
+            // presente, así que el jugador lee «Reanudando desde 42 % · 3,2 GB de 7,6 GB»
+            // y no un porcentaje suelto (UX-DR-6, UX-DR-45).
+            _uiThread.Post(() => viewModel.ApplyResuming(true));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La recuperación NO puede impedir que el jugador use el cliente: las
+            // operaciones siguen persistidas y se reintentan en el siguiente arranque
+            // (AD-11).
+        }
     }
 
     /// <summary>

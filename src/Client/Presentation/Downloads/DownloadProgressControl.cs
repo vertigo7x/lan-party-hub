@@ -140,7 +140,12 @@ public sealed class DownloadProgressControl : UserControl
     private void Render()
     {
         _stateText.Text = _viewModel.StateText;
-        _progressText.Text = _viewModel.ProgressText;
+
+        // AC2, UX-DR-45: el texto lleva la microcopy de la reanudación cuando la
+        // operación se está reanudando, y el porcentaje y el par de tamaños siguen
+        // saliendo de UNA SOLA fuente, así que la barra nunca contradice al texto
+        // (UX-DR-5, UX-DR-13).
+        _progressText.Text = _viewModel.ProgressTextWithResume;
 
         // UX-DR-13: la barra dibuja la MISMA fracción que el porcentaje declara.
         _bar.Value = _viewModel.BarFraction * 100;
