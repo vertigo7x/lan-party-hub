@@ -380,15 +380,32 @@ def run_command_watched(
     return CommandResult(argv=argv, code=code, log=log_path, seconds=time.time() - started)
 
 
-def git(*args: str, check: bool = True, timeout: float | None = DEFAULT_COMMAND_TIMEOUT) -> CommandResult:
-    result = run_command(("git", *args), timeout=timeout)
+def git(
+    *args: str,
+    check: bool = True,
+    timeout: float | None = DEFAULT_COMMAND_TIMEOUT,
+    cwd: Path | None = None,
+) -> CommandResult:
+    """Run a git command, optionally inside another checkout.
+
+    `cwd` is what lets a worker drive its own worktree: the helpers default to
+    the canonical checkout, and a worker that operates on the canonical tree by
+    accident would corrupt the story that another worker is running.
+    """
+    result = run_command(("git", *args), timeout=timeout, cwd=cwd or REPO_ROOT)
     if check and not result.ok:
         raise DriverError(f"git {' '.join(args)} failed ({result.code}): {result.stdout.strip()}")
     return result
 
 
-def gh(*args: str, check: bool = True, timeout: float | None = DEFAULT_COMMAND_TIMEOUT) -> CommandResult:
-    result = run_command(("gh", *args), timeout=timeout)
+def gh(
+    *args: str,
+    check: bool = True,
+    timeout: float | None = DEFAULT_COMMAND_TIMEOUT,
+    cwd: Path | None = None,
+) -> CommandResult:
+    """Run a gh command, optionally inside another checkout."""
+    result = run_command(("gh", *args), timeout=timeout, cwd=cwd or REPO_ROOT)
     if check and not result.ok:
         raise DriverError(f"gh {' '.join(args)} failed ({result.code}): {result.stdout.strip()}")
     return result
@@ -723,7 +740,7 @@ def run_verifications(
 # ---------------------------------------------------------------------------
 
 
-def preserve_pending_work(story: Story) -> None:
+def preserve_pending_work(story: Story, cwd: Path | None = None) -> None:
     """Commit the work of an interrupted story so it is never lost.
 
     The work of a story that did not finish is uncommitted, and uncommitted
@@ -732,17 +749,20 @@ def preserve_pending_work(story: Story) -> None:
     copy of itself. Committing it as bookkeeping keeps the tree clean and the
     story recoverable. The subject starts with `chore(` on purpose, so it is
     left out of the squashed commit that lands on `main`.
+
+    `cwd` points at the worktree of the story when the driver runs the workers
+    in parallel: the pending work of one worker lives in its own checkout.
     """
     if not branch_exists(story.branch):
         return
-    branch = git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    branch = git("rev-parse", "--abbrev-ref", "HEAD", check=False, cwd=cwd).stdout.strip()
     if branch != story.branch:
         return
-    if not git("status", "--porcelain").stdout.strip():
+    if not git("status", "--porcelain", cwd=cwd).stdout.strip():
         return
     _log(f"committing the pending work of story {story.short_id} so it is not lost")
-    git("add", "-A")
-    git("commit", "-m", f"chore(story): work in progress for story {story.short_id}")
+    git("add", "-A", cwd=cwd)
+    git("commit", "-m", f"chore(story): work in progress for story {story.short_id}", cwd=cwd)
 
 
 def require_clean_tree() -> None:
@@ -791,6 +811,56 @@ def create_branch(branch: str) -> None:
     git("checkout", "-b", branch, BASE_BRANCH)
 
 
+def worktree_path_for(root: Path, label: str) -> Path:
+    """The worktree directory of a story, always under the given root."""
+    return root / label
+
+
+def worktree_registered(path: Path) -> bool:
+    """True when git still knows about the worktree at `path`."""
+    listed = git("worktree", "list", "--porcelain", check=False).stdout
+    wanted = str(path.resolve() if path.exists() else path).replace("\\", "/")
+    for line in listed.splitlines():
+        if line.startswith("worktree "):
+            current = line[len("worktree "):].strip().replace("\\", "/")
+            if current == wanted:
+                return True
+    return False
+
+
+def add_worktree(branch: str, path: Path, base: str = f"origin/{BASE_BRANCH}") -> Path:
+    """Create the worktree of `branch` at `path`, based on `base`.
+
+    The branch is reused when it already exists, so an interrupted story keeps
+    its work instead of starting over: the worktree is attached to the
+    existing branch and the pending commits come with it.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if branch_exists(branch):
+        git("worktree", "add", "--force", str(path), branch)
+    else:
+        git("worktree", "add", "--force", "-b", branch, str(path), base)
+    return path
+
+
+def remove_worktree(path: Path, force: bool = False) -> bool:
+    """Remove a worktree and its administrative entry.
+
+    The worktree of a story that failed is kept: its directory holds the
+    evidence of the failure and the branch holds the work.
+    """
+    if not worktree_registered(path):
+        return False
+    args = ["worktree", "remove"]
+    if force:
+        args.append("--force")
+    args.append(str(path))
+    result = git(*args, check=False)
+    if not result.ok:
+        git("worktree", "prune", check=False)
+    return result.ok
+
+
 def is_base_ancestor() -> bool:
     """True when `origin/main` is already contained in the current branch."""
     git("fetch", "origin", BASE_BRANCH)
@@ -798,7 +868,7 @@ def is_base_ancestor() -> bool:
     return result.ok
 
 
-def rebase_onto_main() -> None:
+def rebase_onto_main(cwd: Path | None = None) -> None:
     """Rebase the story branch onto the current main, keeping the work.
 
     The work of an interrupted story is usually uncommitted, and a rebase
@@ -807,36 +877,36 @@ def rebase_onto_main() -> None:
     subject is the one that lands on `main`.
     """
     _log("main moved while the story ran: rebasing the branch onto it")
-    dirty = git("status", "--porcelain").stdout.strip()
+    dirty = git("status", "--porcelain", cwd=cwd).stdout.strip()
     stashed = False
     if dirty:
-        git("stash", "push", "--include-untracked", "-m", "build-loop rebase")
+        git("stash", "push", "--include-untracked", "-m", "build-loop rebase", cwd=cwd)
         stashed = True
     try:
-        git("rebase", f"origin/{BASE_BRANCH}")
+        git("rebase", f"origin/{BASE_BRANCH}", cwd=cwd)
     except DriverError:
-        git("rebase", "--abort", check=False)
+        git("rebase", "--abort", check=False, cwd=cwd)
         if stashed:
-            git("stash", "pop", "--index", check=False)
+            git("stash", "pop", "--index", check=False, cwd=cwd)
         raise DriverError("the rebase onto main conflicted; the branch was left untouched")
     if stashed:
         try:
-            git("stash", "pop", "--index")
+            git("stash", "pop", "--index", cwd=cwd)
         except DriverError as error:
             raise DriverError(
                 f"the rebase onto main worked but the work of the story could not be restored: {error}"
             )
 
 
-def push_branch(branch: str) -> None:
+def push_branch(branch: str, cwd: Path | None = None) -> None:
     """Push the story branch, replacing a previously published attempt."""
     if remote_branch_exists(branch):
-        git("push", "--force-with-lease", "origin", branch)
+        git("push", "--force-with-lease", "origin", branch, cwd=cwd)
     else:
-        git("push", "--set-upstream", "origin", branch)
+        git("push", "--set-upstream", "origin", branch, cwd=cwd)
 
 
-def open_pull_request(story: Story, title: str, body: str) -> tuple[int, str]:
+def open_pull_request(story: Story, title: str, body: str, cwd: Path | None = None) -> tuple[int, str]:
     result = gh(
         "pr",
         "create",
@@ -848,6 +918,7 @@ def open_pull_request(story: Story, title: str, body: str) -> tuple[int, str]:
         title,
         "--body",
         body,
+        cwd=cwd,
     )
     url = ""
     for line in result.stdout.splitlines():
@@ -856,15 +927,15 @@ def open_pull_request(story: Story, title: str, body: str) -> tuple[int, str]:
     match = re.search(r"/pull/(\d+)", url)
     if match:
         return int(match.group(1)), url
-    number = gh("pr", "view", "--json", "number,url").stdout
+    number = gh("pr", "view", "--json", "number,url", cwd=cwd).stdout
     fields = json.loads(number or "{}")
     if "number" not in fields:
         raise DriverError(f"could not read the pull request number from: {result.stdout.strip()}")
     return int(fields["number"]), str(fields.get("url", ""))
 
 
-def find_open_pull_request(branch: str) -> tuple[int, str] | None:
-    result = gh("pr", "list", "--head", branch, "--state", "open", "--json", "number,url", check=False)
+def find_open_pull_request(branch: str, cwd: Path | None = None) -> tuple[int, str] | None:
+    result = gh("pr", "list", "--head", branch, "--state", "open", "--json", "number,url", check=False, cwd=cwd)
     if not result.ok:
         raise DriverError(f"gh pr list failed: {result.stdout.strip()}")
     try:
@@ -952,9 +1023,11 @@ def select_commit_message(messages: Sequence[str], story: Story | None = None) -
     return subject.strip(), "\n\n".join(part for part in body_parts if part)
 
 
-def branch_commit_message(story: Story, base: str = f"origin/{BASE_BRANCH}") -> tuple[str, str]:
+def branch_commit_message(
+    story: Story, base: str = f"origin/{BASE_BRANCH}", cwd: Path | None = None
+) -> tuple[str, str]:
     """The conventional commit message the story branch carries."""
-    raw = git("log", "--reverse", "--format=%H%x1f%B%x1e", f"{base}..HEAD").stdout
+    raw = git("log", "--reverse", "--format=%H%x1f%B%x1e", f"{base}..HEAD", cwd=cwd).stdout
     messages = parse_commit_messages(raw)
     if not messages:
         raise DriverError(f"the story branch carries no commit against {base}")
@@ -1195,14 +1268,15 @@ def build_pull_request_body(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def update_and_commit_sprint_status(story: Story) -> None:
-    epic_value = update_sprint_status(story)
+def update_and_commit_sprint_status(story: Story, cwd: Path | None = None) -> None:
+    root = cwd or REPO_ROOT
+    epic_value = update_sprint_status(story, root / SPRINT_STATUS_FILE.relative_to(REPO_ROOT))
     _log(f"sprint status: story {story.label} done, epic-{story.epic} {epic_value}")
-    git("add", str(SPRINT_STATUS_FILE.relative_to(REPO_ROOT)))
-    if git("diff", "--cached", "--quiet", check=False).ok:
+    git("add", str(SPRINT_STATUS_FILE.relative_to(REPO_ROOT)), cwd=root)
+    if git("diff", "--cached", "--quiet", check=False, cwd=root).ok:
         _log("the sprint status was already up to date")
         return
-    git("commit", "-m", f"chore(sprint): mark story {story.short_id} as done")
+    git("commit", "-m", f"chore(sprint): mark story {story.short_id} as done", cwd=root)
 
 
 def spec_belongs_to_story(spec: Path, story: Story) -> bool:
