@@ -18,6 +18,13 @@ namespace LANPartyHub.UnitTests;
 /// AC4, AC5).
 /// </para>
 /// </summary>
+/// <para>
+/// La clase vive en la COLECCIÓN de las superficies de Avalonia, que NO corre en
+/// paralelo: la plataforma headless tiene UN dispatcher con un hilo propio y dos pruebas
+/// que lo usen a la vez se pisan con «the calling thread cannot access this object».
+/// </para>
+/// </summary>
+[Collection(AvaloniaSurfaceCollection.Name)]
 public sealed class CatalogSurfaceTests
 {
     [Fact]

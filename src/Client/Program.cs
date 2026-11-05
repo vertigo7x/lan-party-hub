@@ -6,6 +6,7 @@ using LANPartyHub.Client.Infrastructure.Configuration;
 using LANPartyHub.Client.Infrastructure.Logging;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using LANPartyHub.Client.Presentation;
+using LANPartyHub.Client.Presentation.Install;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,7 @@ public static class Program
         TransferComposition? transfer = null;
         DownloadComposition? downloads = null;
         InstallationComposition? installations = null;
+        DialogPrivilegedOperationConfirmation? privilegedConfirmation = null;
 
         try
         {
@@ -105,13 +107,21 @@ public static class Program
             // AD-7, AD-8, AD-9, AC1: la composición de las instalaciones. El manifiesto
             // firmado se pide al servidor, su firma se valida contra el ancla ya fijada y
             // SOLO después se crea el directorio de instalación (AC1, AC3).
-            installations = OpenInstallations(startup, correlationScope, loggerFactory);
+            //
+            // AC2: la confirmación de lo privilegiado la lleva el overlay de UN SOLO
+            // NIVEL dentro de la ventana, así que el puerto se construye aquí y el
+            // presentador se fija cuando la ventana ya existe (UX-DR-16, UX-DR-37).
+            privilegedConfirmation = new DialogPrivilegedOperationConfirmation(
+                (operation, detail) => new PrivilegedOperationDialog(operation, detail));
+
+            installations = OpenInstallations(startup, correlationScope, loggerFactory, privilegedConfirmation);
 
             BuildAvaloniaApp(
                 startup.Settings,
                 catalogSync: catalogSync,
                 connection: connection,
-                downloads: downloads)
+                downloads: downloads,
+                installations: installations)
                 .StartWithClassicDesktopLifetime(args);
 
             return 0;
@@ -153,13 +163,17 @@ public static class Program
     /// <param name="downloads">
     /// Composition of the downloads, or <c>null</c> when there is none.
     /// </param>
+    /// <param name="installations">
+    /// Composition of the installations, or <c>null</c> when there is none.
+    /// </param>
     public static AppBuilder BuildAvaloniaApp(
         ClientSettings? settings = null,
         string? startupError = null,
         CatalogSyncComposition? catalogSync = null,
         ConnectionComposition? connection = null,
-        DownloadComposition? downloads = null) =>
-        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection, downloads: downloads)).UsePlatformDetect();
+        DownloadComposition? downloads = null,
+        InstallationComposition? installations = null) =>
+        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection, downloads: downloads, installations: installations)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -513,11 +527,16 @@ public static class Program
     /// <param name="startup">Outcome of the startup of the client.</param>
     /// <param name="correlationScope">Scope that correlates the log of the client.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="confirmation">
+    /// Port of the confirmation of the privileged operations, or <c>null</c> when the
+    /// composition is built without interfaz (AC2).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static InstallationComposition? OpenInstallations(
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IPrivilegedOperationConfirmation? confirmation = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -556,7 +575,11 @@ public static class Program
             // AD-27: la validación de la autenticidad se hace contra el ancla de
             // confianza YA FIJADA, que vive en la base de datos del cliente. El store es
             // el que la lee, así que la composición lo recibe como el port que es.
-            var stateStore = new ClientStateStore(context);
+            //
+            // AC5: el store recibe el layout para que el error de una instalación
+            // fallida tenga su sumidero durable y la acción «Reintentar» sobreviva al
+            // reinicio del cliente (NFR-9).
+            var stateStore = new ClientStateStore(context, layout);
 
             composition = InstallationComposition.Create(
                 new Uri(startup.ServerAddress, UriKind.Absolute),
@@ -564,7 +587,8 @@ public static class Program
                 layout,
                 stateStore,
                 stateStore,
-                loggerFactory);
+                loggerFactory,
+                confirmation);
         }
         catch (Exception exception)
         {

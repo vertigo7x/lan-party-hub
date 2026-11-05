@@ -135,4 +135,43 @@ public interface IClientStateStore
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task with the installation, or with <c>null</c>.</returns>
     Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Persists the FAILURE of an installation, so the error queda registrado y la
+    /// operación es REINTENTABLE sin reinstalar el cliente (AD-8, AD-11, AC5).
+    ///
+    /// <para>
+    /// El estado de la instalación vive en la fila que el cliente ya tiene —el enum ya
+    /// admite <c>Failed</c>—, así que NO hay migración ni tabla nueva: lo que se añade es
+    /// el CÓDIGO del error en el sumidero durable, para que el siguiente arranque sepa
+    /// POR QUÉ falló la operación (AD-11, AD-25).
+    /// </para>
+    /// </summary>
+    /// <param name="installation">
+    /// Installation whose failure is persisted. Its state is the terminal <c>Failed</c>.
+    /// </param>
+    /// <param name="errorCode">
+    /// Stable code of the error of the catalog that explains the failure (AD-15, AD-25).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the failure is persisted.</returns>
+    Task SaveInstallationFailureAsync(
+        ClientInstallation installation,
+        string errorCode,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the code of the error of a FAILED installation, or <c>null</c> when the
+    /// installation did not fail or the client does not know any (AD-11, AC5).
+    ///
+    /// <para>
+    /// El código se lee del sumidero durable, así que sobrevive al reinicio del cliente y
+    /// la acción «Reintentar» puede ofrecer el diagnóstico sin volver a instalar el
+    /// cliente (AC5, NFR-9).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the code of the error, or with <c>null</c>.</returns>
+    Task<string?> LoadInstallationFailureAsync(string gameId, CancellationToken cancellationToken);
 }

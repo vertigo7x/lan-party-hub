@@ -46,6 +46,32 @@ public interface IInstallTreeWriter
         string rootPath,
         string? packagePath,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Applies the typed operations of the manifest inside the installation root, and
+    /// PUBLISHES the progress of the operation (AD-7, AD-9, AC4).
+    ///
+    /// <para>
+    /// La publicación del progreso es lo que distingue esta sobrecarga de la anterior: el
+    /// ejecutor pide la CONFIRMACIÓN de la operación privilegiada y publica la fase con
+    /// el porcentaje de los bytes REALES (AC2, AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="manifest">Manifest whose operations are applied.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    /// <param name="packagePath">
+    /// Absolute path of the file that holds the bytes of the validated package, or
+    /// <c>null</c> when the package is not available on disk.
+    /// </param>
+    /// <param name="progress">Port that receives the progress of the operation.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The outcome of the application of the tree.</returns>
+    Task<InstallTreeOutcome> ApplyAsync(
+        InstallationManifest manifest,
+        string rootPath,
+        string? packagePath,
+        IInstallProgressSink progress,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -81,8 +107,8 @@ public sealed record InstallationResult
     /// The operation was REJECTED before any write, and the error carries its cause
     /// (AC2, AC3).
     /// </summary>
-    /// <param name="Error">Error of the catalog that explains the rejection.</param>
-    /// <param name="Reason">Human readable reason of the rejection.</param>
+    /// <param name="error">Error of the catalog that explains the rejection.</param>
+    /// <param name="reason">Human readable reason of the rejection.</param>
     /// <returns>The result of the rejection.</returns>
     public static InstallationResult Rejected(ApiError error, string reason) =>
         new() { IsRejected = true, Error = error, Reason = reason };
@@ -107,11 +133,38 @@ public sealed record InstallationResult
             InstallPath = installPath,
         };
 
+    /// <summary>
+    /// The operation was CERTIFIED, and the tree was ALREADY installed with the same
+    /// version, así que no se repitió ninguna operación (AC1).
+    /// </summary>
+    /// <param name="verdict">Verdict of the certification.</param>
+    /// <param name="installDirectoryId">Opaque identifier of the installation root.</param>
+    /// <param name="installPath">Local path of the installation root.</param>
+    /// <returns>The result of the certification.</returns>
+    public static InstallationResult AlreadyInstalled(
+        InstallationVerdict verdict,
+        string installDirectoryId,
+        string installPath) =>
+        new()
+        {
+            IsRejected = false,
+            Verdict = verdict,
+            InstallDirectoryId = installDirectoryId,
+            InstallPath = installPath,
+            IsAlreadyInstalled = true,
+        };
+
     /// <summary>Whether the operation was rejected before writing anything (AC2).</summary>
     public bool IsRejected { get; init; }
 
     /// <summary>Whether the operation reached a certified state (AC4).</summary>
     public bool IsCertified => !IsRejected;
+
+    /// <summary>
+    /// Whether the tree was ALREADY installed with the same version, así que la
+    /// operación NO repitió ninguna escritura (AC1).
+    /// </summary>
+    public bool IsAlreadyInstalled { get; init; }
 
     /// <summary>
     /// Error of the catalog that explains the rejection, or <c>null</c> when the
@@ -142,6 +195,20 @@ public sealed record InstallationResult
     /// </summary>
     public string? InstallPath { get; init; }
 }
+
+/// <summary>
+/// The operation of an installation that FAILED, and the data that «Reintentar» needs to
+/// repeat it (AC5, NFR-9, UX-DR-34).
+///
+/// <param name="GameId">Identifier of the videogame that is installed.</param>
+/// <param name="PackageId">Opaque identifier of the package that was being installed.</param>
+/// <param name="Version">Version of the videogame that is installed.</param>
+/// <param name="ErrorCode">Stable code of the error of the catalog that explains the failure.</param>
+public sealed record FailedInstallation(
+    string GameId,
+    string PackageId,
+    string Version,
+    string ErrorCode);
 
 /// <summary>
 /// Coordinator of the installation operations of the client (AD-7, AD-8, AD-9, AD-10,
@@ -181,6 +248,20 @@ public sealed class InstallationCoordinator
     private readonly IInstallTreeWriter _tree;
     private readonly IClientStateStore _stateStore;
     private readonly ILogger<InstallationCoordinator> _logger;
+
+    /// <summary>Raised when the progress of an installation changes (AC4).</summary>
+    public event Action<InstallProgress>? ProgressChanged;
+
+    /// <summary>
+    /// The operation that FAILED, así que la acción «Reintentar» sabe QUÉ repetir sin
+    /// reinstalar el cliente (AC5, NFR-9, UX-DR-34).
+    ///
+    /// <para>
+    /// El dato vive en el COORDINADOR porque es el dueño del orden normativo y de la
+    /// identidad de la operación: la vista sólo lo presenta (AD-1).
+    /// </para>
+    /// </summary>
+    public FailedInstallation? FailedOperation { get; private set; }
 
     /// <summary>Creates the coordinator of the installations.</summary>
     /// <param name="manifests">Port of the read of the signed manifest of a package.</param>
@@ -310,17 +391,109 @@ public sealed class InstallationCoordinator
                 packageId);
         }
 
+        // AC1: una instalación YA VÁLIDA de la MISMA versión NO repite operaciones. La
+        // certificación previa decide si el árbol ya está bien, y sólo entonces se
+        // escriben las operaciones del manifiesto (AC1).
+        var existing = await CertifyExistingAsync(gameId, manifest, rootPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            _logger.LogInformation(
+                "La instalación del juego {GameId} ya está certificada con la versión {Version}: no se repite ninguna operación.",
+                gameId,
+                installedVersion);
+
+            return InstallationResult.AlreadyInstalled(
+                existing,
+                InstallationCertification.DeriveInstallDirectoryId(rootPath),
+                rootPath);
+        }
+
         // La operación pasa por `ValidatingInstallation` antes de terminar en
         // `Installed` o en `Repairable` (AD-10, AC4).
         var machine = new InstallationStateMachine(InstallationState.Pending);
 
         machine.TryTransitionTo(InstallationState.Installing);
-        machine.TryTransitionTo(InstallationState.ValidatingInstallation);
 
-        // PASO 4 (continuación): la aplicación del árbol por puerto (AD-7, AD-9).
-        var tree = await _tree
-            .ApplyAsync(manifest, rootPath, packagePath, cancellationToken)
-            .ConfigureAwait(false);
+        // AC4: el progreso se publica con la fase y el porcentaje entero de los bytes
+        // REALES escritos, así que la barra nunca contradice al texto (UX-DR-13).
+        var sink = new CoordinatorProgressSink(this);
+
+        // PASO 4 (continuación): la aplicación del árbol por puerto (AD-7, AD-9). La
+        // operación privilegiada pide CONFIRMACIÓN EXPLÍCITA dentro de esta llamada, y
+        // la máquina pasa por `AwaitingConfirmation` mientras la espera (AC2, AD-10).
+        InstallTreeOutcome tree;
+
+        try
+        {
+            tree = await _tree
+                .ApplyAsync(manifest, rootPath, packagePath, sink, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (PrivilegedOperationDeclinedException exception)
+        {
+            // AC2, AC5: el decline NO es una escritura. La operación queda FALLIDA con su
+            // error PERSISTIDO, así que la acción «Reintentar» está disponible sin
+            // reinstalar el cliente (NFR-9).
+            machine.TryTransitionTo(InstallationState.AwaitingConfirmation);
+            machine.TryTransitionTo(InstallationState.Installing);
+            machine.TryTransitionTo(InstallationState.Failed);
+
+            await PersistFailureAsync(
+                gameId,
+                installedVersion,
+                rootPath,
+                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
+                exception.Message,
+                cancellationToken).ConfigureAwait(false);
+
+            Publish(InstallPhase.Failed, sink.LastBytesWritten, sink.LastTotalBytes);
+
+            FailedOperation = new FailedInstallation(
+                gameId,
+                packageId,
+                installedVersion,
+                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode);
+
+            return Reject(
+                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
+                exception.Message,
+                packageId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // AC5: el fallo de la aplicación del árbol deja la operación FALLIDA con su
+            // error PERSISTIDO, y la operación es REINTENTABLE sobre el paquete validado
+            // (NFR-9).
+            machine.TryTransitionTo(InstallationState.Failed);
+
+            await PersistFailureAsync(
+                gameId,
+                installedVersion,
+                rootPath,
+                ErrorCatalog.InstallOperationFailedCode,
+                exception.Message,
+                cancellationToken).ConfigureAwait(false);
+
+            Publish(InstallPhase.Failed, sink.LastBytesWritten, sink.LastTotalBytes);
+
+            FailedOperation = new FailedInstallation(
+                gameId,
+                packageId,
+                installedVersion,
+                ErrorCatalog.InstallOperationFailedCode);
+
+            _logger.LogError(
+                exception,
+                "La instalación del juego {GameId} falló al aplicar el manifiesto: la operación queda fallida y es reintentable.",
+                gameId);
+
+            return Reject(
+                ErrorCatalog.InstallOperationFailedCode,
+                $"La instalación del juego '{gameId}' falló al aplicar el manifiesto: {exception.Message}",
+                packageId);
+        }
 
         // AD-9: la ruta que salió de la raíz se registra con su forma CANÓNICA, que es
         // la que de verdad intentó salirse (AD-9, AC6).
@@ -346,6 +519,7 @@ public sealed class InstallationCoordinator
             pathsConfinedToRoot: tree.PathsConfinedToRoot,
             repairablePackageAvailable: true);
 
+        machine.TryTransitionTo(InstallationState.ValidatingInstallation);
         machine.TryTransitionTo(verdict.State);
 
         // El identificador de la raíz es ESTABLE: se deriva de su ruta canónica, así que
@@ -362,6 +536,13 @@ public sealed class InstallationCoordinator
                     installDirectoryId),
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // AC4: la operación terminada publica su fase final, y la barra conserva su
+        // longitud REAL (UX-DR-13).
+        Publish(
+            verdict.IsInstalled ? InstallPhase.Completed : InstallPhase.Failed,
+            sink.LastBytesWritten,
+            sink.LastTotalBytes);
 
         // AC6: el motivo de la reparabilidad y la acción quedan REGISTRADOS, y el
         // veredicto los lleva de forma VISIBLE (la microcopia del motivo llega en 8.2).
@@ -389,6 +570,209 @@ public sealed class InstallationCoordinator
         }
 
         return InstallationResult.Certified(verdict, installDirectoryId, rootPath);
+    }
+
+    /// <summary>
+    /// REINTENTA an installation that FAILED, reusing the package that was already
+    /// validated (AC5, NFR-9).
+    ///
+    /// <para>
+    /// «Reintentar» es una operación NUEVA sobre el paquete validado: no reinstala el
+    /// cliente y no vuelve a descargar los bytes, así que el fallo anterior no se pierde
+    /// como diagnóstico (AC5).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    public Task<InstallationResult> RetryAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installedVersion);
+
+        // El reintento es una operación NUEVA, así que el fallo anterior deja de ser el
+        // fallo vigente mientras la operación corre (AC5).
+        FailedOperation = null;
+
+        return InstallAsync(gameId, packageId, installedVersion, cancellationToken);
+    }
+
+    /// <summary>
+    /// Certifies the tree that is ALREADY installed, and tells whether it is a valid
+    /// installation of the same version (AC1).
+    ///
+    /// <para>
+    /// La certificación previa decide si hace falta ESCRIBIR algo: una instalación ya
+    /// válida de la misma versión NO repite las operaciones del manifiesto (AC1).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="manifest">Manifest of the package that is being installed.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The verdict of the tree that is already installed, or <c>null</c> when the tree is
+    /// NOT a valid installation of this manifest.
+    /// </returns>
+    private async Task<InstallationVerdict?> CertifyExistingAsync(
+        string gameId,
+        InstallationManifest manifest,
+        string rootPath,
+        CancellationToken cancellationToken)
+    {
+        var registered = await _stateStore
+            .LoadInstallationAsync(gameId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (registered is null || registered.ValidationState != InstallationState.Installed)
+        {
+            return null;
+        }
+
+        if (!string.Equals(registered.InstalledVersion, manifest.PackageVersion, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        // La fila declarada dice que la instalación es válida, así que la CONFIRMACIÓN
+        // viene del árbol: la operación `verify` del manifiesto corre sobre los archivos
+        // que ya están escritos (AC1, AD-7).
+        var verified = VerifyExistingTree(manifest, rootPath);
+
+        if (!verified)
+        {
+            return null;
+        }
+
+        return InstallationCertification.Certify(
+            packageValidatedAgainstAnchor: true,
+            manifestVerifyPassed: true,
+            pathsConfinedToRoot: true,
+            repairablePackageAvailable: true);
+    }
+
+    /// <summary>
+    /// Tells whether the tree that is already installed SATISFIES the <c>verify</c>
+    /// operation of the manifest (AC1, AD-7).
+    /// </summary>
+    /// <param name="manifest">Manifest of the package that is being installed.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    /// <returns><c>true</c> when the tree passes the verification.</returns>
+    private bool VerifyExistingTree(InstallationManifest manifest, string rootPath)
+    {
+        foreach (var operation in manifest.Operations)
+        {
+            if (operation is not InstallationManifest.Verify verify)
+            {
+                continue;
+            }
+
+            try
+            {
+                var path = _paths.ResolveInsideRoot(verify.Path);
+
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+            }
+            catch (InstallPathOutsideRootException)
+            {
+                // Una ruta que sale de la raíz NO puede estar en un árbol válido (AD-9).
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Persists the FAILURE of an installation, so the error queda registrado y la
+    /// operación es REINTENTABLE sin reinstalar el cliente (AD-8, AD-11, AC5).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    /// <param name="errorCode">Stable code of the error of the catalog.</param>
+    /// <param name="reason">Human readable reason of the failure.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the failure is persisted.</returns>
+    private async Task PersistFailureAsync(
+        string gameId,
+        string installedVersion,
+        string rootPath,
+        string errorCode,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var installDirectoryId = InstallationCertification.DeriveInstallDirectoryId(rootPath);
+
+        await _stateStore
+            .SaveInstallationFailureAsync(
+                new ClientInstallation(
+                    gameId,
+                    installedVersion,
+                    InstallationState.Failed,
+                    rootPath,
+                    installDirectoryId),
+                errorCode,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // AD-15, AD-25: el diagnóstico lleva el `ApiError` COMPLETO del catálogo, que es
+        // el sumidero durable del fallo.
+        var error = ErrorCatalog.Resolve(errorCode);
+
+        _logger.LogError(
+            "La instalación del juego {GameId} queda FALLIDA con el código {Code}: {Message} {Cause} {NextStep} Detalle: {Reason}",
+            gameId,
+            error.Code,
+            error.Message,
+            error.Cause,
+            error.NextStep,
+            reason);
+    }
+
+    /// <summary>
+    /// Publishes the progress of the operation to whoever is listening (AC4).
+    /// </summary>
+    /// <param name="phase">Phase the operation is in.</param>
+    /// <param name="bytesWritten">Bytes that have really been written so far.</param>
+    /// <param name="totalBytes">Total bytes that the operation expects to write.</param>
+    private void Publish(InstallPhase phase, long bytesWritten, long? totalBytes) =>
+        ProgressChanged?.Invoke(new InstallProgress(phase, bytesWritten, totalBytes));
+
+    /// <summary>
+    /// Sumidero del progreso que PUBLICA en el coordinador, así que la vista recibe la
+    /// fase y el porcentaje de los bytes REALES (AC4).
+    /// </summary>
+    private sealed class CoordinatorProgressSink : IInstallProgressSink
+    {
+        private readonly InstallationCoordinator _coordinator;
+
+        public CoordinatorProgressSink(InstallationCoordinator coordinator) =>
+            _coordinator = coordinator;
+
+        /// <summary>Bytes that were really written in the last publication.</summary>
+        public long LastBytesWritten { get; private set; }
+
+        /// <summary>Total bytes in the last publication.</summary>
+        public long? LastTotalBytes { get; private set; }
+
+        public void Report(InstallPhase phase, long bytesWritten, long? totalBytes)
+        {
+            LastBytesWritten = bytesWritten;
+            LastTotalBytes = totalBytes;
+
+            _coordinator.Publish(phase, bytesWritten, totalBytes);
+        }
     }
 
     /// <summary>

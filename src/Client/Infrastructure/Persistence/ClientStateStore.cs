@@ -20,7 +20,14 @@ namespace LANPartyHub.Client.Infrastructure.Persistence;
 /// </summary>
 public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
 {
+    /// <summary>
+    /// Name of the folder of the data of the client that holds the CÓDIGO del error de
+    /// una instalación fallida (AD-11, AC5).
+    /// </summary>
+    public const string InstallationFailuresDirectoryName = "installation-failures";
+
     private readonly ClientStateDbContext _context;
+    private readonly IClientDataLayout? _layout;
 
     /// <summary>
     /// Gate that serializes the access to the context (AD-11, AD-24).
@@ -44,11 +51,17 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
 
     /// <summary>Creates the adapter over the database of the client.</summary>
     /// <param name="context">Database of the client.</param>
-    public ClientStateStore(ClientStateDbContext context)
+    /// <param name="layout">
+    /// Layout of the data folder of the client, needed to write the DURABLE sink of the
+    /// error of una instalación fallida. When it is <c>null</c> the failure only persists
+    /// el estado de la fila, y el código del error no tiene sumidero (AD-11, AC5).
+    /// </param>
+    public ClientStateStore(ClientStateDbContext context, IClientDataLayout? layout = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         _context = context;
+        _layout = layout;
     }
 
     /// <inheritdoc />
@@ -397,5 +410,120 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
         {
             _gate.Release();
         }
+    }
+
+    /// <inheritdoc />
+    public async Task SaveInstallationFailureAsync(
+        ClientInstallation installation,
+        string errorCode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installation.GameId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+
+        // AC5: la fila de la instalación queda en el estado terminal `Failed`, así que el
+        // siguiente arranque encuentra la operación como fallida y la acción «Reintentar»
+        // está disponible sin reinstalar el cliente (AD-10, AD-11).
+        await SaveInstallationAsync(
+            installation with { ValidationState = InstallationState.Failed },
+            cancellationToken).ConfigureAwait(false);
+
+        // AD-11, AC5: el CÓDIGO del error va al sumidero durable, para que el diagnóstico
+        // sobreviva al reinicio del cliente. Sin layout no hay sumidero, y el estado
+        // terminal de la fila ya basta para que la operación sea reintentable.
+        var path = FailurePathOf(installation.GameId);
+
+        if (path is null)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            await File.WriteAllTextAsync(path, errorCode, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // El sumidero durable es un diagnóstico y no un deber: un archivo que no se
+            // puede escribir no impide que la operación quede reintentable (AD-11).
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // El sumidero durable es un diagnóstico y no un deber.
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> LoadInstallationFailureAsync(
+        string gameId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+
+        var path = FailurePathOf(gameId);
+
+        if (path is null)
+        {
+            return null;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var code = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+
+            return string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The path of the DURABLE sink of the error de una instalación, or <c>null</c> when
+    /// the store does not know the layout (AD-11, AC5).
+    ///
+    /// <para>
+    /// El sumidero vive en la carpeta de datos del cliente, FUERA de la raíz de
+    /// instalación, así que escribir el diagnóstico no toca el confine de AD-9.
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <returns>The path of the durable sink, or <c>null</c>.</returns>
+    private string? FailurePathOf(string gameId)
+    {
+        if (_layout is null)
+        {
+            return null;
+        }
+
+        return Path.Combine(
+            _layout.Folder,
+            InstallationFailuresDirectoryName,
+            gameId + ".error");
     }
 }

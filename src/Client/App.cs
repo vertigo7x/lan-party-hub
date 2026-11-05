@@ -12,6 +12,7 @@ using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Downloads;
+using LANPartyHub.Client.Presentation.Install;
 using LANPartyHub.Client.Presentation.Status;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,6 +37,7 @@ public sealed class App : Avalonia.Application
     private readonly IUiThread _uiThread;
     private ConnectionSurfaceViewModel? _connectionViewModel;
     private ServerAvailabilityMonitor? _availabilityMonitor;
+    private InstallationComposition? _installations;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -58,19 +60,25 @@ public sealed class App : Avalonia.Application
     /// Composition of the downloads, or <c>null</c> when the client was not able to open
     /// it.
     /// </param>
+    /// <param name="installations">
+    /// Composition of the installations, or <c>null</c> when the client was not able to
+    /// open it.
+    /// </param>
     public App(
         ClientSettings? settings,
         string? startupError,
         CatalogSyncComposition? catalogSync = null,
         ConnectionComposition? connection = null,
         IUiThread? uiThread = null,
-        DownloadComposition? downloads = null)
+        DownloadComposition? downloads = null,
+        InstallationComposition? installations = null)
     {
         _settings = settings;
         _startupError = startupError;
         _catalogSync = catalogSync;
         _connection = connection;
         _downloads = downloads;
+        _installations = installations;
 
         // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
         // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
@@ -131,7 +139,13 @@ public sealed class App : Avalonia.Application
             var downloadViewModel = new DownloadProgressViewModel();
             var downloadControl = new DownloadProgressControl(downloadViewModel);
 
-            var statusPanel = new ConnectionStatusPanel(statusViewModel, downloadControl);
+            // AC4, UX-DR-34: la instalación en curso se presenta en el MISMO panel
+            // persistente, con su fase («Extrayendo», «Aplicando manifiesto») y su
+            // porcentaje entero de los bytes REALES.
+            var installViewModel = new InstallProgressViewModel();
+            var installControl = new InstallProgressControl(installViewModel);
+
+            var statusPanel = new ConnectionStatusPanel(statusViewModel, downloadControl, installControl);
 
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
@@ -149,6 +163,19 @@ public sealed class App : Avalonia.Application
             // así que las acciones se cablean cuando la ventana ya existe
             // (UX-DR-16, UX-DR-22).
             WireDownloadActions(downloadViewModel, downloadControl, window);
+
+        // AC2, AC4: la confirmación de lo privilegiado y el progreso de la
+        // instalación se cablean cuando la ventana ya existe, porque el overlay vive
+        // DENTRO de la ventana (UX-DR-16, UX-DR-37).
+        WireInstallActions(installViewModel, installControl, window);
+
+        // AC2: el presentador de la confirmación se fija AHORA, cuando la ventana ya
+        // existe: el overlay de la confirmación vive dentro de la ventana (UX-DR-16).
+        if (_installations?.Confirmation is DialogPrivilegedOperationConfirmation confirmation)
+        {
+            confirmation.SetPresenter(dialog => ShowPrivilegedConfirmation(dialog, window));
+        }
+
 
             desktop.MainWindow = window;
 
@@ -258,6 +285,68 @@ public sealed class App : Avalonia.Application
     }
 
     /// <summary>
+    /// Wires the actions of the progress of the installation: la confirmación de lo
+    /// privilegiado y el reintento de una instalación fallida (AC2, AC5, UX-DR-34,
+    /// UX-DR-37).
+    ///
+    /// <para>
+    /// El overlay de la confirmación de lo privilegiado es un <c>dialog-surface</c> de UN
+    /// SOLO NIVEL que vive DENTRO de la ventana: no se abre una ventana nueva, porque un
+    /// diálogo nunca se apila sobre otro (UX-DR-16, UX-DR-37).
+    /// </para>
+    /// <para>
+    /// <c>Esc</c> cancela la acción NO destructiva y el foco vuelve al elemento
+    /// INVOCADOR (UX-DR-37).
+    /// </para>
+    /// </summary>
+    /// <param name="viewModel">View model of the progress of the installation.</param>
+    /// <param name="control">Control of the progress of the installation.</param>
+    /// <param name="window">Window of the player, which hosts the overlay de confirmación.</param>
+    private void WireInstallActions(
+        InstallProgressViewModel viewModel,
+        InstallProgressControl control,
+        Window window)
+    {
+        if (_installations is null)
+        {
+            return;
+        }
+
+        var coordinator = _installations.Coordinator;
+
+        // AC4, UX-DR-13: el coordinador publica el progreso desde el grupo de hilos, así
+        // que la notificación se ENCOLA en el hilo de la interfaz antes de tocar un
+        // control de Avalonia.
+        coordinator.ProgressChanged += progress =>
+            _uiThread.Post(() => viewModel.Apply(progress));
+
+        // AC5, UX-DR-34: «Reintentar» es una operación NUEVA sobre el paquete validado, y
+        // NO reinstala el cliente (NFR-9).
+        control.RetryButton.Click += async (_, _) =>
+        {
+            var failed = coordinator.FailedOperation;
+
+            if (failed is null)
+            {
+                return;
+            }
+
+            var result = await coordinator
+                .RetryAsync(failed.GameId, failed.PackageId, failed.Version, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (result.IsRejected)
+            {
+                _uiThread.Post(() => viewModel.ApplyError(result.Error?.Code));
+
+                return;
+            }
+
+            _uiThread.Post(() => viewModel.ApplyError(null));
+        };
+    }
+
+    /// <summary>
     /// Recovers the downloads that survived the last restart of the machine
     /// (AC2, AD-11, AD-20, SM-2).
     ///
@@ -332,8 +421,35 @@ public sealed class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Shows the overlay de confirmación de la cancelación (AC4, UX-DR-22).
+    /// Shows the overlay de CONFIRMACIÓN de la operación privilegiada (AC2, UX-DR-16,
+    /// UX-DR-37).
     ///
+    /// <para>
+    /// El overlay vive DENTRO de la ventana y no abre una ventana nueva: el cliente es
+    /// una aplicación de escritorio con una sola ventana y un diálogo nunca se apila
+    /// sobre otro (UX-DR-16, UX-DR-23).
+    /// </para>
+    /// <para>
+    /// El presentador TOMA el foco al abrir el overlay y lo devuelve al elemento
+    /// INVOCADOR al cerrarlo, para que el <c>Esc</c> del jugador cancele la acción NO
+    /// destructiva (AC2, UX-DR-37).
+    /// </para>
+    /// </summary>
+    /// <param name="dialog">Overlay de confirmación de la operación.</param>
+    /// <param name="window">Window of the player, which hosts the overlay.</param>
+    /// <returns>A task that completes when the player confirmed or declined.</returns>
+    private static Task ShowPrivilegedConfirmation(PrivilegedOperationDialog dialog, Window window)
+    {
+        var overlay = new PrivilegedOperationOverlay(dialog, window);
+
+        overlay.Show();
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Shows the overlay de confirmación de la cancelación (AC4, UX-DR-22).
+    /// </summary>
     /// <param name="viewModel">View model of the progress of the download.</param>
     /// <param name="coordinator">Coordinator of the downloads.</param>
     /// <param name="window">Window of the player, which hosts the overlay.</param>

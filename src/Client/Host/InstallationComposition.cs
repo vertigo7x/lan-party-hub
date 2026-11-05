@@ -11,90 +11,126 @@ using Microsoft.Extensions.Logging;
 
 namespace LANPartyHub.Client.Host;
 
-/// <summary>
-/// Composition of the installations of the client (AD-7, AD-8, AD-9, AD-10, AD-11,
-/// AD-22, AC1..AC7).
-///
-/// <para>
-/// La composición entrega cada PUERTO con su única implementación y construye el
-/// coordinador de las instalaciones (AD-1).
-/// </para>
-/// <para>
-/// El puerto de la APLICACIÓN del árbol se entrega con el adaptador que aplica las
-/// operaciones TIPADAS del manifiesto dentro de la raíz configurada, y ese adaptador
-/// repite la comprobación del confine antes de cada escritura (AD-9, AC5).
-/// </para>
-/// </summary>
-public sealed class InstallationComposition : IDisposable
-{
-    private readonly HttpClient? _httpClient;
-
     /// <summary>
-    /// Creates the composition of the installations.
+    /// Composition of the installations of the client (AD-7, AD-8, AD-9, AD-10, AD-11,
+    /// AD-22, AC1..AC7).
+    ///
+    /// <para>
+    /// La composición entrega cada PUERTO con su única implementación y construye el
+    /// coordinador de las instalaciones (AD-1).
+    /// </para>
+    /// <para>
+    /// El puerto de la APLICACIÓN del árbol se entrega con el adaptador que aplica las
+    /// operaciones TIPADAS del manifiesto dentro de la raíz configurada, y ese adaptador
+    /// repite la comprobación del confine antes de cada escritura (AD-9, AC5).
+    /// </para>
+    /// <para>
+    /// La operación PRIVILEGIADA pide confirmación explícita por el puerto de la
+    /// confirmación, y la confirmación vive SÓLO en memoria: al reanudar una operación
+    /// tras un reinicio se vuelve a pedir (AC2, AC3).
+    /// </para>
     /// </summary>
-    /// <param name="manifests">Port of the read of the signed manifest of a package.</param>
-    /// <param name="verifier">Port of the verification of the signature of the manifest.</param>
-    /// <param name="anchorReader">Port of the read of the ancla de confianza ya fijada.</param>
-    /// <param name="manifestCache">Port of the cache of the signed manifests.</param>
-    /// <param name="layout">Layout of the data folder of the client.</param>
-    /// <param name="stateStore">Access to the database of the client.</param>
-    /// <param name="paths">Resolver of the paths of the installation.</param>
-    /// <param name="loggerFactory">Factory of the log of the client.</param>
-    /// <param name="httpClient">
-    /// Client of the server of the event, when the composition OWNS it, or <c>null</c>
-    /// when the caller does.
-    /// </param>
-    public InstallationComposition(
-        ISignedManifestClient manifests,
-        IManifestSignatureVerifier verifier,
-        ITrustAnchorReader anchorReader,
-        IManifestCache manifestCache,
-        IClientDataLayout layout,
-        IClientStateStore stateStore,
-        IInstallPathResolver paths,
-        ILoggerFactory loggerFactory,
-        HttpClient? httpClient = null)
+    public sealed class InstallationComposition : IDisposable
     {
-        ArgumentNullException.ThrowIfNull(manifests);
-        ArgumentNullException.ThrowIfNull(verifier);
-        ArgumentNullException.ThrowIfNull(anchorReader);
-        ArgumentNullException.ThrowIfNull(manifestCache);
-        ArgumentNullException.ThrowIfNull(layout);
-        ArgumentNullException.ThrowIfNull(stateStore);
-        ArgumentNullException.ThrowIfNull(paths);
-        ArgumentNullException.ThrowIfNull(loggerFactory);
+        private readonly HttpClient? _httpClient;
 
-        _httpClient = httpClient;
+        /// <summary>
+        /// Creates the composition of the installations.
+        /// </summary>
+        /// <param name="manifests">Port of the read of the signed manifest of a package.</param>
+        /// <param name="verifier">Port of the verification of the signature of the manifest.</param>
+        /// <param name="anchorReader">Port of the read of the ancla de confianza ya fijada.</param>
+        /// <param name="manifestCache">Port of the cache of the signed manifests.</param>
+        /// <param name="layout">Layout of the data folder of the client.</param>
+        /// <param name="stateStore">Access to the database of the client.</param>
+        /// <param name="paths">Resolver of the paths of the installation.</param>
+        /// <param name="loggerFactory">Factory of the log of the client.</param>
+        /// <param name="confirmation">
+        /// Port of the confirmation of the privileged operations, or <c>null</c> when the
+        /// composition is built without it. Sin confirmación, la operación privilegiada NO
+        /// se ejecuta: es la NO ejecución la que protege al jugador (AC2).
+        /// </param>
+        /// <param name="httpClient">
+        /// Client of the server of the event, when the composition OWNS it, or <c>null</c>
+        /// when the caller does.
+        /// </param>
+        public InstallationComposition(
+            ISignedManifestClient manifests,
+            IManifestSignatureVerifier verifier,
+            ITrustAnchorReader anchorReader,
+            IManifestCache manifestCache,
+            IClientDataLayout layout,
+            IClientStateStore stateStore,
+            IInstallPathResolver paths,
+            ILoggerFactory loggerFactory,
+            IPrivilegedOperationConfirmation? confirmation = null,
+            HttpClient? httpClient = null)
+        {
+            ArgumentNullException.ThrowIfNull(manifests);
+            ArgumentNullException.ThrowIfNull(verifier);
+            ArgumentNullException.ThrowIfNull(anchorReader);
+            ArgumentNullException.ThrowIfNull(manifestCache);
+            ArgumentNullException.ThrowIfNull(layout);
+            ArgumentNullException.ThrowIfNull(stateStore);
+            ArgumentNullException.ThrowIfNull(paths);
+            ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        Paths = paths;
+            _httpClient = httpClient;
 
-        Tree = new ManifestTreeWriter(
-            paths,
-            loggerFactory.CreateLogger<ManifestTreeWriter>());
+            Paths = paths;
 
-        Coordinator = new InstallationCoordinator(
-            manifests,
-            verifier,
-            anchorReader,
-            manifestCache,
-            layout,
-            paths,
-            Tree,
-            stateStore,
-            loggerFactory.CreateLogger<InstallationCoordinator>());
-    }
+            // AD-7, AC2: el ejecutor aplica las seis operaciones tipadas, pide la
+            // confirmación de la privilegiada y publica el progreso con los bytes REALES.
+            var extractor = new ZipInstallArchiveExtractor(paths);
 
-    /// <summary>
-    /// Resolver of the paths of the installation, delivered with its only
-    /// implementation (AD-9).
-    /// </summary>
-    public IInstallPathResolver Paths { get; }
+            Confirmation = confirmation ?? new DecliningPrivilegedOperationConfirmation();
 
-    /// <summary>
-    /// Port of the application of the typed operations of the manifest, delivered with
-    /// its only implementation (AD-7, AD-9).
-    /// </summary>
-    public IInstallTreeWriter Tree { get; }
+            Executor = new InstallOperationExecutor(
+                paths,
+                extractor,
+                Confirmation,
+                loggerFactory.CreateLogger<InstallOperationExecutor>());
+
+            Tree = new ManifestTreeWriter(
+                paths,
+                Executor,
+                loggerFactory.CreateLogger<ManifestTreeWriter>());
+
+            Coordinator = new InstallationCoordinator(
+                manifests,
+                verifier,
+                anchorReader,
+                manifestCache,
+                layout,
+                paths,
+                Tree,
+                stateStore,
+                loggerFactory.CreateLogger<InstallationCoordinator>());
+        }
+
+        /// <summary>
+        /// Resolver of the paths of the installation, delivered with its only
+        /// implementation (AD-9).
+        /// </summary>
+        public IInstallPathResolver Paths { get; }
+
+        /// <summary>
+        /// The executor of the typed operations of the manifest, que es el que pide la
+        /// confirmación de lo privilegiado y publica el progreso (AD-7, AC2, AC4).
+        /// </summary>
+        public InstallOperationExecutor Executor { get; }
+
+        /// <summary>
+        /// Port of the application of the typed operations of the manifest, delivered with
+        /// its only implementation (AD-7, AD-9).
+        /// </summary>
+        public IInstallTreeWriter Tree { get; }
+
+        /// <summary>
+        /// Port of the confirmation of the privileged operations, que es el que decide si
+        /// la operación se ejecuta (AC2).
+        /// </summary>
+        public IPrivilegedOperationConfirmation Confirmation { get; }
 
     /// <summary>
     /// The coordinator of the installation operations of the client.
@@ -118,6 +154,11 @@ public sealed class InstallationComposition : IDisposable
     /// <param name="stateStore">Access to the database of the client.</param>
     /// <param name="trustAnchorReader">Port of the read of the ancla de confianza ya fijada.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="confirmation">
+    /// Port of the confirmation of the privileged operations, or <c>null</c> when the
+    /// composition is built without interfaz. Sin confirmación, la operación privilegiada
+    /// NO se ejecuta (AC2).
+    /// </param>
     /// <returns>The composition of the installations.</returns>
     public static InstallationComposition Create(
         Uri serverAddress,
@@ -125,7 +166,8 @@ public sealed class InstallationComposition : IDisposable
         IClientDataLayout layout,
         IClientStateStore stateStore,
         ITrustAnchorReader trustAnchorReader,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IPrivilegedOperationConfirmation? confirmation = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -156,6 +198,7 @@ public sealed class InstallationComposition : IDisposable
             stateStore,
             new InstallPathResolver(layout),
             loggerFactory,
+            confirmation,
             httpClient);
     }
 
@@ -180,6 +223,7 @@ public sealed class InstallationComposition : IDisposable
 public sealed class ManifestTreeWriter : IInstallTreeWriter
 {
     private readonly IInstallPathResolver _paths;
+    private readonly InstallOperationExecutor? _executor;
     private readonly ILogger<ManifestTreeWriter> _logger;
 
     /// <summary>Creates the adapter of the application of the typed operations.</summary>
@@ -194,15 +238,83 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
         _logger = logger;
     }
 
+    /// <summary>
+    /// Creates the adapter over the EXECUTOR of the typed operations, que es el que pide
+    /// la confirmación de lo privilegiado y publica el progreso (AD-7, AC2, AC4).
+    /// </summary>
+    /// <param name="paths">Resolver of the paths of the installation.</param>
+    /// <param name="executor">Executor of the typed operations of the manifest.</param>
+    /// <param name="logger">Log of the adapter.</param>
+    public ManifestTreeWriter(
+        IInstallPathResolver paths,
+        InstallOperationExecutor executor,
+        ILogger<ManifestTreeWriter> logger)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _paths = paths;
+        _executor = executor;
+        _logger = logger;
+    }
+
     /// <inheritdoc />
-    public async Task<InstallTreeOutcome> ApplyAsync(
+    public Task<InstallTreeOutcome> ApplyAsync(
+        InstallationManifest manifest,
+        string rootPath,
+        string? packagePath,
+        CancellationToken cancellationToken) =>
+        ApplyAsync(manifest, rootPath, packagePath, new DiscardingProgressSink(), cancellationToken);
+
+    /// <inheritdoc />
+    public Task<InstallTreeOutcome> ApplyAsync(
+        InstallationManifest manifest,
+        string rootPath,
+        string? packagePath,
+        IInstallProgressSink progress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        // AD-7, AC2, AC4: con el EXECUTOR, la operación privilegiada pide confirmación
+        // explícita y el progreso se publica con la fase y los bytes REALES.
+        if (_executor is not null)
+        {
+            return _executor.ApplyAsync(manifest, rootPath, packagePath, progress, cancellationToken);
+        }
+
+        return ApplyLegacyAsync(manifest, rootPath, packagePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sumidero que IGNORA el progreso, para la sobrecarga que no publica (AD-1).
+    /// </summary>
+    private sealed class DiscardingProgressSink : IInstallProgressSink
+    {
+        public void Report(InstallPhase phase, long bytesWritten, long? totalBytes)
+        {
+            // La sobrecarga sin progreso no publica nada: el sumidero existe para que el
+            // ejecutor no tenga que conocer la interfaz (AD-1).
+        }
+    }
+
+    /// <summary>
+    /// Applies the typed operations of the manifest WITHOUT the executor, que es el
+    /// camino que usan los dobles de los puertos en las pruebas de 7.1 (AD-7, AD-9, AC5).
+    /// </summary>
+    /// <param name="manifest">Manifest whose operations are applied.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    /// <param name="packagePath">Absolute path of the file that holds the bytes of the package.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The outcome of the application of the tree.</returns>
+    private async Task<InstallTreeOutcome> ApplyLegacyAsync(
         InstallationManifest manifest,
         string rootPath,
         string? packagePath,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(manifest);
-
         var verifyPassed = true;
         var pathsConfinedToRoot = true;
         var operationNotAllowed = false;
