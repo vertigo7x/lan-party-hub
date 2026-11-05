@@ -27,12 +27,29 @@ Requiere `uv`, `opencode`, `git`, `gh`, `dotnet` y `powershell` en el PATH, y un
 Cada historia puede usar estas fases, y ninguna se convierte en un bucle:
 
 1. **Plan:** un agente rápido escribe `.build-lite/plans/<epica>-<historia>.md` con alcance, ficheros, pruebas y riesgos. Se limita a 500 palabras.
-2. **Implementación:** MiniMax implementa ese plan y sus pruebas. No vuelve a leer el backlog ni a planificar.
-3. **Verificación determinista:** `build-lite --self-test`, `dotnet build`, `dotnet test`, `check-encoding.ps1` y `check-epics.ps1`.
-4. **Reparación:** como máximo una, dirigida por un fallo de verificación o por un hallazgo bloqueante. Si vuelve a fallar, el driver se detiene.
-5. **Revisión focalizada:** solo existe para cambios de contratos compartidos, persistencia, red, instalación, seguridad o firma de paquetes. Usa un único revisor rápido y solo puede informar un S0/S1 con evidencia concreta.
+2. **Contexto:** un agente rápido escribe `.build-lite/contexts/<epica>-<historia>.md` con la evidencia acotada de la historia: requisitos y AC, decisiones aplicables, APIs o patrones a reutilizar, archivos y pruebas relevantes, comandos y exclusiones. Se limita a 700 palabras.
+3. **Implementación:** MiniMax implementa ese plan, ese contexto y sus pruebas. No vuelve a leer el backlog ni a planificar.
+4. **Verificación determinista:** `build-lite --self-test`, `dotnet build`, `dotnet test`, `check-encoding.ps1` y `check-epics.ps1`.
+5. **Reparación:** como máximo una, dirigida por un fallo de verificación o por un hallazgo bloqueante. Si vuelve a fallar, el driver se detiene.
+6. **Revisión focalizada:** solo existe para cambios de contratos compartidos, persistencia, red, instalación, seguridad o firma de paquetes. Usa un único revisor rápido y solo puede informar un S0/S1 con evidencia concreta.
 
 Un fallo del proveedor recibe, como máximo, un reintento técnico de su misma fase. El trabajo pendiente se commitea en la rama de la historia antes de que el driver se detenga.
+
+## Preparación del contexto
+
+El contexto es una entrada de ejecución, no una fuente de verdad adicional: el plan conserva la huella y la historia conserva los criterios.
+
+- **Fuentes.** La fase usa el plan, la sección puntual de la historia en el backlog, el contexto compilado de la épica cuando existe y las rutas declaradas en el plan. No relee el backlog entero.
+- **Límites.** El preparador no implementa, no cambia la huella, no modifica contratos y no amplía alcance; su paquete lo declara de forma explícita.
+- **Caché local.** El paquete vive en `.build-lite/contexts/`, no se versiona, no cuenta como cambio de implementación y no participa en la decisión de paralelismo. `.gitignore` lo excluye y el driver nunca lo incluye en la huella ni en el commit de la historia.
+- **Reanudación.** Una historia recuperada reutiliza su paquete completo sin volver a pagar la fase solo si corresponde al hash de su plan. Si el plan cambió, falta o está incompleto, se regenera antes de implementar. Si ya hay trabajo de implementación preservado, el driver verifica ese trabajo sin preparar contexto.
+- **Worker.** El paquete se copia al worktree de la historia y el prompt de implementación exige leerlo junto con el plan, limita la exploración a sus rutas y pide un bloqueo demostrado cuando la evidencia no alcanza.
+
+## Progreso y salidas
+
+Cada fase registra su estado en `.build-lite/logs/<epica>-<historia>/phases.json`: `complete`, `timeout`, `stalled`, `tool_failure`, `verification_failure` o `escalated`. Esto permite distinguir un límite técnico de una trayectoria sin avance.
+
+Durante implementación, un cambio funcional en el worktree, una prueba ejecutada o un bloqueo demostrado son hitos observables. Las pruebas y bloqueos se toman exclusivamente de eventos JSON de herramientas completadas: nunca del prompt, la cabecera del log, el contexto ni el texto del usuario. Para declarar un bloqueo, el worker emite `BLOQUEO:` con `Write-Output` o `echo` tras obtener su evidencia. Si no aparece ningún hito durante 15 minutos, el driver clasifica la fase como `stalled`, detiene el proceso, preserva worktree y logs, y no consume un reintento técnico ni admite otra historia.
 
 ## Revisión proporcional al riesgo
 
@@ -50,12 +67,13 @@ Los cambios de contratos, persistencia, red, instalación, seguridad o firma, lo
 
 Cada worker parte de `origin/main`, en `story/<epica>-<historia>-<slug>`. El coordinador integra resultados de uno en uno: antes de abrir el PR vuelve a ejecutar las verificaciones y, si `main` avanzó durante la historia, rebasa la rama y las repite sin crear una nueva conversación de IA.
 
-El resultado se registra en `.build-lite/results/<epica>-<historia>.json`. Si las puertas pasan, el driver actualiza `sprint-status.yaml`, hace push, abre un PR y lo fusiona con squash. No hay push directo a `main`.
+El resultado se registra en `.build-lite/results/<epica>-<historia>.json`. Si las puertas pasan, el driver actualiza `sprint-status.yaml`, hace push, abre un PR y lo fusiona con squash. El journal solo marca la historia como completa cuando el merge y la comprobación post-merge confirman que está en `origin/main`. No hay push directo a `main`.
 
 ## Cuándo se detiene
 
 - El plan no se puede escribir o el proveedor agota su reintento técnico.
 - La implementación o la única reparación no deja las verificaciones en verde.
+- La implementación se estanca sin un hito observable durante su ventana de progreso.
 - La revisión focalizada confirma un S0/S1 que no cabe en la reparación restante.
 - El rebase sobre `main` tiene conflicto o las verificaciones fallan tras él.
 - El push, PR, merge o la comprobación post-merge fallan.
