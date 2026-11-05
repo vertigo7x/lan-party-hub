@@ -2632,6 +2632,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ensure_contexts_ignored()
     legacy.require_clean_tree()
     legacy.fetch_origin()
+    branch = legacy.git("branch", "--show-current").stdout.strip()
+    if branch != BASE_BRANCH:
+        raise legacy.DriverError(
+            f"Build Lite must start from {BASE_BRANCH}; current branch is {branch or '(detached HEAD)'}"
+        )
+    # The scheduler selects pending stories from sprint-status.yaml. Read the
+    # copy in origin/main after every scoped merge, not a stale local checkout
+    # that would admit a story which already finished remotely.
+    legacy.git("merge", "--ff-only", f"origin/{BASE_BRANCH}")
     status = legacy.read_sprint_status()
     if args.story:
         epic, number = (int(part) for part in args.story.split("."))
