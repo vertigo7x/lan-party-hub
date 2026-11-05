@@ -25,6 +25,7 @@ block, or that declares a sensitive surface, runs alone.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import re
@@ -83,9 +84,12 @@ CONTEXT_RESTRICTION_TOKENS: tuple[str, ...] = (
 )
 CONTEXT_MIN_LENGTH = 300
 
-# The compiled context of an epic is a source of the package. It is read in
-# full while it stays inside this budget; a bigger one is truncated.
-EPIC_CONTEXT_MAX_CHARS = 60000
+# A Windows command line is limited to 32,767 characters. Keep every inline
+# source well below that ceiling; the preparer can open only the declared plan
+# paths when it needs the source file itself.
+CONTEXT_PROMPT_MAX_CHARS = 24000
+EPIC_CONTEXT_MAX_CHARS = 12000
+CONTEXT_PLAN_DIGEST_PREFIX = "<!-- build-lite-plan-sha256: "
 
 # ---------------------------------------------------------------------------
 # The structured state of a phase
@@ -121,7 +125,8 @@ PHASE_POLL_SECONDS = 15
 # explores stops while there is still budget left to act on the evidence.
 IMPLEMENTATION_PROGRESS_WINDOW_MINUTES = 15
 
-# The marker the worker writes when it reports a demonstrated blocker.
+# The marker written through a real command when the worker reports a
+# demonstrated blocker. It is never inferred from prompts or tool output.
 BLOCKER_MARKER = "BLOQUEO:"
 
 # The milestones an implementation can produce while it runs.
@@ -134,8 +139,9 @@ MILESTONE_KINDS: tuple[str, ...] = (
     MILESTONE_BLOCKER_DEMONSTRATED,
 )
 
-# The command that means that a test ran.
-TEST_COMMAND_MARKER = "dotnet test"
+# A test milestone comes from the input of a completed shell tool call, never
+# from a substring in a prompt, context package or tool output.
+TEST_COMMAND_PATTERN = re.compile(r"(?:^|[;&|]\s*)(?:dotnet\s+test)\b", re.IGNORECASE)
 
 # The window of the scheduler. Four workers is the ceiling of the project:
 # a fifth story waits for a free slot instead of starting.
@@ -705,39 +711,83 @@ class ImplementationProgress:
         return paths
 
     def _transcript_milestone(self) -> dict | None:
-        """A milestone when the transcript shows a test or a blocker."""
-        chunk = self._new_transcript()
-        if chunk:
-            if TEST_COMMAND_MARKER in chunk:
+        """Read milestones only from completed, structured tool events.
+
+        The log also contains the command header and provider text. Neither is
+        evidence of work: prompts can mention a test or a blocker before the
+        worker starts. JSON tool events retain the actual command invocation.
+        """
+        for event in self._new_events():
+            part = event.get("part")
+            if not isinstance(part, dict) or part.get("type") != "tool":
+                continue
+            state = part.get("state")
+            if not isinstance(state, dict) or state.get("status") != "completed":
+                continue
+            command = self._tool_command(state)
+            if not command:
+                continue
+            if TEST_COMMAND_PATTERN.search(command):
                 self.pending.append(
-                    self._milestone(MILESTONE_TEST_EXECUTED, f"the worker ran {TEST_COMMAND_MARKER}")
+                    self._milestone(MILESTONE_TEST_EXECUTED, "the worker ran dotnet test")
                 )
-            if BLOCKER_MARKER in chunk:
+            if self._is_blocker_command(command):
                 self.pending.append(
                     self._milestone(
-                        MILESTONE_BLOCKER_DEMONSTRATED, "the worker reported a demonstrated blocker"
+                        MILESTONE_BLOCKER_DEMONSTRATED, "the worker recorded a demonstrated blocker"
                     )
                 )
         if self.pending:
             return self.pending.pop(0)
         return None
 
-    def _new_transcript(self) -> str:
-        """The part of the transcript that was written since the last poll."""
+    @staticmethod
+    def _tool_command(state: dict) -> str:
+        """Extract a shell command from a real tool event, if it has one."""
+        input_data = state.get("input")
+        if not isinstance(input_data, dict):
+            return ""
+        command = input_data.get("command")
+        return command if isinstance(command, str) else ""
+
+    @staticmethod
+    def _is_blocker_command(command: str) -> bool:
+        """Whether a shell command deliberately records the required blocker."""
+        normalized = command.strip().lower()
+        marker = BLOCKER_MARKER.lower()
+        return marker in normalized and (
+            normalized.startswith("write-output")
+            or normalized.startswith("echo ")
+            or normalized.startswith("printf ")
+        )
+
+    def _new_events(self) -> list[dict]:
+        """The JSON events written since the previous poll, excluding the header."""
         try:
             size = self.transcript.stat().st_size
         except OSError:
-            return ""
+            return []
         if size <= self.read_bytes:
-            return ""
+            return []
         try:
             with self.transcript.open("rb") as handle:
                 handle.seek(self.read_bytes)
                 chunk = handle.read()
         except OSError:
-            return ""
+            return []
         self.read_bytes = size
-        return chunk.decode("utf-8", errors="replace")
+        events: list[dict] = []
+        for line in chunk.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+        return events
 
     @staticmethod
     def _milestone(kind: str, detail: str) -> dict:
@@ -770,7 +820,8 @@ Implementa el código y las pruebas que el plan y el paquete describen, ejecuta 
 cercanas que existan y deja el árbol listo para commit.
 Limita tu exploración a las rutas que el plan y el paquete declaran. Si el paquete no contiene lo
 que necesitas, no amplíes el alcance: repórtalo como bloqueo demostrado con una línea que empiece
-por `{BLOCKER_MARKER}` (qué falta y en qué ruta) y detente.
+por `{BLOCKER_MARKER}` (qué falta y en qué ruta), emitida mediante un comando `Write-Output` o
+`echo`, y detente. Solo ese evento de herramienta queda como evidencia del bloqueo.
 No replanifiques, no lances revisores, no abras PR y no cambies otras stories."""
 
 
@@ -830,6 +881,23 @@ def read_epic_context(story) -> str:
     return content
 
 
+def plan_digest(plan: Path) -> str:
+    """The digest that binds a cached context package to its exact plan."""
+    try:
+        return hashlib.sha256(plan.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def limit_prompt_source(content: str, remaining: int) -> str:
+    """Fit one inline source in the Windows-safe prompt budget."""
+    if remaining <= 0:
+        return "(fuente omitida para respetar el límite del prompt)"
+    if len(content) <= remaining:
+        return content
+    return content[:remaining] + "\n\n(fuente truncada para respetar el límite del prompt)"
+
+
 def context_prompt(story, plan: Path, context: Path, epics_file: Path | None = None) -> str:
     """The prompt of the phase that prepares the context of a story.
 
@@ -837,6 +905,16 @@ def context_prompt(story, plan: Path, context: Path, epics_file: Path | None = N
     backlog to find them, and it states the limit of the phase: the preparer
     selects evidence, it does not implement.
     """
+    plan_source = read_text_or_note(plan)
+    story_source = extract_story_section(story, epics_file)
+    epic_source = read_epic_context(story)
+    fixed = 5000
+    remaining = max(CONTEXT_PROMPT_MAX_CHARS - fixed, 0)
+    plan_source = limit_prompt_source(plan_source, min(len(plan_source), remaining))
+    remaining -= len(plan_source)
+    story_source = limit_prompt_source(story_source, min(len(story_source), max(remaining, 0)))
+    remaining -= len(story_source)
+    epic_source = limit_prompt_source(epic_source, max(remaining, 0))
     return f"""Prepara el paquete de contexto de la Story {story.short_id}: {story.title}.
 
 Escribe un documento breve en español en {relative(context)}, una ruta relativa a la raíz del
@@ -845,7 +923,7 @@ repositorio más allá de las rutas que declara el plan y no inventes evidencia.
 
 El documento tiene estos encabezados exactos, en este orden:
 
-## Requisitos
+## Requisitos y criterios de aceptación
 ## Decisiones aplicables
 ## APIs y patrones a reutilizar
 ## Archivos y pruebas relevantes
@@ -854,6 +932,8 @@ El documento tiene estos encabezados exactos, en este orden:
 
 Reglas de contenido:
 - Máximo 700 palabras. Cada dato va con su ruta, su identificador o su nombre de archivo.
+- "Requisitos y criterios de aceptación" enumera los requisitos y cada AC aplicable con su
+  identificador; si no existe uno, declara explícitamente "AC no disponible".
 - Cada sección cita solo evidencia de las fuentes. Si una fuente no aporta nada a esa sección,
   escribe "no disponible" y sigue. No inventes decisiones, contratos, rutas ni pruebas.
 - "APIs y patrones a reutilizar" describe los tipos, los métodos y las formas que ya existen y que
@@ -868,17 +948,17 @@ Restricciones de operación:
 - No lances subagentes, no abras PR y no implementes la historia.
 
 --- PLAN DE LA HISTORIA ---
-{read_text_or_note(plan)}
+{plan_source}
 
 --- SECCIÓN DE LA HISTORIA EN EL BACKLOG ---
-{extract_story_section(story, epics_file)}
+{story_source}
 
 --- CONTEXTO DE LA ÉPICA ---
-{read_epic_context(story)}
+{epic_source}
 """
 
 
-def is_complete_context(context: Path) -> bool:
+def is_complete_context(context: Path, plan: Path | None = None) -> bool:
     """Whether a context package holds everything that the worker needs.
 
     A package without its sections, or without the sentence that states that
@@ -893,9 +973,37 @@ def is_complete_context(context: Path) -> bool:
     if len(stripped) < CONTEXT_MIN_LENGTH:
         return False
     lowered = stripped.lower()
-    if not all(token in lowered for token in CONTEXT_REQUIRED_TOKENS):
+    headings = tuple(f"## {token}" for token in (
+        "requisitos y criterios de aceptación", "decisiones aplicables", "apis y patrones a reutilizar",
+        "archivos y pruebas relevantes", "comandos", "exclusiones",
+    ))
+    positions = [lowered.find(heading) for heading in headings]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
         return False
-    return all(token in lowered for token in CONTEXT_RESTRICTION_TOKENS)
+    requirements_end = positions[1]
+    if re.search(r"\bac(?:\d+)?\b", lowered[positions[0]:requirements_end]) is None:
+        return False
+    if not all(token in lowered for token in CONTEXT_RESTRICTION_TOKENS):
+        return False
+    if plan is None:
+        return True
+    digest = plan_digest(plan)
+    return bool(digest) and f"{CONTEXT_PLAN_DIGEST_PREFIX}{digest} -->" in content
+
+
+def stamp_context_plan_digest(context: Path, plan: Path) -> None:
+    """Mark a complete cache entry with the plan that produced it."""
+    digest = plan_digest(plan)
+    if not digest:
+        raise legacy.DriverError(f"cannot hash the context plan {relative(plan)}")
+    content = context.read_text(encoding="utf-8")
+    content = re.sub(
+        rf"^{re.escape(CONTEXT_PLAN_DIGEST_PREFIX)}[0-9a-f]{{64}} -->\r?\n?",
+        "",
+        content,
+        flags=re.MULTILINE,
+    )
+    context.write_text(f"{CONTEXT_PLAN_DIGEST_PREFIX}{digest} -->\n{content}", encoding="utf-8")
 
 
 def copy_context(context: Path, tree_path: Path) -> Path:
@@ -922,7 +1030,7 @@ def prepare_context(
     never changes the footprint of the story.
     """
     context = context_path(story)
-    if is_complete_context(context):
+    if is_complete_context(context, plan):
         log(f"{story.short_id}: reusing the context package {relative(context)}")
         if tree is not None:
             copy_context(context, tree.path)
@@ -930,6 +1038,11 @@ def prepare_context(
 
     CONTEXT_ROOT.mkdir(parents=True, exist_ok=True)
     target = tree.path / relative(context) if tree is not None else context
+    # A stale or incomplete entry must not satisfy the structural fallback if
+    # the preparer fails to write its output. Delete both cache locations
+    # before invoking it, then accept only the fresh package it produced.
+    for candidate in {context, target}:
+        candidate.unlink(missing_ok=True)
     target.parent.mkdir(parents=True, exist_ok=True)
     if runner is None:
         runner = run_phase
@@ -943,13 +1056,15 @@ def prepare_context(
         cwd=tree.path if tree is not None else None,
         journal=journal,
     )
-    prepared = target if is_complete_context(target) else context
-    if not is_complete_context(prepared):
+    if not is_complete_context(target):
         raise legacy.DriverError(
             f"the context preparer did not write a complete {relative(context)}"
         )
-    if prepared != context:
-        shutil.copy2(prepared, context)
+    if target != context:
+        shutil.copy2(target, context)
+    stamp_context_plan_digest(context, plan)
+    if not is_complete_context(context, plan):
+        raise legacy.DriverError(f"the context preparer did not bind {relative(context)} to its plan")
     if tree is not None:
         copy_context(context, tree.path)
     return context
@@ -1231,11 +1346,11 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
     base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=tree.path).stdout.strip()
 
     try:
-        context = prepare_context(story, plan, log_dir, tree=tree, journal=journal)
-
-        if implementation_paths(changed_paths(base, cwd=tree.path)):
+        preserved_work = implementation_paths(changed_paths(base, cwd=tree.path))
+        if preserved_work:
             log("reusing preserved implementation work; proceeding to verification")
         else:
+            context = prepare_context(story, plan, log_dir, tree=tree, journal=journal)
             progress = ImplementationProgress(tree.path, log_dir / "implementation-1.jsonl")
             run_phase(
                 "implementation",
@@ -1289,7 +1404,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
         journal.record("story", journal.failure_state(), error=str(error))
         raise
 
-    journal.record("story", PHASE_COMPLETE)
+    journal.record("worker", PHASE_COMPLETE, evidence="verified branch ready for publication")
     del result_file
     return WorkerResult(
         story=story,
@@ -1318,6 +1433,7 @@ def integrate(result: WorkerResult, args: argparse.Namespace) -> None:
     story = result.story
     tree = result.worktree
     plan, result_file, log_dir = story_paths(story)
+    journal = journal_for(story)
 
     legacy.fetch_origin()
     main_after = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=tree.path).stdout.strip()
@@ -1375,6 +1491,10 @@ def integrate(result: WorkerResult, args: argparse.Namespace) -> None:
         )
         if str(merged_status.get(story.key, "")).lower() != "done":
             raise legacy.DriverError(f"story {story.short_id} is not done after merge")
+        journal.record("publication", PHASE_COMPLETE, evidence=f"pull request #{number} merged")
+        journal.record("story", PHASE_COMPLETE, evidence=f"pull request #{number} is in origin/main")
+    else:
+        journal.record("publication", PHASE_COMPLETE, evidence=f"pull request #{number} opened without merge")
     del plan
 
 
@@ -1574,11 +1694,11 @@ def process_story(story, args: argparse.Namespace) -> None:
         raise legacy.DriverError(f"planner did not create {relative(plan)}")
 
     try:
-        context = prepare_context(story, plan, log_dir, journal=journal)
-
-        if implementation_paths(changed_paths(base)):
+        preserved_work = implementation_paths(changed_paths(base))
+        if preserved_work:
             log("reusing preserved implementation work; proceeding to verification")
         else:
+            context = prepare_context(story, plan, log_dir, journal=journal)
             progress = ImplementationProgress(REPO_ROOT, log_dir / "implementation-1.jsonl")
             run_phase(
                 "implementation",
@@ -1680,6 +1800,10 @@ def process_story(story, args: argparse.Namespace) -> None:
         )
         if str(merged_status.get(story.key, "")).lower() != "done":
             raise legacy.DriverError(f"story {story.short_id} is not done after merge")
+        journal.record("publication", PHASE_COMPLETE, evidence=f"pull request #{number} merged")
+        journal.record("story", PHASE_COMPLETE, evidence=f"pull request #{number} is in origin/main")
+    else:
+        journal.record("publication", PHASE_COMPLETE, evidence=f"pull request #{number} opened without merge")
 
 
 def plan_story(story) -> tuple[PlanMetadata | None, str]:
@@ -1899,7 +2023,7 @@ def self_test() -> int:
     return 0
 
 
-CONTEXT_SAMPLE = """## Requisitos
+CONTEXT_SAMPLE = """## Requisitos y criterios de aceptación
 
 - AC1 de la historia: el estado distingue «dañado» de «no confiable».
 
@@ -1934,30 +2058,30 @@ def self_test_context() -> list[str]:
         "S",
         (),
         {
-            "short_id": "9.9",
-            "label": "9-9",
-            "branch": "story/9-9-x",
+            "short_id": "99.99",
+            "label": "99-99",
+            "branch": "story/99-99-x",
             "title": "Historia de prueba",
-            "epic": 9,
-            "num": 9,
+            "epic": 99,
+            "num": 99,
         },
     )()
     context = context_path(story)
 
     # The package lives in the local cache, under the path of its story.
-    if relative(context) != ".build-lite/contexts/9-9.md":
+    if relative(context) != ".build-lite/contexts/99-99.md":
         failures.append("the context package does not live under .build-lite/contexts/")
     if CONTEXT_MAX_ATTEMPTS != PHASE_MAX_ATTEMPTS or CONTEXT_MAX_ATTEMPTS != 2:
         failures.append("the context phase retry budget is not one technical retry")
 
     # The package is never part of the change of the story.
-    if not is_context_path(".build-lite/contexts/9-9.md"):
+    if not is_context_path(".build-lite/contexts/99-99.md"):
         failures.append("a context package was not recognised")
-    if is_context_path(".build-lite/results/9-9.json"):
+    if is_context_path(".build-lite/results/99-99.json"):
         failures.append("a published result was recognised as a context package")
-    if implementation_paths([".build-lite/contexts/9-9.md"]):
+    if implementation_paths([".build-lite/contexts/99-99.md"]):
         failures.append("a context package was parsed as implementation work")
-    if implementation_paths([".build-lite/contexts/9-9.md", "src/Server/Program.cs"]) != [
+    if implementation_paths([".build-lite/contexts/99-99.md", "src/Server/Program.cs"]) != [
         "src/Server/Program.cs"
     ]:
         failures.append("a context package was not excluded from the change of the story")
@@ -1966,8 +2090,8 @@ def self_test_context() -> list[str]:
     epics = PLAN_ROOT / "self-test-epics.md"
     epics.parent.mkdir(parents=True, exist_ok=True)
     epics.write_text(
-        "# Epics\n\n### Story 9.9: Prueba\n\nContenido de la historia.\n\n"
-        "### Story 9.10: Otra\n\nNo debe aparecer.\n\n## Epic 10\n\nNo debe aparecer.\n",
+        "# Epics\n\n### Story 99.99: Prueba\n\nContenido de la historia.\n\n"
+        "### Story 99.100: Otra\n\nNo debe aparecer.\n\n## Epic 100\n\nNo debe aparecer.\n",
         encoding="utf-8",
     )
     section = extract_story_section(story, epics)
@@ -1978,7 +2102,7 @@ def self_test_context() -> list[str]:
 
     # The prompts carry the sources and the limits of the phase.
     plan = PLAN_ROOT / "self-test-context-plan.md"
-    plan.write_text("# Story 9.9\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
+    plan.write_text("# Story 99.99\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
     preparation = context_prompt(story, plan, context, epics)
     for token in ("## Requisitos", "## Exclusiones", "no puede implementar", relative(context)):
         if token not in preparation:
@@ -1987,6 +2111,8 @@ def self_test_context() -> list[str]:
         failures.append("the context prompt does not carry the section of the story")
     if relative(epics) in preparation:
         failures.append("the context prompt still sends the preparer to the whole backlog")
+    if len(preparation) > CONTEXT_PROMPT_MAX_CHARS:
+        failures.append("the context prompt exceeds the Windows-safe command-line budget")
 
     implementation = implementation_prompt(story, plan, context)
     for token in (relative(plan), relative(context)):
@@ -2006,23 +2132,48 @@ def self_test_context() -> list[str]:
 
     context.parent.mkdir(parents=True, exist_ok=True)
     context.write_text(CONTEXT_SAMPLE, encoding="utf-8")
-    if not is_complete_context(context):
-        failures.append("a complete context package was rejected")
+    if is_complete_context(context, plan):
+        failures.append("a context package without its plan digest was accepted")
+    prepare_context(story, plan, log_dir, runner=fake_runner)
+    if calls != ["context"]:
+        failures.append("a context package without its plan digest was not prepared")
+    if not is_complete_context(context, plan):
+        failures.append("a prepared context package was not bound to its plan")
+
+    calls.clear()
     prepare_context(story, plan, log_dir, runner=fake_runner)
     if calls:
-        failures.append("a complete context package was prepared again")
+        failures.append("a current context package was prepared again")
+
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nCambio de plan.\n", encoding="utf-8")
+    prepare_context(story, plan, log_dir, runner=fake_runner)
+    if calls != ["context"]:
+        failures.append("a context package was not invalidated after its plan changed")
+
+    # A stale cache must not be re-stamped if the preparer writes no new file.
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nOtro cambio de plan.\n", encoding="utf-8")
+
+    def silent_runner(*args, **kwargs):
+        del args, kwargs
+
+    try:
+        prepare_context(story, plan, log_dir, runner=silent_runner)
+    except legacy.DriverError:
+        pass
+    else:
+        failures.append("a stale context package was re-bound when the preparer wrote nothing")
 
     context.write_text("## Requisitos\n", encoding="utf-8")
     if is_complete_context(context):
         failures.append("an incomplete context package was accepted")
     prepare_context(story, plan, log_dir, runner=fake_runner)
-    if calls != ["context"]:
+    if calls != ["context", "context"]:
         failures.append("an incomplete context package was not prepared again")
 
     # The package is copied into the checkout of the story under the same path.
     tree_root = WORKTREE_ROOT / "self-test-context"
     target = copy_context(context, tree_root)
-    if target.relative_to(tree_root).as_posix() != ".build-lite/contexts/9-9.md":
+    if target.relative_to(tree_root).as_posix() != ".build-lite/contexts/99-99.md":
         failures.append("the context package is not copied under the same path")
     if not target.exists():
         failures.append("the context package was not copied into the checkout")
@@ -2276,13 +2427,21 @@ def self_test_phases() -> list[str]:
     if progress.poll() is not None:
         failures.append("a milestone was reported twice for the same change")
 
+    # Prompt headers and assistant text must never create milestones.
     with transcript.open("a", encoding="utf-8") as handle:
-        handle.write('{"type":"tool_use","part":{"tool":"bash","state":{"input":{"command":"dotnet test"}}}}}\n')
+        handle.write("$ prompt mentions dotnet test and BLOQUEO: before the worker starts\n")
+        handle.write('{"type":"text","part":{"type":"text","text":"BLOQUEO: prompt echo"}}\n')
+        handle.write('{"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"plan.md"}}}}\n')
+    if progress.poll() is not None:
+        failures.append("prompt or non-shell tool text was accepted as a milestone")
+
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write('{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"dotnet test"}}}}\n')
     milestone = progress.poll()
     if milestone is None or milestone["kind"] != MILESTONE_TEST_EXECUTED:
         failures.append("an executed test was not recorded as a milestone")
     with transcript.open("a", encoding="utf-8") as handle:
-        handle.write('{"type":"text","part":{"text":"BLOQUEO: falta el contrato en Shared"}}\n')
+        handle.write('{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"Write-Output \\\"BLOQUEO: falta el contrato en Shared\\\""}}}}\n')
     milestone = progress.poll()
     if milestone is None or milestone["kind"] != MILESTONE_BLOCKER_DEMONSTRATED:
         failures.append("a demonstrated blocker was not recorded as a milestone")
