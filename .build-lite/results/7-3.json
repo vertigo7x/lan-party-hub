@@ -1,0 +1,40 @@
+{
+  "story": "7-3-instalaci\u00c3\u00b3n-portable-con-manifiesto-tipado-y-confirmaci\u00c3\u00b3n-de",
+  "base": "56a1669b3aa26ddc6e91825ea2f286f05d6df955",
+  "risk": [
+    "instalaci\u00f3n",
+    "red o host",
+    "persistencia",
+    "contrato compartido"
+  ],
+  "paths": [
+    "src/Client/App.cs",
+    "src/Client/Application/Install/InstallOperationExecutor.cs",
+    "src/Client/Application/Install/InstallProgress.cs",
+    "src/Client/Application/Install/InstallationCoordinator.cs",
+    "src/Client/Application/Ports/IClientStateStore.cs",
+    "src/Client/Application/Ports/IInstallArchiveExtractor.cs",
+    "src/Client/Application/Ports/IPrivilegedOperationConfirmation.cs",
+    "src/Client/Domain/Install/PrivilegedOperationPolicy.cs",
+    "src/Client/Host/InstallationComposition.cs",
+    "src/Client/Infrastructure/Filesystem/DecliningPrivilegedOperationConfirmation.cs",
+    "src/Client/Infrastructure/Filesystem/ZipInstallArchiveExtractor.cs",
+    "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+    "src/Client/Presentation/Install/InstallProgressControl.cs",
+    "src/Client/Presentation/Install/InstallProgressViewModel.cs",
+    "src/Client/Presentation/Install/PrivilegedOperationDialog.cs",
+    "src/Client/Presentation/Status/ConnectionStatusPanel.cs",
+    "src/Client/Program.cs",
+    "src/Shared/Contracts/ErrorCatalog.cs",
+    "tests/IntegrationTests/PortableInstallationTests.cs",
+    "tests/UnitTests/DownloadCoordinatorTests.cs",
+    "tests/UnitTests/DownloadRecoveryTests.cs",
+    "tests/UnitTests/DownloadValidationPersistenceTests.cs",
+    "tests/UnitTests/FixTrustAnchorTests.cs",
+    "tests/UnitTests/InstallProgressTests.cs",
+    "tests/UnitTests/InstallationOrderTests.cs",
+    "tests/UnitTests/PrivilegedOperationPolicyTests.cs",
+    "tests/UnitTests/ValidationFailurePresentationTests.cs"
+  ],
+  "state": "complete"
+}
