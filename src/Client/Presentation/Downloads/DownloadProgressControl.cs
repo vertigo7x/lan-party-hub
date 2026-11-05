@@ -27,6 +27,8 @@ public sealed class DownloadProgressControl : UserControl
     private readonly ProgressBar _bar;
     private readonly TextBlock _stateText;
     private readonly TextBlock _progressText;
+    private readonly TextBlock _errorText;
+    private readonly TextBlock _blockedReasonText;
     private readonly Button _pauseButton;
     private readonly Button _resumeButton;
     private readonly Button _cancelButton;
@@ -46,6 +48,24 @@ public sealed class DownloadProgressControl : UserControl
         };
 
         _progressText = new TextBlock();
+
+        // AC3, UX-DR-36: el error de la operación se presenta con sus TRES partes, y el
+        // aviso de error lleva la superficie del peligro (DESIGN).
+        _errorText = new TextBlock
+        {
+            IsVisible = false,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(DesignTokens.StateDanger),
+        };
+
+        // AC1, UX-DR-33: el motivo del bloqueo del alta es VISIBLE, no un renglón oculto
+        // en el registro.
+        _blockedReasonText = new TextBlock
+        {
+            IsVisible = false,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(DesignTokens.StateDanger),
+        };
 
         // UX-DR-13: la barra siempre va acompañada del texto «&lt;n&gt; %», así que la
         // barra no es accesible por sí sola.
@@ -85,6 +105,8 @@ public sealed class DownloadProgressControl : UserControl
                 _stateText,
                 _bar,
                 _progressText,
+                _errorText,
+                _blockedReasonText,
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -117,6 +139,24 @@ public sealed class DownloadProgressControl : UserControl
     public TextBlock ProgressText => _progressText;
 
     /// <summary>
+    /// The text of the state, so it can be inspected and driven from the outside
+    /// (AC1, UX-DR-6).
+    /// </summary>
+    public TextBlock StateText => _stateText;
+
+    /// <summary>
+    /// The text of the error of la operación con sus TRES partes, so it can be inspected
+    /// and driven from the outside (AC3, UX-DR-36).
+    /// </summary>
+    public TextBlock ErrorText => _errorText;
+
+    /// <summary>
+    /// The VISIBLE reason of the block del alta de la instalación, so it can be inspected
+    /// and driven from the outside (AC1, UX-DR-33).
+    /// </summary>
+    public TextBlock BlockedReasonText => _blockedReasonText;
+
+    /// <summary>
     /// The action that pauses the download, so it can be inspected and driven from the
     /// outside (UX-DR-6).
     /// </summary>
@@ -139,7 +179,13 @@ public sealed class DownloadProgressControl : UserControl
     /// </summary>
     private void Render()
     {
-        _stateText.Text = _viewModel.StateText;
+        // AC1, AC2: el estado de una validación fallida es el DIFERENCIADO, con el tamaño
+        // del paquete al final, y va en el color del peligro (UX-DR-33).
+        _stateText.Text = _viewModel.StateTextWithSize;
+
+        _stateText.Foreground = _viewModel.HasValidationFailure
+            ? new SolidColorBrush(DesignTokens.StateDanger)
+            : new SolidColorBrush(DesignTokens.InkSecondary);
 
         // AC2, UX-DR-45: el texto lleva la microcopy de la reanudación cuando la
         // operación se está reanudando, y el porcentaje y el par de tamaños siguen
@@ -149,6 +195,17 @@ public sealed class DownloadProgressControl : UserControl
 
         // UX-DR-13: la barra dibuja la MISMA fracción que el porcentaje declara.
         _bar.Value = _viewModel.BarFraction * 100;
+
+        // AC3, UX-DR-36: el error se presenta con sus TRES partes: qué falló, por qué y
+        // qué hacer ahora.
+        var error = _viewModel.Error;
+
+        _errorText.Text = error?.Text ?? string.Empty;
+        _errorText.IsVisible = error is not null;
+
+        // AC1, UX-DR-33: el motivo del bloqueo del alta es VISIBLE.
+        _blockedReasonText.Text = _viewModel.InstallBlockedReason ?? string.Empty;
+        _blockedReasonText.IsVisible = _viewModel.IsInstallBlocked;
 
         _pauseButton.IsEnabled = _viewModel.CanPause;
         _resumeButton.IsEnabled = _viewModel.CanResume;

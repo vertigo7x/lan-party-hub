@@ -99,4 +99,59 @@ public sealed class StateDisplayMapTests
         Assert.NotEqual(OperationOutcome.PackageWithdrawn, OperationOutcome.Failed);
         Assert.NotEqual(StateDisplayMap.GetText(OperationOutcome.PackageWithdrawn), StateDisplayMap.GetText(OperationOutcome.Failed));
     }
+
+    [Fact]
+    public void The_corrupted_package_keeps_the_literal_of_the_experience_spine()
+    {
+        Assert.Equal(
+            "Paquete dañado: el hash no coincide",
+            StateDisplayMap.GetText(ErrorCatalog.PackageIntegrityMismatchCode));
+    }
+
+    [Fact]
+    public void The_untrusted_package_keeps_the_literal_of_the_experience_spine()
+    {
+        Assert.Equal(
+            "Paquete no confiable: no se pudo validar contra la raíz de confianza",
+            StateDisplayMap.GetText(ErrorCatalog.ManifestSignatureInvalidCode));
+    }
+
+    [Fact]
+    public void The_damaged_package_and_the_untrusted_package_are_different_texts()
+    {
+        var damaged = StateDisplayMap.GetText(ErrorCatalog.PackageIntegrityMismatchCode);
+        var untrusted = StateDisplayMap.GetText(ErrorCatalog.ManifestSignatureInvalidCode);
+
+        Assert.NotEqual(damaged, untrusted);
+        Assert.Contains("dañado", damaged, StringComparison.Ordinal);
+        Assert.Contains("no confiable", untrusted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_unknown_code_falls_back_to_the_generic_text_of_the_catalog()
+    {
+        var text = StateDisplayMap.GetText("CODE_THAT_THE_CATALOG_DOES_NOT_KNOW");
+
+        Assert.Equal(
+            ErrorCatalog.Resolve("CODE_THAT_THE_CATALOG_DOES_NOT_KNOW").Message,
+            text);
+    }
+
+    [Fact]
+    public void An_unknown_code_is_never_the_primary_text()
+    {
+        var text = StateDisplayMap.GetText("CODE_THAT_THE_CATALOG_DOES_NOT_KNOW");
+
+        Assert.DoesNotContain("CODE_THAT_THE_CATALOG_DOES_NOT_KNOW", text, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(text));
+    }
+
+    [Fact]
+    public void Every_code_of_the_catalog_has_a_text()
+    {
+        foreach (var code in ErrorCatalog.Codes)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(StateDisplayMap.GetText(code)));
+        }
+    }
 }

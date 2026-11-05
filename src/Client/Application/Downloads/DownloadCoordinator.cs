@@ -910,6 +910,8 @@ public sealed class DownloadCoordinator
                 handle.PackageId,
                 handle.OperationId);
 
+            handle.SetValidationError(ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode));
+
             handle.StateMachine.TryTransitionTo(DownloadState.Failed);
 
             await PersistStateAsync(handle).ConfigureAwait(false);
@@ -938,6 +940,12 @@ public sealed class DownloadCoordinator
         // códigos estables distintos, así que el log los distingue: un constructor que
         // los colapsa pierde la información que separa un ataque de un archivo dañado
         // (AD-15, AD-25, AD-27).
+        //
+        // El handle TRANSPORTA el error del catálogo, así que la interfaz muestra la causa
+        // diferenciada sin adivinar y el alta de la instalación queda bloqueada con un
+        // motivo visible (AC1, AC3).
+        handle.SetValidationError(result.Error ?? ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode));
+
         if (result.IsCorrupted)
         {
             _logger.LogWarning(
@@ -1212,6 +1220,7 @@ public sealed class DownloadOperationHandle
     private long? _totalBytes;
     private bool _pauseRequested;
     private bool _cancelRequested;
+    private ApiError? _validationError;
     private CancellationTokenSource? _transferCancellation;
     private CancellationTokenSource? _runCancellation;
     private Task? _activeRun;
@@ -1302,6 +1311,40 @@ public sealed class DownloadOperationHandle
 
     /// <summary>Progress of the operation, with its percentage and its pair of sizes.</summary>
     public DownloadProgress Progress => new(BytesPersisted, TotalBytes);
+
+    /// <summary>
+    /// The error of the catalog that explains WHY the validation of the package failed,
+    /// or <c>null</c> when the package has not failed its validation (AD-8, AD-15, AC3).
+    ///
+    /// <para>
+    /// El error del catálogo es el que lleva la CAUSA diferenciada: la corrupción y la
+    /// falta de autenticidad son dos fallos distintos, y el handle los transporta para
+    /// que la interfaz pueda mostrarlos sin adivinar (AD-27, AC6).
+    /// </para>
+    /// </summary>
+    public ApiError? ValidationError
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _validationError;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records the error of the catalog that explains the failure of the validation of the
+    /// package (AD-8, AD-15).
+    /// </summary>
+    /// <param name="error">Error of the catalog, or <c>null</c> to clear it.</param>
+    internal void SetValidationError(ApiError? error)
+    {
+        lock (_lock)
+        {
+            _validationError = error;
+        }
+    }
 
     /// <summary>
     /// Attaches the callback that publishes the state and the progress of the operation.
