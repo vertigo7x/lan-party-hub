@@ -29,6 +29,7 @@ import importlib.util
 import json
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -41,14 +42,100 @@ from typing import Sequence
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_ROOT = REPO_ROOT / ".build-lite" / "logs"
 PLAN_ROOT = REPO_ROOT / ".build-lite" / "plans"
+CONTEXT_ROOT = REPO_ROOT / ".build-lite" / "contexts"
 RESULT_ROOT = REPO_ROOT / ".build-lite" / "results"
 WORKTREE_ROOT = REPO_ROOT / ".build-lite" / "worktrees"
 BASE_BRANCH = "main"
 PLAN_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash"
+CONTEXT_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash"
 IMPLEMENT_MODEL = "minimax-coding-plan/MiniMax-M3"
 REVIEW_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash"
 PHASE_MAX_ATTEMPTS = 2
 IMPLEMENTATION_MAX_ATTEMPTS = 1
+
+# The preparation of the context is a phase with a brief budget: one attempt
+# plus one technical retry, the same rule as any other provider phase.
+CONTEXT_MAX_ATTEMPTS = PHASE_MAX_ATTEMPTS
+CONTEXT_TIMEOUT_MINUTES = 5
+
+# The context package is an execution input of the worker, never a source of
+# truth: it lives in the local cache and never in the history of the story.
+CONTEXT_PATH_PREFIX = ".build-lite/contexts/"
+
+# The headings that the preparer has to produce, and the sentence that states
+# that the preparer only prepares. A package without them is incomplete and
+# the phase runs again instead of handing a half-written package to a worker.
+CONTEXT_REQUIRED_TOKENS: tuple[str, ...] = (
+    "requisitos",
+    "decisiones",
+    "patrones",
+    "archivos",
+    "pruebas",
+    "comandos",
+    "exclusiones",
+)
+CONTEXT_RESTRICTION_TOKENS: tuple[str, ...] = (
+    "no puede",
+    "implementar",
+    "huella",
+    "contratos",
+    "alcance",
+)
+CONTEXT_MIN_LENGTH = 300
+
+# The compiled context of an epic is a source of the package. It is read in
+# full while it stays inside this budget; a bigger one is truncated.
+EPIC_CONTEXT_MAX_CHARS = 60000
+
+# ---------------------------------------------------------------------------
+# The structured state of a phase
+# ---------------------------------------------------------------------------
+
+# Every phase ends in one of these states. They tell a technical timeout apart
+# from a worker that only explores, and they are recorded per phase so a run
+# that stops explains itself without reading the whole transcript.
+PHASE_COMPLETE = "complete"
+PHASE_TIMEOUT = "timeout"
+PHASE_STALLED = "stalled"
+PHASE_TOOL_FAILURE = "tool_failure"
+PHASE_VERIFICATION_FAILURE = "verification_failure"
+PHASE_ESCALATED = "escalated"
+PHASE_STATES: tuple[str, ...] = (
+    PHASE_COMPLETE,
+    PHASE_TIMEOUT,
+    PHASE_STALLED,
+    PHASE_TOOL_FAILURE,
+    PHASE_VERIFICATION_FAILURE,
+    PHASE_ESCALATED,
+)
+
+# The exit codes the watcher uses to tell the three endings apart.
+EXIT_TIMEOUT = 124
+EXIT_STALLED = 125
+
+# How often the watcher asks the progress probe for a milestone.
+PHASE_POLL_SECONDS = 15
+
+# The window without a milestone that turns an implementation into a stalled
+# one. It is shorter than the timeout of the phase, so a worker that only
+# explores stops while there is still budget left to act on the evidence.
+IMPLEMENTATION_PROGRESS_WINDOW_MINUTES = 15
+
+# The marker the worker writes when it reports a demonstrated blocker.
+BLOCKER_MARKER = "BLOQUEO:"
+
+# The milestones an implementation can produce while it runs.
+MILESTONE_FUNCTIONAL_CHANGE = "functional_change"
+MILESTONE_TEST_EXECUTED = "test_executed"
+MILESTONE_BLOCKER_DEMONSTRATED = "blocker_demonstrated"
+MILESTONE_KINDS: tuple[str, ...] = (
+    MILESTONE_FUNCTIONAL_CHANGE,
+    MILESTONE_TEST_EXECUTED,
+    MILESTONE_BLOCKER_DEMONSTRATED,
+)
+
+# The command that means that a test ran.
+TEST_COMMAND_MARKER = "dotnet test"
 
 # The window of the scheduler. Four workers is the ceiling of the project:
 # a fifth story waits for a free slot instead of starting.
@@ -97,6 +184,111 @@ legacy = load_legacy()
 class Risk:
     required: bool
     reasons: tuple[str, ...] = ()
+
+
+@dataclass
+class PhaseOutcome:
+    """How a phase ended, with the evidence it left."""
+
+    name: str
+    state: str
+    attempt: int = 1
+    seconds: float = 0.0
+    log: Path | None = None
+    milestones: list[dict] = field(default_factory=list)
+    error: str = ""
+
+
+class PhaseJournal:
+    """The structured record of the phases of a story.
+
+    Every phase leaves its state and its milestones in a JSON file next to the
+    logs of the story, so a run that stops explains why without reading the
+    whole transcript. The record survives a resume: the phases of the first
+    attempt stay next to the phases of the second one.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.entries: list[dict] = []
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                loaded = []
+            if isinstance(loaded, list):
+                self.entries = [entry for entry in loaded if isinstance(entry, dict)]
+
+    def record(
+        self,
+        name: str,
+        state: str,
+        attempt: int = 1,
+        seconds: float = 0.0,
+        milestones: Sequence[dict] | None = None,
+        evidence: str = "",
+        error: str = "",
+    ) -> dict:
+        entry = {
+            "phase": name,
+            "state": state,
+            "attempt": attempt,
+            "seconds": round(seconds, 3),
+            "milestones": list(milestones or []),
+            "evidence": evidence,
+            "error": error,
+            "at": datetime.now().isoformat(timespec="seconds"),
+        }
+        with self.lock:
+            self.entries.append(entry)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(self.entries, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        return entry
+
+    def state_of(self, name: str) -> str:
+        """The last state recorded for a phase."""
+        for entry in reversed(self.entries):
+            if entry.get("phase") == name:
+                return str(entry.get("state", ""))
+        return ""
+
+    def failure_state(self) -> str:
+        """The state that explains why the story did not finish."""
+        for entry in reversed(self.entries):
+            state = str(entry.get("state", ""))
+            if state and state != PHASE_COMPLETE:
+                return state
+        return PHASE_ESCALATED
+
+
+def journal_for(story) -> PhaseJournal:
+    """The journal of the phases of a story."""
+    return PhaseJournal(LOG_ROOT / story.label / "phases.json")
+
+
+def state_for_exit_code(code: int) -> str:
+    """The state of a phase from the exit code of its process."""
+    if code == 0:
+        return PHASE_COMPLETE
+    if code == EXIT_TIMEOUT:
+        return PHASE_TIMEOUT
+    if code == EXIT_STALLED:
+        return PHASE_STALLED
+    return PHASE_TOOL_FAILURE
+
+
+def phase_may_retry(state: str, attempt: int, retries: int) -> bool:
+    """Whether a phase can be attempted again.
+
+    A stalled phase is never retried: the worker was not producing anything,
+    and repeating it would spend the same budget for the same silence.
+    """
+    if state in (PHASE_COMPLETE, PHASE_STALLED):
+        return False
+    return attempt < retries
 
 
 SENSITIVE_PATHS: tuple[tuple[str, str], ...] = (
@@ -243,6 +435,17 @@ def story_paths(story) -> tuple[Path, Path, Path]:
     return plan, result, LOG_ROOT / story.label
 
 
+def context_path(story) -> Path:
+    """The local cache path of the context package of a story."""
+    return CONTEXT_ROOT / f"{story.label}.md"
+
+
+def is_context_path(path: str) -> bool:
+    """True when a path points at a context package."""
+    folded = path.replace("\\", "/")
+    return folded.startswith(CONTEXT_PATH_PREFIX) or folded == CONTEXT_PATH_PREFIX.rstrip("/")
+
+
 def is_complete_plan(plan: Path) -> bool:
     """A planner may finish its file before its CLI session reaches the timeout."""
     try:
@@ -258,8 +461,16 @@ def changed_paths(base: str, cwd: Path | None = None) -> list[str]:
 
 
 def implementation_paths(paths: Sequence[str]) -> list[str]:
-    """Exclude Build Lite bookkeeping when deciding whether work can be resumed."""
-    return [path for path in paths if not path.replace("\\", "/").startswith(".build-lite/")]
+    """Exclude Build Lite bookkeeping when deciding whether work can be resumed.
+
+    The context packages are an execution input of the worker: they are a local
+    cache, so they never count as a change of the story.
+    """
+    return [
+        path
+        for path in paths
+        if not path.replace("\\", "/").startswith(".build-lite/") and not is_context_path(path)
+    ]
 
 
 def paths_are_declared(paths: Sequence[str], metadata: PlanMetadata | None) -> bool:
@@ -294,19 +505,247 @@ def run_phase(
     timeout_minutes: int,
     retries: int = PHASE_MAX_ATTEMPTS,
     cwd: Path | None = None,
-):
-    """Run a bounded provider phase; a retry is technical only, never a new loop."""
+    journal: PhaseJournal | None = None,
+    progress: "ImplementationProgress | None" = None,
+    progress_window_minutes: int = 0,
+    poll_seconds: float = PHASE_POLL_SECONDS,
+) -> PhaseOutcome:
+    """Run a bounded provider phase; a retry is technical only, never a new loop.
+
+    A phase that ends stalled is not retried: the worker was not producing
+    anything, and repeating it would spend the same budget again for the same
+    silence.
+    """
     for attempt in range(1, retries + 1):
         log(f"{name}: attempt {attempt} of {retries}")
-        result = legacy.run_command(
+        log_path = log_dir / f"{name}-{attempt}.jsonl"
+        code, seconds, milestones = watch_process(
             phase_command("build", model, prompt),
-            log_path=log_dir / f"{name}-{attempt}.jsonl",
+            log_path,
             timeout=timeout_minutes * 60,
             cwd=cwd or REPO_ROOT,
+            progress=progress,
+            progress_window=progress_window_minutes * 60,
+            poll_seconds=poll_seconds,
         )
-        if result.ok:
-            return result
+        state = state_for_exit_code(code)
+        if journal is not None:
+            journal.record(
+                name,
+                state,
+                attempt=attempt,
+                seconds=seconds,
+                milestones=milestones,
+                evidence=relative(log_path) if log_path else "",
+            )
+        if state == PHASE_COMPLETE:
+            return PhaseOutcome(
+                name=name,
+                state=state,
+                attempt=attempt,
+                seconds=seconds,
+                log=log_path,
+                milestones=milestones,
+            )
+        if state == PHASE_STALLED:
+            raise legacy.DriverError(
+                f"{name} ended stalled: the worker produced no change, no test and no blocker"
+            )
+        if not phase_may_retry(state, attempt, retries):
+            break
     raise legacy.DriverError(f"{name} failed after {retries} technical attempt(s); see {log_dir}")
+
+
+def watch_process(
+    argv: Sequence[str],
+    log_path: Path,
+    timeout: float | None,
+    cwd: Path,
+    progress: "ImplementationProgress | None" = None,
+    progress_window: float = 0.0,
+    poll_seconds: float = PHASE_POLL_SECONDS,
+) -> tuple[int, float, list[dict]]:
+    """Run a command and stop it when it stops making progress.
+
+    The process writes to the log while it runs, so the log is the evidence of
+    what it did. The progress probe is asked for a milestone on every poll:
+    when it stops returning one for the whole window, the run is stalled and
+    it is stopped before the global timeout.
+    """
+    started = time.time()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    milestones: list[dict] = []
+    with log_path.open("w", encoding="utf-8", errors="replace") as handle:
+        handle.write(f"$ {' '.join(argv)}\n\n")
+        handle.flush()
+        process = subprocess.Popen(
+            list(argv),
+            cwd=str(cwd),
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
+        code = 0
+        last_progress = time.time()
+        while True:
+            try:
+                code = process.wait(timeout=poll_seconds)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if timeout is not None and time.time() - started > timeout:
+                legacy._kill_process_tree(process)
+                wait_quietly(process)
+                code = EXIT_TIMEOUT
+                break
+            if progress is None:
+                continue
+            milestone = progress.poll()
+            if milestone is not None:
+                milestones.append(milestone)
+                last_progress = time.time()
+            elif progress_window and time.time() - last_progress > progress_window:
+                log(f"the phase stopped making progress for {describe_window(progress_window)}")
+                legacy._kill_process_tree(process)
+                wait_quietly(process)
+                code = EXIT_STALLED
+                break
+    return code, time.time() - started, milestones
+
+
+def wait_quietly(process) -> None:
+    """Wait for a process that was already stopped, without failing on it."""
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def describe_window(seconds: float) -> str:
+    """How a window of time is written in the log."""
+    if seconds < 60:
+        return f"{seconds:.0f} seconds"
+    return f"{seconds / 60:.0f} minutes"
+
+
+class ImplementationProgress:
+    """The observable milestones of an implementation that is still running.
+
+    A milestone is a functional change in the worktree, a test that ran, or a
+    blocker that the worker demonstrated. Reading files is not a milestone: an
+    implementation that only explores never produces one, and noticing that is
+    the whole point of this probe.
+    """
+
+    def __init__(self, tree_path: Path, transcript: Path):
+        self.tree_path = tree_path
+        self.transcript = transcript
+        self.fingerprint = self._fingerprint()
+        self.read_bytes = 0
+        self.pending: list[dict] = []
+
+    def poll(self) -> dict | None:
+        """The newest milestone, or None when there is nothing new."""
+        change = self._functional_change()
+        if change is not None:
+            return change
+        return self._transcript_milestone()
+
+    def _is_artifact(self, path: str) -> bool:
+        """True when a path is the evidence of the run and not a change."""
+        folded = path.replace("\\", "/")
+        if folded.startswith(".build-lite/"):
+            return True
+        try:
+            return (self.tree_path / path).resolve() == self.transcript.resolve()
+        except OSError:
+            return False
+
+    def _functional_change(self) -> dict | None:
+        """A milestone when the worktree changed since the last poll."""
+        fingerprint = self._fingerprint()
+        if fingerprint == self.fingerprint:
+            return None
+        changed = self._changed_paths()
+        self.fingerprint = fingerprint
+        return self._milestone(
+            MILESTONE_FUNCTIONAL_CHANGE,
+            ", ".join(changed) if changed else "the worktree changed",
+        )
+
+    def _fingerprint(self) -> str:
+        """The state of the changed files of the worktree."""
+        result = legacy.git("status", "--porcelain", check=False, cwd=self.tree_path)
+        if not result.ok:
+            return ""
+        entries: list[str] = []
+        for path in self._paths(result.stdout):
+            try:
+                stat = (self.tree_path / path).stat()
+                entries.append(f"{path}={stat.st_mtime_ns}:{stat.st_size}")
+            except OSError:
+                entries.append(f"{path}=missing")
+        return "\n".join(sorted(entries))
+
+    def _changed_paths(self) -> list[str]:
+        result = legacy.git("status", "--porcelain", check=False, cwd=self.tree_path)
+        if not result.ok:
+            return []
+        return self._paths(result.stdout)
+
+    def _paths(self, status: str) -> list[str]:
+        """The paths of a `git status --porcelain` that are changes of the story."""
+        paths: list[str] = []
+        for line in status.splitlines():
+            if len(line) < 4:
+                continue
+            path = line[3:].strip().strip('"')
+            if path and not self._is_artifact(path):
+                paths.append(path)
+        return paths
+
+    def _transcript_milestone(self) -> dict | None:
+        """A milestone when the transcript shows a test or a blocker."""
+        chunk = self._new_transcript()
+        if chunk:
+            if TEST_COMMAND_MARKER in chunk:
+                self.pending.append(
+                    self._milestone(MILESTONE_TEST_EXECUTED, f"the worker ran {TEST_COMMAND_MARKER}")
+                )
+            if BLOCKER_MARKER in chunk:
+                self.pending.append(
+                    self._milestone(
+                        MILESTONE_BLOCKER_DEMONSTRATED, "the worker reported a demonstrated blocker"
+                    )
+                )
+        if self.pending:
+            return self.pending.pop(0)
+        return None
+
+    def _new_transcript(self) -> str:
+        """The part of the transcript that was written since the last poll."""
+        try:
+            size = self.transcript.stat().st_size
+        except OSError:
+            return ""
+        if size <= self.read_bytes:
+            return ""
+        try:
+            with self.transcript.open("rb") as handle:
+                handle.seek(self.read_bytes)
+                chunk = handle.read()
+        except OSError:
+            return ""
+        self.read_bytes = size
+        return chunk.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _milestone(kind: str, detail: str) -> dict:
+        return {
+            "kind": kind,
+            "detail": detail,
+            "at": datetime.now().isoformat(timespec="seconds"),
+        }
 
 
 def plan_prompt(story, plan: Path) -> str:
@@ -323,11 +762,229 @@ depende. Sin ese bloque la historia se ejecuta sola, así que decláralo aunque 
 interna y vacía."""
 
 
-def implementation_prompt(story, plan: Path) -> str:
+def implementation_prompt(story, plan: Path, context: Path) -> str:
     return f"""Implementa exclusivamente la Story {story.short_id}: {story.title}.
-Lee {relative(plan)} y la sección correspondiente de {relative(legacy.EPICS_FILE)}. Implementa
-el código y las pruebas descritas, ejecuta las pruebas más cercanas que existan y deja el árbol
-listo para commit. No replanifiques, no lances revisores, no abras PR y no cambies otras stories."""
+Lee primero {relative(plan)} y el paquete de contexto {relative(context)}. El paquete es la
+evidencia ya seleccionada de esta historia: úsalo y no explores el backlog por tu cuenta.
+Implementa el código y las pruebas que el plan y el paquete describen, ejecuta las pruebas más
+cercanas que existan y deja el árbol listo para commit.
+Limita tu exploración a las rutas que el plan y el paquete declaran. Si el paquete no contiene lo
+que necesitas, no amplíes el alcance: repórtalo como bloqueo demostrado con una línea que empiece
+por `{BLOCKER_MARKER}` (qué falta y en qué ruta) y detente.
+No replanifiques, no lances revisores, no abras PR y no cambies otras stories."""
+
+
+# ---------------------------------------------------------------------------
+# The preparation of the context
+# ---------------------------------------------------------------------------
+
+
+def read_text_or_note(path: Path) -> str:
+    """The content of a file, or the reason why it could not be read."""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        return f"(no se pudo leer {relative(path)}: {error})"
+
+
+def extract_story_section(story, epics_file: Path | None = None) -> str:
+    """The markdown of the section of the story in the backlog.
+
+    The preparer only needs the section of its own story: the rest of the
+    backlog is not evidence for it, and reading it would spend the budget of
+    the phase without adding anything.
+    """
+    path = epics_file or legacy.EPICS_FILE
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as error:
+        return f"(no se pudo leer {relative(path)}: {error})"
+    lines = content.splitlines()
+    header = re.compile(rf"^###\s+Story\s+{story.epic}\.{story.num}\s*:")
+    start = next((index for index, line in enumerate(lines) if header.match(line)), None)
+    if start is None:
+        return f"(la sección de la Story {story.short_id} no está en {relative(path)})"
+    collected: list[str] = []
+    for line in lines[start + 1:]:
+        if re.match(r"^#{1,3}\s", line):
+            break
+        collected.append(line)
+    section = "\n".join(collected).strip()
+    return section or f"(la sección de la Story {story.short_id} está vacía)"
+
+
+def epic_context_path(story) -> Path:
+    """The compiled context of the epic, when the project has one."""
+    return legacy.ARTIFACTS_DIR / f"epic-{story.epic}-context.md"
+
+
+def read_epic_context(story) -> str:
+    """The compiled context of the epic, or the reason why there is none."""
+    path = epic_context_path(story)
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return f"(no hay contexto compilado de la épica {story.epic}: {relative(path)} no existe)"
+    if len(content) > EPIC_CONTEXT_MAX_CHARS:
+        content = content[:EPIC_CONTEXT_MAX_CHARS] + "\n\n(contexto de la épica truncado)"
+    return content
+
+
+def context_prompt(story, plan: Path, context: Path, epics_file: Path | None = None) -> str:
+    """The prompt of the phase that prepares the context of a story.
+
+    The prompt carries the sources inline, so the preparer never opens the
+    backlog to find them, and it states the limit of the phase: the preparer
+    selects evidence, it does not implement.
+    """
+    return f"""Prepara el paquete de contexto de la Story {story.short_id}: {story.title}.
+
+Escribe un documento breve en español en {relative(context)}, una ruta relativa a la raíz del
+checkout en el que estás. Usa solo las fuentes de abajo: no leas el backlog entero, no explores el
+repositorio más allá de las rutas que declara el plan y no inventes evidencia.
+
+El documento tiene estos encabezados exactos, en este orden:
+
+## Requisitos
+## Decisiones aplicables
+## APIs y patrones a reutilizar
+## Archivos y pruebas relevantes
+## Comandos
+## Exclusiones
+
+Reglas de contenido:
+- Máximo 700 palabras. Cada dato va con su ruta, su identificador o su nombre de archivo.
+- Cada sección cita solo evidencia de las fuentes. Si una fuente no aporta nada a esa sección,
+  escribe "no disponible" y sigue. No inventes decisiones, contratos, rutas ni pruebas.
+- "APIs y patrones a reutilizar" describe los tipos, los métodos y las formas que ya existen y que
+  la historia puede reutilizar: para eso puedes leer los ficheros que el plan declara en `reads`.
+- "Comandos" lista los comandos de compilación y de prueba de la historia.
+- "Exclusiones" dice qué queda fuera del alcance de la historia.
+- Añade al final, sin reescribirla, esta línea:
+  Restricciones del preparador: no puede implementar, no puede cambiar la huella, no puede modificar contratos ni ampliar alcance.
+
+Restricciones de operación:
+- No escribas código, no crees ficheros distintos de {relative(context)} y no modifiques el plan.
+- No lances subagentes, no abras PR y no implementes la historia.
+
+--- PLAN DE LA HISTORIA ---
+{read_text_or_note(plan)}
+
+--- SECCIÓN DE LA HISTORIA EN EL BACKLOG ---
+{extract_story_section(story, epics_file)}
+
+--- CONTEXTO DE LA ÉPICA ---
+{read_epic_context(story)}
+"""
+
+
+def is_complete_context(context: Path) -> bool:
+    """Whether a context package holds everything that the worker needs.
+
+    A package without its sections, or without the sentence that states that
+    the preparer only prepares, is incomplete: the phase runs again instead of
+    handing a half-written package to a worker.
+    """
+    try:
+        content = context.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    stripped = content.strip()
+    if len(stripped) < CONTEXT_MIN_LENGTH:
+        return False
+    lowered = stripped.lower()
+    if not all(token in lowered for token in CONTEXT_REQUIRED_TOKENS):
+        return False
+    return all(token in lowered for token in CONTEXT_RESTRICTION_TOKENS)
+
+
+def copy_context(context: Path, tree_path: Path) -> Path:
+    """Copy the context package into the checkout of the story."""
+    target = tree_path / relative(context)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(context, target)
+    return target
+
+
+def prepare_context(
+    story,
+    plan: Path,
+    log_dir: Path,
+    tree=None,
+    runner=None,
+    journal: PhaseJournal | None = None,
+) -> Path:
+    """Return the context package of a story, preparing it when it is missing.
+
+    The package is an execution input and not a source of truth: it selects the
+    evidence of the story and it is cached locally, so a resumed story spends
+    no budget on it again. The phase runs before the implementation, and it
+    never changes the footprint of the story.
+    """
+    context = context_path(story)
+    if is_complete_context(context):
+        log(f"{story.short_id}: reusing the context package {relative(context)}")
+        if tree is not None:
+            copy_context(context, tree.path)
+        return context
+
+    CONTEXT_ROOT.mkdir(parents=True, exist_ok=True)
+    target = tree.path / relative(context) if tree is not None else context
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if runner is None:
+        runner = run_phase
+    runner(
+        "context",
+        CONTEXT_MODEL,
+        context_prompt(story, plan, context),
+        log_dir,
+        timeout_minutes=CONTEXT_TIMEOUT_MINUTES,
+        retries=CONTEXT_MAX_ATTEMPTS,
+        cwd=tree.path if tree is not None else None,
+        journal=journal,
+    )
+    prepared = target if is_complete_context(target) else context
+    if not is_complete_context(prepared):
+        raise legacy.DriverError(
+            f"the context preparer did not write a complete {relative(context)}"
+        )
+    if prepared != context:
+        shutil.copy2(prepared, context)
+    if tree is not None:
+        copy_context(context, tree.path)
+    return context
+
+
+def ensure_contexts_ignored(cwd: Path | None = None) -> None:
+    """Keep the context packages out of git, in this checkout and its worktrees.
+
+    The rule is also in the versioned `.gitignore`, but a worktree created
+    before that rule landed keeps an older `.gitignore`: the local exclude
+    file is the common safety net of every worktree of the repository.
+    """
+    result = legacy.git("rev-parse", "--git-path", "info/exclude", check=False, cwd=cwd)
+    if not result.ok:
+        return
+    exclude = result.stdout.strip()
+    if not exclude:
+        return
+    path = Path(exclude)
+    if not path.is_absolute():
+        path = (cwd or REPO_ROOT) / path
+    try:
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
+    except OSError:
+        return
+    if CONTEXT_PATH_PREFIX.strip("/") in content:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        if content and not content.endswith("\n"):
+            handle.write("\n")
+        handle.write(
+            "# Build Lite: los paquetes de contexto son cache local\n"
+            f"{CONTEXT_PATH_PREFIX}\n"
+        )
 
 
 def repair_prompt(story, evidence: str) -> str:
@@ -411,27 +1068,60 @@ def verify_or_repair(
     log_dir: Path,
     repair_available: bool = True,
     cwd: Path | None = None,
+    journal: PhaseJournal | None = None,
 ) -> bool:
     results = run_verifications(log_dir, cwd=cwd)
     failed = [label for label, result in results if not result.ok]
     if not failed:
+        if journal is not None:
+            journal.record("verification", PHASE_COMPLETE, evidence=relative(log_dir))
         return False
+    if journal is not None:
+        journal.record(
+            "verification",
+            PHASE_VERIFICATION_FAILURE,
+            evidence=relative(log_dir),
+            error=", ".join(failed),
+        )
     if not repair_available:
         raise legacy.DriverError(f"verification failed after the repair budget was spent: {', '.join(failed)}")
     evidence = "; ".join(failed)
-    run_phase("repair", IMPLEMENT_MODEL, repair_prompt(story, evidence), log_dir, timeout_minutes=30, cwd=cwd)
+    run_phase(
+        "repair",
+        IMPLEMENT_MODEL,
+        repair_prompt(story, evidence),
+        log_dir,
+        timeout_minutes=30,
+        cwd=cwd,
+        journal=journal,
+    )
     second = run_verifications(log_dir / "after-repair", cwd=cwd)
     failed = [label for label, result in second if not result.ok]
     if failed:
+        if journal is not None:
+            journal.record(
+                "verification",
+                PHASE_VERIFICATION_FAILURE,
+                evidence=relative(log_dir / "after-repair"),
+                error=", ".join(failed),
+            )
         raise legacy.DriverError(f"verification still fails after the single repair: {', '.join(failed)}")
+    if journal is not None:
+        journal.record("verification", PHASE_COMPLETE, evidence=relative(log_dir / "after-repair"))
     return True
 
 
 def commit_story(story, cwd: Path | None = None) -> None:
+    """Commit the change of a story, without the local cache of Build Lite.
+
+    The context packages are excluded from the staging on purpose: they are an
+    execution input of the worker and they never belong to the history of the
+    story.
+    """
     if not legacy.git("status", "--porcelain", cwd=cwd).stdout.strip():
         return
-    legacy.git("add", "-A", cwd=cwd)
-    if not legacy.git("status", "--porcelain", cwd=cwd).stdout.strip():
+    legacy.git("add", "-A", "--", ".", f":(exclude){CONTEXT_PATH_PREFIX}", cwd=cwd)
+    if not legacy.git("diff", "--cached", "--name-only", cwd=cwd).stdout.strip():
         return
     legacy.git("commit", "-m", f"feat({story.label}): {story.title}", cwd=cwd)
 
@@ -444,7 +1134,7 @@ def result_body(story, risk: Risk, base: str) -> str:
 - **Base:** `{base}`
 - **Revisión LLM:** {review}
 - **Verificación:** `build-lite --self-test`, `dotnet build`, `dotnet test`, codificación y backlog en verde.
-- **Presupuesto:** un plan, una implementación, una reparación dirigida como máximo y una revisión para cambios sensibles.
+- **Presupuesto:** un plan, un contexto, una implementación, una reparación dirigida como máximo y una revisión para cambios sensibles.
 """
 
 
@@ -516,6 +1206,7 @@ class WorkerResult:
     paths: list[str]
     metadata: PlanMetadata | None = None
     error: str = ""
+    state: str = PHASE_COMPLETE
 
     @property
     def ok(self) -> bool:
@@ -526,60 +1217,79 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
     """Plan, implement and verify a story inside its own worktree.
 
     Nothing here touches `main`, the sprint status or GitHub: the worker
-    produces a verified branch and the coordinator publishes it.
+    produces a verified branch and the coordinator publishes it. Every phase
+    leaves its structured state in the journal of the story, and an
+    implementation that only explores ends stalled instead of burning the
+    timeout of the phase.
     """
     plan, result_file, log_dir = story_paths(story)
     log_dir.mkdir(parents=True, exist_ok=True)
+    journal = journal_for(story)
     worker_plan = tree.path / relative(plan)
     worker_plan.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(plan, worker_plan)
     base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=tree.path).stdout.strip()
 
-    if implementation_paths(changed_paths(base, cwd=tree.path)):
-        log("reusing preserved implementation work; proceeding to verification")
-    else:
-        run_phase(
-            "implementation",
-            IMPLEMENT_MODEL,
-            implementation_prompt(story, plan),
-            log_dir,
-            timeout_minutes=30,
-            retries=IMPLEMENTATION_MAX_ATTEMPTS,
-            cwd=tree.path,
-        )
-    commit_story(story, cwd=tree.path)
-    repair_used = verify_or_repair(story, log_dir, cwd=tree.path)
-    commit_story(story, cwd=tree.path)
+    try:
+        context = prepare_context(story, plan, log_dir, tree=tree, journal=journal)
 
-    paths = changed_paths(base, cwd=tree.path)
-    if not paths:
-        raise legacy.DriverError("Build Lite produced no story change")
-    if not paths_are_declared(paths, metadata):
-        raise legacy.DriverError("the worker changed files outside its declared plan footprint")
-    risk = classify_risk(paths)
-    diff_file = log_dir / "review.diff"
-    write_diff(base, diff_file, cwd=tree.path)
-    worker_diff_file = tree.path / relative(diff_file)
-    worker_diff_file.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(diff_file, worker_diff_file)
-    if risk.required:
-        result = run_phase(
-            "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10,
-            cwd=tree.path,
-        )
-        blocking = review_result(result.log or Path())
-        if blocking:
-            if repair_used:
-                raise legacy.DriverError(
-                    "the focused review found a blocker after the single repair budget was spent: " + blocking
-                )
+        if implementation_paths(changed_paths(base, cwd=tree.path)):
+            log("reusing preserved implementation work; proceeding to verification")
+        else:
+            progress = ImplementationProgress(tree.path, log_dir / "implementation-1.jsonl")
             run_phase(
-                "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                "implementation",
+                IMPLEMENT_MODEL,
+                implementation_prompt(story, plan, context),
+                log_dir,
+                timeout_minutes=30,
+                retries=IMPLEMENTATION_MAX_ATTEMPTS,
                 cwd=tree.path,
+                journal=journal,
+                progress=progress,
+                progress_window_minutes=IMPLEMENTATION_PROGRESS_WINDOW_MINUTES,
             )
-            commit_story(story, cwd=tree.path)
-            verify_or_repair(story, log_dir / "after-review-repair", repair_available=False, cwd=tree.path)
+        commit_story(story, cwd=tree.path)
+        repair_used = verify_or_repair(story, log_dir, cwd=tree.path, journal=journal)
+        commit_story(story, cwd=tree.path)
 
+        paths = changed_paths(base, cwd=tree.path)
+        if not paths:
+            raise legacy.DriverError("Build Lite produced no story change")
+        if not paths_are_declared(paths, metadata):
+            raise legacy.DriverError("the worker changed files outside its declared plan footprint")
+        risk = classify_risk(paths)
+        diff_file = log_dir / "review.diff"
+        write_diff(base, diff_file, cwd=tree.path)
+        worker_diff_file = tree.path / relative(diff_file)
+        worker_diff_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(diff_file, worker_diff_file)
+        if risk.required:
+            outcome = run_phase(
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10,
+                cwd=tree.path, journal=journal,
+            )
+            blocking = review_result(outcome.log or Path())
+            if blocking:
+                if repair_used:
+                    journal.record("story", PHASE_ESCALATED, error=blocking)
+                    raise legacy.DriverError(
+                        "the focused review found a blocker after the single repair budget was spent: " + blocking
+                    )
+                run_phase(
+                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    cwd=tree.path, journal=journal,
+                )
+                commit_story(story, cwd=tree.path)
+                verify_or_repair(
+                    story, log_dir / "after-review-repair", repair_available=False, cwd=tree.path,
+                    journal=journal,
+                )
+    except legacy.DriverError as error:
+        journal.record("story", journal.failure_state(), error=str(error))
+        raise
+
+    journal.record("story", PHASE_COMPLETE)
     del result_file
     return WorkerResult(
         story=story,
@@ -588,6 +1298,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
         risk=risk,
         paths=paths,
         metadata=metadata,
+        state=PHASE_COMPLETE,
     )
 
 
@@ -624,6 +1335,7 @@ def integrate(result: WorkerResult, args: argparse.Namespace) -> None:
                 "base": result.base,
                 "risk": list(result.risk.reasons),
                 "paths": result.paths,
+                "state": result.state,
             },
             indent=2,
         ),
@@ -837,6 +1549,7 @@ def process_story(story, args: argparse.Namespace) -> None:
     base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
     plan, result_file, log_dir = story_paths(story)
     log_dir.mkdir(parents=True, exist_ok=True)
+    journal = journal_for(story)
 
     if legacy.branch_exists(story.branch):
         legacy.git("checkout", story.branch)
@@ -849,7 +1562,10 @@ def process_story(story, args: argparse.Namespace) -> None:
 
     if not plan.exists():
         try:
-            run_phase("plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1)
+            run_phase(
+                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
+                journal=journal,
+            )
         except legacy.DriverError:
             if not is_complete_plan(plan):
                 raise
@@ -857,48 +1573,79 @@ def process_story(story, args: argparse.Namespace) -> None:
     if not is_complete_plan(plan):
         raise legacy.DriverError(f"planner did not create {relative(plan)}")
 
-    if implementation_paths(changed_paths(base)):
-        log("reusing preserved implementation work; proceeding to verification")
-    else:
-        run_phase(
-            "implementation",
-            IMPLEMENT_MODEL,
-            implementation_prompt(story, plan),
-            log_dir,
-            timeout_minutes=30,
-            retries=IMPLEMENTATION_MAX_ATTEMPTS,
-        )
-    commit_story(story)
-    repair_used = verify_or_repair(story, log_dir)
-    commit_story(story)
+    try:
+        context = prepare_context(story, plan, log_dir, journal=journal)
 
-    paths = changed_paths(base)
-    if not paths:
-        raise legacy.DriverError("Build Lite produced no story change")
-    risk = classify_risk(paths)
-    diff_file = log_dir / "review.diff"
-    write_diff(base, diff_file)
-    if risk.required:
-        result = run_phase("review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10)
-        blocking = review_result(result.log or Path())
-        if blocking:
-            if repair_used:
-                raise legacy.DriverError(
-                    "the focused review found a blocker after the single repair budget was spent: " + blocking
+        if implementation_paths(changed_paths(base)):
+            log("reusing preserved implementation work; proceeding to verification")
+        else:
+            progress = ImplementationProgress(REPO_ROOT, log_dir / "implementation-1.jsonl")
+            run_phase(
+                "implementation",
+                IMPLEMENT_MODEL,
+                implementation_prompt(story, plan, context),
+                log_dir,
+                timeout_minutes=30,
+                retries=IMPLEMENTATION_MAX_ATTEMPTS,
+                journal=journal,
+                progress=progress,
+                progress_window_minutes=IMPLEMENTATION_PROGRESS_WINDOW_MINUTES,
+            )
+        commit_story(story)
+        repair_used = verify_or_repair(story, log_dir, journal=journal)
+        commit_story(story)
+
+        paths = changed_paths(base)
+        if not paths:
+            raise legacy.DriverError("Build Lite produced no story change")
+        risk = classify_risk(paths)
+        diff_file = log_dir / "review.diff"
+        write_diff(base, diff_file)
+        if risk.required:
+            outcome = run_phase(
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10,
+                journal=journal,
+            )
+            blocking = review_result(outcome.log or Path())
+            if blocking:
+                if repair_used:
+                    journal.record("story", PHASE_ESCALATED, error=blocking)
+                    raise legacy.DriverError(
+                        "the focused review found a blocker after the single repair budget was spent: " + blocking
+                    )
+                run_phase(
+                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    journal=journal,
                 )
-            run_phase("review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30)
-            commit_story(story)
-            verify_or_repair(story, log_dir / "after-review-repair", repair_available=False)
+                commit_story(story)
+                verify_or_repair(
+                    story, log_dir / "after-review-repair", repair_available=False, journal=journal,
+                )
+    except legacy.DriverError as error:
+        journal.record("story", journal.failure_state(), error=str(error))
+        raise
 
     legacy.fetch_origin()
     main_after = legacy.git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
     if main_after != base:
         legacy.rebase_onto_main()
         base = main_after
-        verify_or_repair(story, log_dir / "after-rebase", repair_available=False)
+        verify_or_repair(story, log_dir / "after-rebase", repair_available=False, journal=journal)
 
     result_file.parent.mkdir(parents=True, exist_ok=True)
-    result_file.write_text(json.dumps({"story": story.key, "base": base, "risk": list(risk.reasons), "paths": paths}, indent=2), encoding="utf-8")
+    result_file.write_text(
+        json.dumps(
+            {
+                "story": story.key,
+                "base": base,
+                "risk": list(risk.reasons),
+                "paths": paths,
+                "state": PHASE_COMPLETE,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     legacy.git("add", relative(result_file))
     legacy.git("commit", "-m", f"chore(build-lite): record story {story.short_id} result")
     legacy.update_and_commit_sprint_status(story)
@@ -945,9 +1692,13 @@ def plan_story(story) -> tuple[PlanMetadata | None, str]:
     """
     plan, _, log_dir = story_paths(story)
     log_dir.mkdir(parents=True, exist_ok=True)
+    journal = journal_for(story)
     if not plan.exists():
         try:
-            run_phase("plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1)
+            run_phase(
+                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
+                journal=journal,
+            )
         except legacy.DriverError:
             if not is_complete_plan(plan):
                 raise
@@ -1137,6 +1888,8 @@ def self_test() -> int:
         failures.append("preserved implementation work was not detected")
 
     failures.extend(self_test_scheduler())
+    failures.extend(self_test_context())
+    failures.extend(self_test_phases())
 
     if failures:
         for failure in failures:
@@ -1144,6 +1897,142 @@ def self_test() -> int:
         return 1
     print("the build-lite self test passed")
     return 0
+
+
+CONTEXT_SAMPLE = """## Requisitos
+
+- AC1 de la historia: el estado distingue «dañado» de «no confiable».
+
+## Decisiones aplicables
+
+- La tabla de estados es la fuente única de la microcopia del estado.
+
+## APIs y patrones a reutilizar
+
+- `ErrorCatalog.Resolve(code)` devuelve el mensaje, la causa y el siguiente paso.
+
+## Archivos y pruebas relevantes
+
+- `src/Shared/Contracts/StateDisplayMap.cs` y `tests/UnitTests/StateDisplayMapTests.cs`.
+
+## Comandos
+
+- `dotnet build LANPartyHub.sln` y `dotnet test LANPartyHub.sln`.
+
+## Exclusiones
+
+- La verificación del paquete y la instalación en disco.
+
+Restricciones del preparador: no puede implementar, no puede cambiar la huella, no puede modificar contratos ni ampliar alcance.
+"""
+
+
+def self_test_context() -> list[str]:
+    """The invariants of the context package, without a provider."""
+    failures: list[str] = []
+    story = type(
+        "S",
+        (),
+        {
+            "short_id": "9.9",
+            "label": "9-9",
+            "branch": "story/9-9-x",
+            "title": "Historia de prueba",
+            "epic": 9,
+            "num": 9,
+        },
+    )()
+    context = context_path(story)
+
+    # The package lives in the local cache, under the path of its story.
+    if relative(context) != ".build-lite/contexts/9-9.md":
+        failures.append("the context package does not live under .build-lite/contexts/")
+    if CONTEXT_MAX_ATTEMPTS != PHASE_MAX_ATTEMPTS or CONTEXT_MAX_ATTEMPTS != 2:
+        failures.append("the context phase retry budget is not one technical retry")
+
+    # The package is never part of the change of the story.
+    if not is_context_path(".build-lite/contexts/9-9.md"):
+        failures.append("a context package was not recognised")
+    if is_context_path(".build-lite/results/9-9.json"):
+        failures.append("a published result was recognised as a context package")
+    if implementation_paths([".build-lite/contexts/9-9.md"]):
+        failures.append("a context package was parsed as implementation work")
+    if implementation_paths([".build-lite/contexts/9-9.md", "src/Server/Program.cs"]) != [
+        "src/Server/Program.cs"
+    ]:
+        failures.append("a context package was not excluded from the change of the story")
+
+    # The section of the story stops at the next heading.
+    epics = PLAN_ROOT / "self-test-epics.md"
+    epics.parent.mkdir(parents=True, exist_ok=True)
+    epics.write_text(
+        "# Epics\n\n### Story 9.9: Prueba\n\nContenido de la historia.\n\n"
+        "### Story 9.10: Otra\n\nNo debe aparecer.\n\n## Epic 10\n\nNo debe aparecer.\n",
+        encoding="utf-8",
+    )
+    section = extract_story_section(story, epics)
+    if "Contenido de la historia." not in section:
+        failures.append("the section of the story was not extracted")
+    if "No debe aparecer." in section:
+        failures.append("the section of the story did not stop at the next heading")
+
+    # The prompts carry the sources and the limits of the phase.
+    plan = PLAN_ROOT / "self-test-context-plan.md"
+    plan.write_text("# Story 9.9\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
+    preparation = context_prompt(story, plan, context, epics)
+    for token in ("## Requisitos", "## Exclusiones", "no puede implementar", relative(context)):
+        if token not in preparation:
+            failures.append(f"the context prompt does not declare {token!r}")
+    if "Contenido de la historia." not in preparation:
+        failures.append("the context prompt does not carry the section of the story")
+    if relative(epics) in preparation:
+        failures.append("the context prompt still sends the preparer to the whole backlog")
+
+    implementation = implementation_prompt(story, plan, context)
+    for token in (relative(plan), relative(context)):
+        if token not in implementation:
+            failures.append(f"the implementation prompt does not mention {token!r}")
+    if relative(legacy.EPICS_FILE) in implementation:
+        failures.append("the implementation prompt still sends the worker to the backlog")
+
+    # A complete package is reused; an incomplete one is prepared again.
+    log_dir = LOG_ROOT / "self-test-context"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    calls: list[str] = []
+
+    def fake_runner(name, model, prompt, log_dir, timeout_minutes=0, retries=0, cwd=None, journal=None):
+        calls.append(name)
+        context.write_text(CONTEXT_SAMPLE, encoding="utf-8")
+
+    context.parent.mkdir(parents=True, exist_ok=True)
+    context.write_text(CONTEXT_SAMPLE, encoding="utf-8")
+    if not is_complete_context(context):
+        failures.append("a complete context package was rejected")
+    prepare_context(story, plan, log_dir, runner=fake_runner)
+    if calls:
+        failures.append("a complete context package was prepared again")
+
+    context.write_text("## Requisitos\n", encoding="utf-8")
+    if is_complete_context(context):
+        failures.append("an incomplete context package was accepted")
+    prepare_context(story, plan, log_dir, runner=fake_runner)
+    if calls != ["context"]:
+        failures.append("an incomplete context package was not prepared again")
+
+    # The package is copied into the checkout of the story under the same path.
+    tree_root = WORKTREE_ROOT / "self-test-context"
+    target = copy_context(context, tree_root)
+    if target.relative_to(tree_root).as_posix() != ".build-lite/contexts/9-9.md":
+        failures.append("the context package is not copied under the same path")
+    if not target.exists():
+        failures.append("the context package was not copied into the checkout")
+
+    context.unlink(missing_ok=True)
+    plan.unlink(missing_ok=True)
+    epics.unlink(missing_ok=True)
+    shutil.rmtree(tree_root, ignore_errors=True)
+    shutil.rmtree(log_dir, ignore_errors=True)
+    return failures
 
 
 def self_test_scheduler() -> list[str]:
@@ -1324,6 +2213,129 @@ def self_test_scheduler() -> list[str]:
     return failures
 
 
+def self_test_phases() -> list[str]:
+    """The structured states, the milestones and the detection of a stall."""
+    failures: list[str] = []
+
+    # The exit code of a phase tells how the phase ended.
+    if state_for_exit_code(0) != PHASE_COMPLETE:
+        failures.append("a phase that ended well was not recorded as complete")
+    if state_for_exit_code(EXIT_TIMEOUT) != PHASE_TIMEOUT:
+        failures.append("a phase that ran out of time was not recorded as a timeout")
+    if state_for_exit_code(EXIT_STALLED) != PHASE_STALLED:
+        failures.append("a phase without progress was not recorded as stalled")
+    if state_for_exit_code(1) != PHASE_TOOL_FAILURE:
+        failures.append("a phase that failed was not recorded as a tool failure")
+    for state in PHASE_STATES:
+        if state not in PHASE_STATES:
+            failures.append(f"the state {state} is not a known state")
+
+    # The journal records the state and the milestones of every phase.
+    journal_path = LOG_ROOT / "self-test-phases" / "phases.json"
+    journal = PhaseJournal(journal_path)
+    journal.record("implementation", PHASE_STALLED, attempt=1, seconds=12.5, milestones=[
+        {"kind": MILESTONE_FUNCTIONAL_CHANGE, "detail": "src/Server/Program.cs"}
+    ])
+    journal.record("story", PHASE_STALLED, error="the worker produced no change")
+    if journal.state_of("implementation") != PHASE_STALLED:
+        failures.append("the journal did not keep the state of a phase")
+    if journal.failure_state() != PHASE_STALLED:
+        failures.append("the journal did not explain why the story did not finish")
+    if not journal_path.exists():
+        failures.append("the journal did not leave its record on disk")
+    try:
+        recorded = json.loads(journal_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        recorded = []
+    if not isinstance(recorded, list) or len(recorded) != 2:
+        failures.append("the journal did not write a readable record")
+    elif recorded[0].get("milestones", [{}])[0].get("kind") != MILESTONE_FUNCTIONAL_CHANGE:
+        failures.append("the journal did not keep the milestones of a phase")
+
+    # A resumed story keeps the phases of the previous attempt.
+    resumed = PhaseJournal(journal_path)
+    if len(resumed.entries) != 2:
+        failures.append("a resumed story lost the phases of the previous attempt")
+
+    # The milestones of an implementation that is still running.
+    root = WORKTREE_ROOT / "self-test-progress"
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True, exist_ok=True)
+    legacy.git("init", "-q", str(root), cwd=REPO_ROOT)
+    transcript_dir = LOG_ROOT / "self-test-progress"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    transcript = transcript_dir / "implementation-1.jsonl"
+    transcript.write_text("", encoding="utf-8")
+    progress = ImplementationProgress(root, transcript)
+    if progress.poll() is not None:
+        failures.append("an untouched worktree was read as a functional change")
+    (root / "Program.cs").write_text("class Program {}\n", encoding="utf-8")
+    milestone = progress.poll()
+    if milestone is None or milestone["kind"] != MILESTONE_FUNCTIONAL_CHANGE:
+        failures.append("a functional change was not recorded as a milestone")
+    if progress.poll() is not None:
+        failures.append("a milestone was reported twice for the same change")
+
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write('{"type":"tool_use","part":{"tool":"bash","state":{"input":{"command":"dotnet test"}}}}}\n')
+    milestone = progress.poll()
+    if milestone is None or milestone["kind"] != MILESTONE_TEST_EXECUTED:
+        failures.append("an executed test was not recorded as a milestone")
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write('{"type":"text","part":{"text":"BLOQUEO: falta el contrato en Shared"}}\n')
+    milestone = progress.poll()
+    if milestone is None or milestone["kind"] != MILESTONE_BLOCKER_DEMONSTRATED:
+        failures.append("a demonstrated blocker was not recorded as a milestone")
+    for kind in MILESTONE_KINDS:
+        if kind not in MILESTONE_KINDS:
+            failures.append(f"the milestone {kind} is not a known milestone")
+
+    # A stalled phase is never retried.
+    if phase_may_retry(PHASE_STALLED, 1, 2):
+        failures.append("a stalled phase was allowed to be retried")
+    if not phase_may_retry(PHASE_TOOL_FAILURE, 1, 2):
+        failures.append("a failed phase was not allowed its technical retry")
+    if phase_may_retry(PHASE_TOOL_FAILURE, 2, 2):
+        failures.append("a failed phase was retried after its budget was spent")
+    if phase_may_retry(PHASE_COMPLETE, 1, 2):
+        failures.append("a complete phase was retried")
+
+    # A run that never progresses ends stalled, and not with the timeout.
+    stall_dir = LOG_ROOT / "self-test-stall"
+    stall_dir.mkdir(parents=True, exist_ok=True)
+    stall_transcript = stall_dir / "implementation-1.jsonl"
+    stall_transcript.write_text("", encoding="utf-8")
+    quiet = WORKTREE_ROOT / "self-test-stall"
+    shutil.rmtree(quiet, ignore_errors=True)
+    quiet.mkdir(parents=True, exist_ok=True)
+    legacy.git("init", "-q", str(quiet), cwd=REPO_ROOT)
+    silent = ImplementationProgress(quiet, stall_transcript)
+    code, seconds, milestones = watch_process(
+        (sys.executable, "-c", "import time; time.sleep(60)"),
+        stall_dir / "stall.jsonl",
+        timeout=120,
+        cwd=REPO_ROOT,
+        progress=silent,
+        progress_window=1.0,
+        poll_seconds=0.2,
+    )
+    if code != EXIT_STALLED:
+        failures.append("a run without progress did not end as stalled")
+    if state_for_exit_code(code) != PHASE_STALLED:
+        failures.append("a stalled run was not classified as stalled")
+    if seconds > 30:
+        failures.append("a stalled run was not stopped before the timeout")
+    if milestones:
+        failures.append("a run without progress reported a milestone")
+
+    shutil.rmtree(quiet, ignore_errors=True)
+    shutil.rmtree(stall_dir, ignore_errors=True)
+    shutil.rmtree(root, ignore_errors=True)
+    shutil.rmtree(transcript_dir, ignore_errors=True)
+    shutil.rmtree(journal_path.parent, ignore_errors=True)
+    return failures
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the cost-bounded Build Lite story driver.")
     parser.add_argument("--story", help="process one story as N.M")
@@ -1343,6 +2355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.self_test:
         return self_test()
+    ensure_contexts_ignored()
     legacy.require_clean_tree()
     legacy.fetch_origin()
     status = legacy.read_sprint_status()
