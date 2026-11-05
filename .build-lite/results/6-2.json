@@ -1,0 +1,24 @@
+{
+  "story": "6-2-la-ui-diferencia-da\u00c3\u00b1ado-de-no-confiable",
+  "base": "628d4f780b2aed57e51db95d984471f71f2af0c4",
+  "risk": [
+    "contrato compartido"
+  ],
+  "paths": [
+    "src/Client/Application/Downloads/DownloadCoordinator.cs",
+    "src/Client/Application/Integrity/PackageInstallEligibility.cs",
+    "src/Client/Presentation/Design/DesignTokens.cs",
+    "src/Client/Presentation/Downloads/DownloadProgressControl.cs",
+    "src/Client/Presentation/Downloads/DownloadProgressViewModel.cs",
+    "src/Client/Presentation/Errors/ErrorMessageViewModel.cs",
+    "src/Client/Presentation/Errors/ErrorToast.cs",
+    "src/Shared/Contracts/StateDisplayMap.cs",
+    "tests/IntegrationTests/CatalogSurfaceTests.cs",
+    "tests/IntegrationTests/DownloadIntegrityTests.cs",
+    "tests/IntegrationTests/ValidationFailurePresentationTests.cs",
+    "tests/UnitTests/DownloadCoordinatorTests.cs",
+    "tests/UnitTests/StateDisplayMapTests.cs",
+    "tests/UnitTests/ValidationFailurePresentationTests.cs"
+  ],
+  "state": "complete"
+}

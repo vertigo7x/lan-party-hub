@@ -71,6 +71,7 @@ public sealed class DownloadIntegrityTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Completed);
+        await handle.WaitForActiveRunAsync();
 
         Assert.Equal(DownloadState.Completed, handle.StateMachine.Current);
 
@@ -116,6 +117,7 @@ public sealed class DownloadIntegrityTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         Assert.Equal(DownloadState.Failed, handle.StateMachine.Current);
 
@@ -281,6 +283,7 @@ public sealed class DownloadIntegrityTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         // El log estructurado es el sumidero durable del diagnóstico (AD-15, AC6).
         var log = await ReadLogAsync(logFolder);
@@ -293,6 +296,51 @@ public sealed class DownloadIntegrityTests : IDisposable
         // distingue la corrupción de la falta de autenticidad (AC6).
         Assert.Contains("ActualSha256", log, StringComparison.Ordinal);
         Assert.Contains("ExpectedSha256", log, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The composition of the client can be CLOSED after a failed validation, so the
+    /// database of the client is not disposed while the operation still writes in it.
+    ///
+    /// <para>
+    /// El estado <c>Failed</c> se declara ANTES de que la operación termine de persistir
+    /// el reinicio del progreso y el estado: esperar sólo por el estado deja la escritura
+    /// en vuelo, y cerrar la base de datos en ese momento libera el statement de SQLite
+    /// que la escritura todavía usa (AD-11, AD-16).
+    /// </para>
+    /// <para>
+    /// La espera por el FIN de la operación es la barrera que hace el cierre seguro
+    /// (AD-16).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_client_can_be_closed_after_a_failed_validation()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+        var clientFolder = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        const string packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5e07";
+        var bytes = WritePackageBytes(dataDirectory, packageId, "el contenido que se altera");
+
+        await PublishAsync(host, dataDirectory, packageId, bytes.LongLength);
+
+        await FixAnchorAsync(clientFolder);
+
+        var harness = CreateComposition(host, clientFolder, alterContent: true);
+
+        var handle = await harness.Coordinator.StartAsync(
+            packageId,
+            BuildContentUri(host, packageId),
+            TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
+
+        // El cierre de la composición (y con ella, de la base de datos del cliente) NO
+        // falla cuando la operación ya terminó de escribir en ella.
+        harness.Dispose();
     }
 
     /// <summary>

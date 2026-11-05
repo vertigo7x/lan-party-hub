@@ -83,6 +83,17 @@ public static class DesignTokens
     /// <summary>Amber of the warning: the state «instalado con versión desactualizada» (AC3, DESIGN).</summary>
     public static readonly Color StateWarning = Color.FromRgb(0xF2, 0xB4, 0x41);
 
+    /// <summary>
+    /// Red of the danger: the state of a failed validation and the surface of the error
+    /// notice (AC2, DESIGN, UX-DR-33).
+    ///
+    /// <para>
+    /// El color de peligro NUNCA sustituye al texto: el estado «dañado» y el estado «no
+    /// confiable» son DOS textos distintos y los dos se leen (AC1, AC2).
+    /// </para>
+    /// </summary>
+    public static readonly Color StateDanger = Color.FromRgb(0xF2, 0x54, 0x5B);
+
     /// <summary>Ink of the primary text (DESIGN).</summary>
     public static readonly Color InkPrimary = Color.FromRgb(0xF2, 0xF4, 0xF8);
 
@@ -94,6 +105,12 @@ public static class DesignTokens
 
     /// <summary>Surface of the raised cards and of the ficha (DESIGN).</summary>
     public static readonly Color SurfaceRaised = Color.FromRgb(0x1B, 0x1E, 0x26);
+
+    /// <summary>
+    /// Surface of the base of the window and ink of the notice of error, que va sobre la
+    /// superficie del peligro (DESIGN).
+    /// </summary>
+    public static readonly Color SurfaceBase = Color.FromRgb(0x12, 0x14, 0x1A);
 
     /// <summary>Surface of the overlay (DESIGN).</summary>
     public static readonly Color SurfaceOverlay = Color.FromRgb(0x23, 0x27, 0x33);

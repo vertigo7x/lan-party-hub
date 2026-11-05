@@ -63,4 +63,40 @@ public static class StateDisplayMap
         ConnectionState.Disconnected => "Desconectado",
         _ => throw new ArgumentOutOfRangeException(nameof(connectionState), connectionState, "Unknown connection state."),
     };
+
+    /// <summary>
+    /// Text of the state that the failure of the validation of a package leaves (AD-8,
+    /// AD-10, AD-25).
+    ///
+    /// <para>
+    /// La corrupción y la falta de autenticidad son DOS fallos distintos, así que tienen
+    /// DOS textos distintos: el jugador tiene que poder saber si el problema es la red o
+    /// la confianza (AC1, AC2).
+    /// </para>
+    /// <para>
+    /// Un código que NO está en la tabla NO se inventa: el texto es el genérico del
+    /// catálogo de errores, y el código NUNCA es el texto principal (AC4, AD-15).
+    /// </para>
+    /// </summary>
+    /// <param name="code">Stable code of the error of the catalog.</param>
+    /// <returns>The text of the state that the failure leaves.</returns>
+    public static string GetText(string code) =>
+        code switch
+        {
+            ErrorCatalog.PackageIntegrityMismatchCode => CorruptedPackageText,
+            ErrorCatalog.ManifestSignatureInvalidCode => UntrustedPackageText,
+            _ => ErrorCatalog.Resolve(code).Message,
+        };
+
+    /// <summary>
+    /// Text of the state of a package whose bytes do NOT match the signed manifest: the
+    /// package is DAMAGED (AD-8, AC1).
+    /// </summary>
+    public const string CorruptedPackageText = "Paquete dañado: el hash no coincide";
+
+    /// <summary>
+    /// Text of the state of a package that could NOT be validated against the root of
+    /// trust: the package is NOT TRUSTWORTHY (AD-2, AD-8, AC2).
+    /// </summary>
+    public const string UntrustedPackageText = "Paquete no confiable: no se pudo validar contra la raíz de confianza";
 }
