@@ -113,6 +113,7 @@ public sealed class ClientBootstrap
         return new ClientStartupResult
         {
             Identity = identity,
+            Layout = _layout,
             DataFolder = _layout.Folder,
             InstallDirectory = _layout.InstallDirectory,
             DownloadsDirectory = _layout.DownloadsDirectory,

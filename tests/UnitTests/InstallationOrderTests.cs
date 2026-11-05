@@ -412,7 +412,7 @@ public sealed class InstallationOrderTests : IDisposable
         var manifestCache = new RecordingManifestCache();
         var stateStore = new RecordingStateStore();
 
-        var paths = new InstallPathResolver(layout.InstallDirectory);
+        var paths = new InstallPathResolver(layout);
 
         var tree = new RecordingTreeWriter(verifyPasses, pathsConfinedToRoot);
 

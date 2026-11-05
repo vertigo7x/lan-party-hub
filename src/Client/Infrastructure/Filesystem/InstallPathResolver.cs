@@ -1,9 +1,10 @@
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Install;
 
 namespace LANPartyHub.Client.Infrastructure.Filesystem;
 
 /// <summary>
-/// Adapter of the resolution of the paths of the installation (AD-9, AC5).
+/// Adapter of the resolution of the paths of the installation (AD-9, AC1, AC3).
 ///
 /// <para>
 /// La resolución se hace sobre la RUTA CANÓNICA: la ruta del manifiesto es relativa a la
@@ -15,43 +16,56 @@ namespace LANPartyHub.Client.Infrastructure.Filesystem;
 /// una ruta que sale de la raíz se RECHAZA y el rechazo nombra la ruta canónica que lo
 /// intentó (AD-9).
 /// </para>
+/// <para>
+/// La raíz se LEE DEL LAYOUT en cada llamada, sin caché entre escrituras: una ruta que
+/// era válida deja de serlo en cuanto la raíz se mueve o en cuanto aparece un enlace,
+/// así que una copia congelada de la raíz dejaría pasar la escapada (AD-9, AC1).
+/// </para>
 /// </summary>
 public sealed class InstallPathResolver : IInstallPathResolver
 {
-    private readonly string _rootPath;
+    private readonly IClientDataLayout _layout;
 
     /// <summary>
-    /// Creates the resolver over the configured installation root (AD-9).
+    /// Creates the resolver over the layout of the data folder of the client (AD-9).
     /// </summary>
-    /// <param name="rootPath">Absolute path of the installation root.</param>
-    /// <exception cref="ArgumentException">The path is empty or whitespace.</exception>
-    public InstallPathResolver(string rootPath)
+    /// <param name="layout">Layout that holds the effective installation root.</param>
+    /// <exception cref="ArgumentNullException">The layout is <c>null</c>.</exception>
+    public InstallPathResolver(IClientDataLayout layout)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        ArgumentNullException.ThrowIfNull(layout);
 
-        _rootPath = Canonicalize(rootPath);
+        _layout = layout;
     }
 
     /// <inheritdoc />
-    public string RootPath => _rootPath;
+    public string RootPath => Canonicalize(_layout.InstallDirectory);
 
     /// <inheritdoc />
     public string ResolveInsideRoot(string relativePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
 
+        // AD-9: la raíz se lee AHORA, no en el constructor: el confine se repite antes
+        // de cada escritura y una raíz que se mueve tiene que surtir efecto de
+        // inmediato.
+        var root = RootPath;
+
         // AD-9: el manifiesto NO admite rutas absolutas. Una ruta absoluta se resuelve
         // contra la raíz como si fuera relativa, así que la comprobación canónica la
         // rechaza si el resultado sale de la raíz.
         var candidate = Path.IsPathRooted(relativePath)
             ? relativePath
-            : Path.Combine(_rootPath, relativePath);
+            : Path.Combine(root, relativePath);
 
         var canonical = Canonicalize(candidate);
 
-        if (!IsInside(_rootPath, canonical))
+        // AD-9: la regla del confine es la del DOMINIO, y el adaptador la aplica: la
+        // comparación es por prefijo CON separador final, así que una carpeta hermana
+        // que comparte el nombre de la raíz queda fuera.
+        if (InstallPathConfine.IsOutside(root, canonical))
         {
-            throw new InstallPathOutsideRootException(relativePath, canonical, _rootPath);
+            throw new InstallPathOutsideRootException(relativePath, canonical, root);
         }
 
         return canonical;
@@ -210,26 +224,5 @@ public sealed class InstallPathResolver : IInstallPathResolver
             : new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true);
 
         return target is null ? null : Path.GetFullPath(target.FullName);
-    }
-
-    /// <summary>
-    /// Tells whether a canonical path is inside a canonical folder. The root itself is
-    /// INSIDE, because the root is a legal destination (AD-9).
-    /// </summary>
-    /// <param name="root">Canonical path of the root.</param>
-    /// <param name="path">Canonical path to check.</param>
-    /// <returns><c>true</c> when the path is the root or is inside it.</returns>
-    private static bool IsInside(string root, string path)
-    {
-        var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-        if (string.Equals(normalizedRoot, path, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var prefix = normalizedRoot + Path.DirectorySeparatorChar;
-
-        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 }

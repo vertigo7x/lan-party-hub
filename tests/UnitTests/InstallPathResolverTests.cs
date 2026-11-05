@@ -1,5 +1,6 @@
 ﻿using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure.Filesystem;
+using LANPartyHub.Client.Infrastructure.Persistence;
 using Xunit;
 
 namespace LANPartyHub.UnitTests;
@@ -27,7 +28,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void A_relative_path_resolves_inside_the_root()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         var resolved = resolver.ResolveInsideRoot("game/data.bin");
 
@@ -43,7 +44,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void The_root_itself_is_a_legal_destination()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.True(resolver.IsInsideRoot("."));
         Assert.True(resolver.IsInsideRoot(string.Empty) is false);
@@ -56,7 +57,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void A_path_that_traverses_out_of_the_root_is_rejected()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.False(resolver.IsInsideRoot("../fuera.txt"));
         Assert.False(resolver.IsInsideRoot("game/../../fuera.txt"));
@@ -78,7 +79,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void An_absolute_path_of_the_manifest_is_rejected()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         var absolute = Path.Combine(Path.GetTempPath(), "fuera-de-la-raiz.txt");
 
@@ -94,7 +95,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void An_absolute_path_inside_the_root_is_admitted()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         var inside = Path.Combine(root, "game", "data.bin");
 
@@ -116,7 +117,7 @@ public sealed class InstallPathResolverTests : IDisposable
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(sibling);
 
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.False(resolver.IsInsideRoot(Path.Combine(sibling, "datos.txt")));
     }
@@ -129,7 +130,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void The_resolution_is_canonical()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         var first = resolver.ResolveInsideRoot("game/data.bin");
         var second = resolver.ResolveInsideRoot("./game/sub/../data.bin");
@@ -161,7 +162,7 @@ public sealed class InstallPathResolverTests : IDisposable
             return;
         }
 
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
     }
@@ -196,7 +197,7 @@ public sealed class InstallPathResolverTests : IDisposable
             return;
         }
 
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         // El archivo final NO existe: el enlace que se atraviesa es el intermedio.
         Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
@@ -238,7 +239,7 @@ public sealed class InstallPathResolverTests : IDisposable
             return;
         }
 
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "nivel2", "datos.txt")));
     }
@@ -263,7 +264,7 @@ public sealed class InstallPathResolverTests : IDisposable
             return;
         }
 
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.True(resolver.IsInsideRoot(Path.Combine("dentro", "datos.txt")));
     }
@@ -287,7 +288,7 @@ public sealed class InstallPathResolverTests : IDisposable
             return;
         }
 
-        var resolver = new InstallPathResolver(link);
+        var resolver = CreateResolver(link);
 
         Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
         Assert.True(resolver.IsInsideRoot(Path.Combine("game", "data.bin")));
@@ -301,7 +302,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void The_resolver_rejects_an_empty_path()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.Throws<ArgumentException>(() => resolver.ResolveInsideRoot("   "));
         Assert.False(resolver.IsInsideRoot("   "));
@@ -309,11 +310,48 @@ public sealed class InstallPathResolverTests : IDisposable
 
     /// <summary>
     /// The resolver REJECTS a root that is empty (AD-9).
+    ///
+    /// <para>
+    /// El layout real rechaza el directorio vacío al crearse, así que aquí se usa un
+    /// layout mínimo cuyo directorio de instalación está vacío: la guarda del
+    /// resolvedor es la que se ejercita (AD-9).
+    /// </para>
     /// </summary>
     [Fact]
     public void The_resolver_rejects_an_empty_root()
     {
-        Assert.Throws<ArgumentException>(() => new InstallPathResolver("  "));
+        var layout = new EmptyRootLayout();
+
+        var resolver = new InstallPathResolver(layout);
+
+        Assert.Throws<ArgumentException>(() => resolver.RootPath);
+        Assert.Throws<ArgumentException>(() => resolver.ResolveInsideRoot("game/data.bin"));
+    }
+
+    /// <summary>
+    /// Layout whose effective installation root is empty.
+    /// </summary>
+    private sealed class EmptyRootLayout : IClientDataLayout
+    {
+        public string Folder => string.Empty;
+
+        public string InstallDirectory => "  ";
+
+        public string DownloadsDirectory => string.Empty;
+
+        public string ManifestsDirectory => string.Empty;
+
+        public string StateDatabasePath => string.Empty;
+
+        public string PartialFilePath(string packageId) => string.Empty;
+
+        public void EnsureCreated()
+        {
+        }
+
+        public void SetInstallDirectory(string installDirectory)
+        {
+        }
     }
 
     /// <summary>
@@ -323,7 +361,7 @@ public sealed class InstallPathResolverTests : IDisposable
     public void The_root_of_the_resolver_is_the_canonical_path()
     {
         var root = CreateTemporaryFolder();
-        var resolver = new InstallPathResolver(root);
+        var resolver = CreateResolver(root);
 
         Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
     }
@@ -394,6 +432,21 @@ public sealed class InstallPathResolverTests : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Creates a resolver over a LAYOUT whose effective root is the given path: la raíz
+    /// se lee del layout en cada llamada, así que el resolvedor la toma de ahí (AD-9).
+    /// </summary>
+    /// <param name="root">Absolute path of the installation root.</param>
+    /// <returns>The resolver over the layout.</returns>
+    private static InstallPathResolver CreateResolver(string root)
+    {
+        var folder = Path.GetDirectoryName(root) ?? root;
+
+        var layout = ClientDataLayout.Create(folder, root);
+
+        return new InstallPathResolver(layout);
     }
 
     /// <summary>

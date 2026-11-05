@@ -1,0 +1,27 @@
+{
+  "story": "7-2-confines-de-la-extracci\u00c3\u00b3n-dentro-del-directorio-autorizado",
+  "base": "0eb72970366c5cde860418f07ca611573309c9bd",
+  "risk": [
+    "red o host",
+    "instalaci\u00f3n",
+    "contrato compartido"
+  ],
+  "paths": [
+    "src/Client/Application/ClientBootstrap.cs",
+    "src/Client/Application/ClientStartupResult.cs",
+    "src/Client/Application/Install/ManifestPathPolicy.cs",
+    "src/Client/Application/Install/PathEscapeException.cs",
+    "src/Client/Application/Ports/IInstallPathResolver.cs",
+    "src/Client/Domain/Install/InstallPathConfine.cs",
+    "src/Client/Host/InstallationComposition.cs",
+    "src/Client/Infrastructure/Filesystem/InstallPathResolver.cs",
+    "src/Client/Program.cs",
+    "src/Shared/Contracts/ErrorCatalog.cs",
+    "tests/IntegrationTests/InstallLayoutTests.cs",
+    "tests/UnitTests/InstallPathConfinementTests.cs",
+    "tests/UnitTests/InstallPathResolverTests.cs",
+    "tests/UnitTests/InstallationOrderTests.cs",
+    "tests/UnitTests/ManifestPathPolicyTests.cs"
+  ],
+  "state": "complete"
+}

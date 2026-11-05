@@ -548,9 +548,10 @@ public static class Program
 
             var context = new ClientStateDbContext(options);
 
-            var layout = ClientDataLayout.Create(
-                startup.DataFolder,
-                startup.InstallDirectory);
+            // AD-9: la composición comparte la MISMA instancia del layout que el
+            // arranque, así que el resolvedor de rutas lee la raíz vigente en cada
+            // llamada y el cambio del directorio de instalación surte efecto inmediato.
+            var layout = startup.Layout;
 
             // AD-27: la validación de la autenticidad se hace contra el ancla de
             // confianza YA FIJADA, que vive en la base de datos del cliente. El store es

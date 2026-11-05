@@ -1,7 +1,7 @@
 namespace LANPartyHub.Client.Application.Ports;
 
 /// <summary>
-/// Port of the resolution of the paths of the installation (AD-9, AC5).
+/// Port of the resolution of the paths of the installation (AD-9, AC1, AC3).
 ///
 /// <para>
 /// El port existe para que el caso de uso de la instalación pueda pronunciarse sobre el
@@ -10,8 +10,14 @@ namespace LANPartyHub.Client.Application.Ports;
 /// aplica contra el sistema de archivos (AD-1, AD-9).
 /// </para>
 /// <para>
+/// La raíz se LEE DEL LAYOUT en cada llamada, sin caché entre escrituras: el confine se
+/// repite antes de cada escritura y una raíz que se mueve tiene que surtir efecto de
+/// inmediato, porque una ruta que era válida deja de serlo en cuanto la raíz cambia
+/// (AD-9, AC1).
+/// </para>
+/// <para>
 /// Toda ruta del manifiesto es RELATIVA a la raíz de instalación: el manifiesto no
-/// admite rutas absolutas (AD-9).
+/// admite rutas absolutas (AD-9, AC2).
 /// </para>
 /// </summary>
 public interface IInstallPathResolver
@@ -19,6 +25,11 @@ public interface IInstallPathResolver
     /// <summary>
     /// Canonical absolute path of the installation root that confines the installation
     /// (AD-9).
+    ///
+    /// <para>
+    /// Es el valor DEL MOMENTO: la raíz se lee del layout en cada llamada, así que este
+    /// valor refleja la configuración vigente, no una copia congelada (AD-9).
+    /// </para>
     /// </summary>
     string RootPath { get; }
 
