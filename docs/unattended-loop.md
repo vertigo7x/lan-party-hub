@@ -33,7 +33,7 @@ Cada historia puede usar estas fases, y ninguna se convierte en un bucle:
 5. **Reparación:** como máximo una, dirigida por un fallo de verificación o por un hallazgo bloqueante. Si vuelve a fallar, el driver se detiene.
 6. **Revisión focalizada:** solo existe para cambios de contratos compartidos, persistencia, red, instalación, seguridad o firma de paquetes. Usa un único revisor rápido y solo puede informar un S0/S1 con evidencia concreta.
 
-Un fallo del proveedor recibe, como máximo, un reintento técnico de su misma fase. El trabajo pendiente se commitea en la rama de la historia antes de que el driver se detenga.
+Un fallo del proveedor recibe, como máximo, un reintento técnico de su misma fase. La única excepción de recuperación no consume presupuesto: si el último intento de contexto expira después de escribir un paquete recién generado y estructuralmente completo, el driver lo sella contra el hash del plan y continúa. Una salida parcial, un paquete obsoleto o cualquier otro fallo siguen deteniendo la historia. El trabajo pendiente se commitea en la rama de la historia antes de que el driver se detenga.
 
 ## Preparación del contexto
 
@@ -42,7 +42,7 @@ El contexto es una entrada de ejecución, no una fuente de verdad adicional: el 
 - **Fuentes.** La fase usa el plan, la sección puntual de la historia en el backlog, el contexto compilado de la épica cuando existe y las rutas declaradas en el plan. No relee el backlog entero.
 - **Límites.** El preparador no implementa, no cambia la huella, no modifica contratos y no amplía alcance; su paquete lo declara de forma explícita.
 - **Caché local.** El paquete vive en `.build-lite/contexts/`, no se versiona, no cuenta como cambio de implementación y no participa en la decisión de paralelismo. `.gitignore` lo excluye y el driver nunca lo incluye en la huella ni en el commit de la historia.
-- **Reanudación.** Una historia recuperada reutiliza su paquete completo sin volver a pagar la fase solo si corresponde al hash de su plan. Si el plan cambió, falta o está incompleto, se regenera antes de implementar. Si ya hay trabajo de implementación preservado, el driver verifica ese trabajo sin preparar contexto.
+- **Reanudación.** Una historia recuperada reutiliza su paquete completo sin volver a pagar la fase solo si corresponde al hash de su plan. Si el último intento expiró después de escribir un paquete estructuralmente completo, el journal conserva el timeout y añade una entrada `complete` que explica la recuperación; entonces el paquete se sella y se reutiliza. Si el plan cambió, falta o está incompleto, se regenera antes de implementar. Si ya hay trabajo de implementación preservado, el driver verifica ese trabajo sin preparar contexto.
 - **Worker.** El paquete se copia al worktree de la historia y el prompt de implementación exige leerlo junto con el plan, limita la exploración a sus rutas y pide un bloqueo demostrado cuando la evidencia no alcanza.
 
 ## Progreso y salidas
@@ -71,7 +71,7 @@ El resultado se registra en `.build-lite/results/<epica>-<historia>.json`. Si la
 
 ## Cuándo se detiene
 
-- El plan no se puede escribir o el proveedor agota su reintento técnico.
+- El plan no se puede escribir o el proveedor agota su reintento técnico sin dejar el artefacto completo que la fase valida.
 - La implementación o la única reparación no deja las verificaciones en verde.
 - La implementación se estanca sin un hito observable durante su ventana de progreso.
 - La revisión focalizada confirma un S0/S1 que no cabe en la reparación restante.

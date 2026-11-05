@@ -1046,16 +1046,41 @@ def prepare_context(
     target.parent.mkdir(parents=True, exist_ok=True)
     if runner is None:
         runner = run_phase
-    runner(
-        "context",
-        CONTEXT_MODEL,
-        context_prompt(story, plan, context),
-        log_dir,
-        timeout_minutes=CONTEXT_TIMEOUT_MINUTES,
-        retries=CONTEXT_MAX_ATTEMPTS,
-        cwd=tree.path if tree is not None else None,
-        journal=journal,
-    )
+    try:
+        runner(
+            "context",
+            CONTEXT_MODEL,
+            context_prompt(story, plan, context),
+            log_dir,
+            timeout_minutes=CONTEXT_TIMEOUT_MINUTES,
+            retries=CONTEXT_MAX_ATTEMPTS,
+            cwd=tree.path if tree is not None else None,
+            journal=journal,
+        )
+    except legacy.DriverError:
+        # Both locations were cleared above. A timeout may therefore be
+        # recovered only from a package this invocation structurally completed;
+        # partial output and every non-timeout failure still stop the story.
+        candidates = (target,) if target == context else (target, context)
+        prepared = next((candidate for candidate in candidates if is_complete_context(candidate)), None)
+        if prepared is None or journal is None or journal.state_of("context") != PHASE_TIMEOUT:
+            raise
+        if prepared != target:
+            shutil.copy2(prepared, target)
+        if journal is not None:
+            attempt = next(
+                (int(entry.get("attempt", 1)) for entry in reversed(journal.entries)
+                 if entry.get("phase") == "context"),
+                1,
+            )
+            journal.record(
+                "context",
+                PHASE_COMPLETE,
+                attempt=attempt,
+                evidence=relative(target),
+                error="accepted complete context written before timeout",
+            )
+        log(f"{story.short_id}: context timed out after writing a complete package; continuing")
     if not is_complete_context(target):
         raise legacy.DriverError(
             f"the context preparer did not write a complete {relative(context)}"
@@ -2167,6 +2192,59 @@ def self_test_context() -> list[str]:
     else:
         failures.append("a stale context package was re-bound when the preparer wrote nothing")
 
+    # The production path writes in a worktree. A final timeout after complete
+    # output is recovered, recorded as complete, sealed in the cache and reused.
+    context.unlink(missing_ok=True)
+    tree_root = WORKTREE_ROOT / "self-test-context"
+    shutil.rmtree(tree_root, ignore_errors=True)
+    recovery_tree = Worktree(story=story, path=tree_root, branch=story.branch)
+    recovery_journal = PhaseJournal(log_dir / "recovery-phases.json")
+    recovery_journal.record("context", PHASE_TIMEOUT, attempt=2)
+    recovered_target = recovery_tree.path / relative(context)
+
+    def late_success_runner(*args, **kwargs):
+        del args, kwargs
+        recovered_target.parent.mkdir(parents=True, exist_ok=True)
+        recovered_target.write_text(CONTEXT_SAMPLE, encoding="utf-8")
+        raise legacy.DriverError("the context phase timed out after writing its output")
+
+    try:
+        prepare_context(story, plan, log_dir, tree=recovery_tree, runner=late_success_runner, journal=recovery_journal)
+    except legacy.DriverError:
+        failures.append("a complete context written before a timeout was rejected")
+    else:
+        if not is_complete_context(context, plan) or not is_complete_context(recovered_target, plan):
+            failures.append("a recovered context package was not sealed and copied to its worktree")
+        if recovery_journal.state_of("context") != PHASE_COMPLETE:
+            failures.append("a recovered context timeout was not recorded as complete")
+
+    reused = []
+
+    def unexpected_runner(*args, **kwargs):
+        del args, kwargs
+        reused.append("context")
+
+    prepare_context(story, plan, log_dir, tree=recovery_tree, runner=unexpected_runner)
+    if reused:
+        failures.append("a recovered context package was not reused")
+
+    # A timeout that leaves partial output remains a technical failure.
+    context.unlink(missing_ok=True)
+    recovery_journal = PhaseJournal(log_dir / "partial-recovery-phases.json")
+    recovery_journal.record("context", PHASE_TIMEOUT, attempt=2)
+
+    def partial_timeout_runner(*args, **kwargs):
+        del args, kwargs
+        context.write_text("## Requisitos\n", encoding="utf-8")
+        raise legacy.DriverError("the context phase timed out with partial output")
+
+    try:
+        prepare_context(story, plan, log_dir, runner=partial_timeout_runner, journal=recovery_journal)
+    except legacy.DriverError:
+        pass
+    else:
+        failures.append("a partial context written before a timeout was accepted")
+
     context.write_text("## Requisitos\n", encoding="utf-8")
     if is_complete_context(context):
         failures.append("an incomplete context package was accepted")
@@ -2175,7 +2253,6 @@ def self_test_context() -> list[str]:
         failures.append("an incomplete context package was not prepared again")
 
     # The package is copied into the checkout of the story under the same path.
-    tree_root = WORKTREE_ROOT / "self-test-context"
     target = copy_context(context, tree_root)
     if target.relative_to(tree_root).as_posix() != ".build-lite/contexts/99-99.md":
         failures.append("the context package is not copied under the same path")
