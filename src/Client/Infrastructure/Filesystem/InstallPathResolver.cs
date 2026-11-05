@@ -80,6 +80,14 @@ public sealed class InstallPathResolver : IInstallPathResolver
     /// <summary>
     /// Resolves a path to its CANONICAL form, resolving the symbolic links when the
     /// path exists (AD-9).
+    ///
+    /// <para>
+    /// La resolución es del ANCESTRO EXISTENTE MÁS PROFUNDO: una ruta puede atravesar
+    /// un enlace INTERMEDIO (un directorio o una unión) y salir de la raíz sin que el
+    /// último segmento sea un enlace. Resolver sólo el último componente dejaría pasar
+    /// esa escapada, así que la ruta entera se resuelve y los segmentos que aún no
+    /// existen se reañaden sobre el destino ya resuelto (AD-9).
+    /// </para>
     /// </summary>
     /// <param name="path">Path to canonicalize.</param>
     /// <returns>The canonical absolute path.</returns>
@@ -92,8 +100,7 @@ public sealed class InstallPathResolver : IInstallPathResolver
         // que apunta fuera de la raíz (AD-9).
         try
         {
-            var resolved = Path.GetFullPath(
-                new FileInfo(full).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? full);
+            var resolved = ResolveLinks(full);
 
             return resolved.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
@@ -107,6 +114,102 @@ public sealed class InstallPathResolver : IInstallPathResolver
         {
             return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
+    }
+
+    /// <summary>
+    /// Resolves the LINKS of a whole path: the deepest existing ancestor is resolved to
+    /// its final target, and the segments that do not exist yet are re-appended to it
+    /// (AD-9).
+    ///
+    /// <para>
+    /// El ancestro se busca subiendo desde el final: el último segmento de una ruta de
+    /// escritura aún no existe, así que el enlace que hay que resolver es el de un
+    /// DIRECTORIO INTERMEDIO, no el del archivo final.
+    /// </para>
+    /// </summary>
+    /// <param name="full">Absolute path to resolve.</param>
+    /// <returns>The absolute path with every link resolved.</returns>
+    private static string ResolveLinks(string full)
+    {
+        var root = Path.GetPathRoot(full);
+
+        if (string.IsNullOrEmpty(root))
+        {
+            return full;
+        }
+
+        var segments = full.Substring(root.Length)
+            .Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries);
+
+        // Los PREFIXOS de la ruta, del más corto al más largo: cada uno es un
+        // ancestro posible del segmento final.
+        var prefixes = new string[segments.Length];
+        var accumulated = root;
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            accumulated = Path.Combine(accumulated, segments[index]);
+            prefixes[index] = accumulated;
+        }
+
+        // Se sube hasta el ancestro existente MÁS PROFUNDO: los segmentos que no
+        // existen todavía se guardan para reañadirlos sobre el destino resuelto.
+        var pending = new List<string>(segments.Length);
+        var current = root;
+
+        for (var index = prefixes.Length - 1; index >= 0; index--)
+        {
+            var candidate = prefixes[index];
+
+            if (!Exists(candidate))
+            {
+                pending.Insert(0, segments[index]);
+
+                continue;
+            }
+
+            var resolved = ResolveFinalTarget(candidate);
+
+            current = resolved ?? candidate;
+
+            break;
+        }
+
+        foreach (var segment in pending)
+        {
+            current = Path.Combine(current, segment);
+        }
+
+        return Path.GetFullPath(current);
+    }
+
+    /// <summary>
+    /// Tells whether a path exists, as a file or as a directory.
+    /// </summary>
+    /// <param name="path">Absolute path to check.</param>
+    /// <returns><c>true</c> when the path exists.</returns>
+    private static bool Exists(string path)
+    {
+        return File.Exists(path) || Directory.Exists(path);
+    }
+
+    /// <summary>
+    /// Resolves a path that IS a link to its final target.
+    /// </summary>
+    /// <param name="path">Absolute path of an existing file or directory.</param>
+    /// <returns>
+    /// The absolute path of the final target, or <c>null</c> when the path is NOT a
+    /// link.
+    /// </returns>
+    private static string? ResolveFinalTarget(string path)
+    {
+        var target = Directory.Exists(path)
+            ? new DirectoryInfo(path).ResolveLinkTarget(returnFinalTarget: true)
+            : new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true);
+
+        return target is null ? null : Path.GetFullPath(target.FullName);
     }
 
     /// <summary>

@@ -154,21 +154,143 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var link = Path.Combine(root, "enlace");
 
-        try
+        if (!TryCreateSymbolicLink(link, outside))
         {
-            Directory.CreateSymbolicLink(link, outside);
-        }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            // La mÃ¡quina de la prueba no puede crear enlaces simbÃ³licos: la comprobaciÃ³n
-            // del confine sobre la ruta canÃ³nica no se puede ejercitar aquÃ­.
+            // La máquina de la prueba no puede crear enlaces simbólicos: la comprobación
+            // del confine sobre la ruta canónica no se puede ejercitar aquí.
             return;
         }
 
         var resolver = new InstallPathResolver(root);
 
         Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
+    }
+
+    /// <summary>
+    /// A path that escapes the root through an INTERMEDIATE link is rejected: the last
+    /// segment of a write path does not exist yet, so the link that has to be resolved is
+    /// the one of a middle DIRECTORY (AD-9).
+    ///
+    /// <para>
+    /// La ruta sale de la raíz por un enlace INTERMEDIO y el último segmento no existe
+    /// todavía: resolver sólo el último segmento dejaría pasar la escapada.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_path_that_escapes_the_root_through_an_intermediate_link_is_rejected()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var root = Path.Combine(folder, "install");
+        var outside = Path.Combine(folder, "fuera");
+
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(outside);
+
+        var link = Path.Combine(root, "enlace");
+
+        if (!TryCreateDirectoryLink(link, outside))
+        {
+            // La máquina de la prueba no puede crear enlaces de directorio: la
+            // comprobación del confine sobre la ruta canónica no se puede ejercitar aquí.
+            return;
+        }
+
+        var resolver = new InstallPathResolver(root);
+
+        // El archivo final NO existe: el enlace que se atraviesa es el intermedio.
+        Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
+
+        var exception = Assert.Throws<InstallPathOutsideRootException>(
+            () => resolver.ResolveInsideRoot(Path.Combine("enlace", "datos.txt")));
+
+        // El rechazo nombra la ruta CANÓNICA que lo intentó: la del destino real del
+        // enlace, que es la que sale de la raíz (AD-9).
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(outside, "datos.txt")),
+            exception.CanonicalPath);
+    }
+
+    /// <summary>
+    /// A path that escapes the root through a CHAIN of intermediate links is rejected: the
+    /// canonical path resolves the links until their FINAL target (AD-9).
+    /// </summary>
+    [Fact]
+    public void A_path_that_escapes_the_root_through_a_chain_of_links_is_rejected()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var root = Path.Combine(folder, "install");
+        var outside = Path.Combine(folder, "fuera");
+        var deeper = Path.Combine(folder, "mas-fuera");
+
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(outside);
+        Directory.CreateDirectory(deeper);
+
+        if (!TryCreateDirectoryLink(Path.Combine(root, "enlace"), outside))
+        {
+            return;
+        }
+
+        if (!TryCreateDirectoryLink(Path.Combine(outside, "nivel2"), deeper))
+        {
+            return;
+        }
+
+        var resolver = new InstallPathResolver(root);
+
+        Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "nivel2", "datos.txt")));
+    }
+
+    /// <summary>
+    /// An intermediate link that points INSIDE the root is ADMITTED: el confine se
+    /// comprueba sobre el destino real, no sobre la forma de la ruta (AD-9).
+    /// </summary>
+    [Fact]
+    public void An_intermediate_link_that_points_inside_the_root_is_admitted()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var root = Path.Combine(folder, "install");
+        var inside = Path.Combine(root, "real");
+
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(inside);
+
+        if (!TryCreateDirectoryLink(Path.Combine(root, "dentro"), inside))
+        {
+            return;
+        }
+
+        var resolver = new InstallPathResolver(root);
+
+        Assert.True(resolver.IsInsideRoot(Path.Combine("dentro", "datos.txt")));
+    }
+
+    /// <summary>
+    /// A root that is ITSELF a link is canonicalized to its final target, so the confine
+    /// is checked against the real destination (AD-9).
+    /// </summary>
+    [Fact]
+    public void A_root_that_is_a_link_resolves_to_its_final_target()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var root = Path.Combine(folder, "install");
+        var link = Path.Combine(folder, "install-enlace");
+
+        Directory.CreateDirectory(root);
+
+        if (!TryCreateDirectoryLink(link, root))
+        {
+            return;
+        }
+
+        var resolver = new InstallPathResolver(link);
+
+        Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
+        Assert.True(resolver.IsInsideRoot(Path.Combine("game", "data.bin")));
     }
 
     /// <summary>
@@ -204,6 +326,74 @@ public sealed class InstallPathResolverTests : IDisposable
         var resolver = new InstallPathResolver(root);
 
         Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
+    }
+
+    /// <summary>
+    /// Creates a symbolic link to a directory, when the machine allows it.
+    /// </summary>
+    /// <param name="link">Path of the link to create.</param>
+    /// <param name="target">Path the link points to.</param>
+    /// <returns><c>true</c> when the link was created.</returns>
+    private static bool TryCreateSymbolicLink(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates a DIRECTORY LINK to a directory, when the machine allows it.
+    ///
+    /// <para>
+    /// Una unión de directorios es un enlace que el sistema de archivos resuelve sin
+    /// privilegios de administrador, a diferencia del enlace simbólico: permite
+    /// ejercitar el confine sobre la ruta canónica en una máquina sin elevación.
+    /// </para>
+    /// </summary>
+    /// <param name="link">Path of the link to create.</param>
+    /// <param name="target">Path the link points to.</param>
+    /// <returns><c>true</c> when the link was created.</returns>
+    private static bool TryCreateDirectoryLink(string link, string target)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return TryCreateSymbolicLink(link, target);
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{link}\" \"{target}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+
+            if (process is null)
+            {
+                return false;
+            }
+
+            process.WaitForExit();
+
+            return process.ExitCode == 0;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
