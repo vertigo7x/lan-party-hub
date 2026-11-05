@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.Downloads;
+using LANPartyHub.Client.Presentation.Install;
 
 namespace LANPartyHub.Client.Presentation.Status;
 
@@ -44,7 +45,7 @@ public sealed class ConnectionStatusPanel : UserControl
     private readonly TextBlock _lastOperation;
 
     /// <summary>
-/// Creates the persistent panel of the connection.
+    /// Creates the persistent panel of the connection.
     /// </summary>
     /// <param name="viewModel">View model of the panel.</param>
     /// <param name="downloadProgress">
@@ -52,9 +53,15 @@ public sealed class ConnectionStatusPanel : UserControl
     /// is built without it. UX-DR-11: el panel muestra abajo la operación en curso con su
     /// barra.
     /// </param>
+    /// <param name="installProgress">
+    /// Control of the progress of the installation in progress, or <c>null</c> when the
+    /// panel is built without it. AC4: el panel muestra la fase y el porcentaje de la
+    /// instalación con su barra.
+    /// </param>
     public ConnectionStatusPanel(
         ConnectionStatusPanelViewModel viewModel,
-        DownloadProgressControl? downloadProgress = null)
+        DownloadProgressControl? downloadProgress = null,
+        InstallProgressControl? installProgress = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
@@ -132,6 +139,14 @@ public sealed class ConnectionStatusPanel : UserControl
         if (downloadProgress is not null)
         {
             ((StackPanel)Content).Children.Add(downloadProgress);
+        }
+
+        // AC4, UX-DR-34: la instalación en curso vive en el MISMO panel persistente, con
+        // su fase («Extrayendo», «Aplicando manifiesto») y su porcentaje entero de los
+        // bytes REALES.
+        if (installProgress is not null)
+        {
+            ((StackPanel)Content).Children.Add(installProgress);
         }
 
         _viewModel.Changed += Render;

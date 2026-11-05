@@ -248,6 +248,30 @@ public static class ErrorCatalog
     /// </summary>
     public const string InstallPathOutsideRootCode = "INSTALL_PATH_OUTSIDE_ROOT";
 
+    /// <summary>
+    /// The player DECLINED the confirmation of a privileged operation of the installation
+    /// manifest (AD-7, AC2).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del del confine de la extracción: el decline del jugador no
+    /// es una ruta que sale de la raíz, así que la métrica de errores por código no los
+    /// mezcla (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string InstallPrivilegedConfirmationDeclinedCode = "INSTALL_PRIVILEGED_CONFIRMATION_DECLINED";
+
+    /// <summary>
+    /// The installation FAILED while it applied the typed operations of the manifest, and
+    /// the failure is REGISTERED so the operation stays reintentable (AD-8, AC5).
+    ///
+    /// <para>
+    /// El fallo de la instalación es su propio código, y no el genérico: la instalación
+    /// que falla y el manifiesto que no valida son dos diagnosticos distintos (AD-15,
+    /// AD-25).
+    /// </para>
+    /// </summary>
+    public const string InstallOperationFailedCode = "INSTALL_OPERATION_FAILED";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -480,6 +504,16 @@ public static class ErrorCatalog
             "La ruta de la instalación sale del directorio autorizado",
             "La ruta canónica del manifiesto, con sus enlaces simbólicos ya resueltos, queda fuera de la raíz de instalación configurada.",
             "Revisa la ruta que declara el manifiesto y vuelve a instalarlo: no se ha escrito nada fuera del directorio autorizado."),
+        new(
+            InstallPrivilegedConfirmationDeclinedCode,
+            "La operación privilegiada no se confirmó",
+            "La operación del manifiesto que escribe configuración o materializa la configuración de ejecución necesita una confirmación explícita y el jugador la canceló.",
+            "Vuelve a instalar el juego y confirma la operación cuando el cliente la pregunte: no se ha escrito nada de esa operación."),
+        new(
+            InstallOperationFailedCode,
+            "La instalación del juego falló",
+            "Una operación del manifiesto no pudo aplicarse dentro del directorio autorizado y la instalación quedó interrumpida.",
+            "Vuelve a intentarlo con la acción «Reintentar»: el error queda registrado y no hace falta reinstalar el cliente."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

@@ -704,6 +704,14 @@ public sealed class ValidationFailurePresentationTests : IDisposable
 
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
             Task.FromResult<ClientInstallation?>(null);
+
+        public Task SaveInstallationFailureAsync(
+            ClientInstallation installation,
+            string errorCode,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<string?> LoadInstallationFailureAsync(string gameId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
     }
 
     /// <summary>

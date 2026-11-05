@@ -583,6 +583,14 @@ public sealed class InstallationOrderTests : IDisposable
             string? packagePath,
             CancellationToken cancellationToken) =>
             Task.FromResult(new InstallTreeOutcome(_verifyPasses, _pathsConfinedToRoot));
+
+        public Task<InstallTreeOutcome> ApplyAsync(
+            InstallationManifest manifest,
+            string rootPath,
+            string? packagePath,
+            IInstallProgressSink progress,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new InstallTreeOutcome(_verifyPasses, _pathsConfinedToRoot));
     }
 
     /// <summary>
@@ -591,6 +599,8 @@ public sealed class InstallationOrderTests : IDisposable
     private sealed class RecordingStateStore : IClientStateStore
     {
         public List<ClientInstallation> SavedInstallations { get; } = [];
+
+        public List<string> SavedFailureCodes { get; } = [];
 
         public Task MigrateAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -634,6 +644,20 @@ public sealed class InstallationOrderTests : IDisposable
 
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
             Task.FromResult<ClientInstallation?>(SavedInstallations.Count == 0 ? null : SavedInstallations[^1]);
+
+        public Task SaveInstallationFailureAsync(
+            ClientInstallation installation,
+            string errorCode,
+            CancellationToken cancellationToken)
+        {
+            SavedInstallations.Add(installation);
+            SavedFailureCodes.Add(errorCode);
+
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> LoadInstallationFailureAsync(string gameId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(SavedFailureCodes.Count == 0 ? null : SavedFailureCodes[^1]);
     }
 
     /// <summary>
