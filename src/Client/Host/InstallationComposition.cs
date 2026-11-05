@@ -154,7 +154,7 @@ public sealed class InstallationComposition : IDisposable
             new ManifestCache(layout),
             layout,
             stateStore,
-            new InstallPathResolver(layout.InstallDirectory),
+            new InstallPathResolver(layout),
             loggerFactory,
             httpClient);
     }
@@ -207,6 +207,38 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
         var pathsConfinedToRoot = true;
         var operationNotAllowed = false;
         string? rejectedPath = null;
+
+        // AD-9, AC2: el manifiesto se EVALÚA ENTERO antes de la primera escritura. Una
+        // ruta absoluta o una ruta que sale de la raíz se rechaza aquí, así que el
+        // rechazo PRECEDE a persistir y no deja ni un directorio ni un archivo creados
+        // (AD-27).
+        try
+        {
+            ManifestPathPolicy.Evaluate(manifest);
+        }
+        catch (PathEscapeException exception)
+        {
+            // La verificación NO se ejecutó: el manifiesto se rechazó antes de la primera
+            // escritura, así que la operación de `verify` no llegó a comprobar nada y no
+            // puede afirmarse que PASÓ (AC5).
+            verifyPassed = false;
+            pathsConfinedToRoot = false;
+            rejectedPath = exception.RelativePath;
+
+            // El diagnóstico lleva el `ApiError` COMPLETO del catálogo, que es el sumidero
+            // durable del rechazo (AD-15, AD-25).
+            _logger.LogWarning(
+                exception,
+                "La operación '{Operation}' del manifiesto declara la ruta '{RelativePath}', que no se admite: la escritura se rechaza con el código {Code}. {Message} {Cause} {NextStep}",
+                exception.Operation ?? "desconocida",
+                exception.RelativePath,
+                exception.Cause.Code,
+                exception.Cause.Message,
+                exception.Cause.Cause,
+                exception.Cause.NextStep);
+
+            return new InstallTreeOutcome(verifyPassed, pathsConfinedToRoot, rejectedPath);
+        }
 
         foreach (var operation in manifest.Operations)
         {
@@ -319,6 +351,11 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
     /// <summary>
     /// Resolves a relative path inside the root, and tells whether it stayed inside
     /// (AD-9).
+    ///
+    /// <para>
+    /// La comprobación se REPETE antes de cada escritura, así que una ruta que era
+    /// válida deja de serlo en cuanto aparece un enlace que sale de la raíz (AD-9).
+    /// </para>
     /// </summary>
     /// <param name="relativePath">Relative path of the manifest.</param>
     /// <param name="resolved">Canonical absolute path that resolves inside the root.</param>
@@ -339,10 +376,18 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
         {
             rejection = exception.CanonicalPath;
 
+            // El diagnóstico lleva el `ApiError` COMPLETO del catálogo, que es el sumidero
+            // durable del rechazo (AD-15, AD-25).
+            var cause = ErrorCatalog.Resolve(ErrorCatalog.InstallPathOutsideRootCode);
+
             _logger.LogWarning(
                 exception,
-                "La ruta '{RelativePath}' del manifiesto de instalación sale de la raíz configurada: la escritura se rechaza.",
-                exception.RelativePath);
+                "La ruta '{RelativePath}' del manifiesto de instalación sale de la raíz configurada: la escritura se rechaza con el código {Code}. {Message} {Cause} {NextStep}",
+                exception.RelativePath,
+                cause.Code,
+                cause.Message,
+                cause.Cause,
+                cause.NextStep);
 
             return false;
         }

@@ -235,6 +235,19 @@ public static class ErrorCatalog
     /// </summary>
     public const string DownloadRangeNotSatisfiableCode = "DOWNLOAD_RANGE_NOT_SATISFIABLE";
 
+    /// <summary>
+    /// A path of the installation manifest does NOT stay inside the configured
+    /// installation root (AD-9, NFR-5).
+    ///
+    /// <para>
+    /// Es el código del confine de la extracción: la ruta canónica resuelta, con sus
+    /// enlaces simbólicos ya resueltos, cae FUERA de la raíz configurada, así que la
+    /// escritura se rechaza antes de tocar el disco y el rechazo queda registrado (AD-9,
+    /// AC2, AC3).
+    /// </para>
+    /// </summary>
+    public const string InstallPathOutsideRootCode = "INSTALL_PATH_OUTSIDE_ROOT";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -462,6 +475,11 @@ public static class ErrorCatalog
             "El rango del contenido no es satisfacible",
             "El rango que el cliente pidió empieza más allá del final del contenido que el servidor tiene publicado.",
             "Descarga el paquete de cero: el servidor no puede servir ese tramo y el offset guardado ya no vale."),
+        new(
+            InstallPathOutsideRootCode,
+            "La ruta de la instalación sale del directorio autorizado",
+            "La ruta canónica del manifiesto, con sus enlaces simbólicos ya resueltos, queda fuera de la raíz de instalación configurada.",
+            "Revisa la ruta que declara el manifiesto y vuelve a instalarlo: no se ha escrito nada fuera del directorio autorizado."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

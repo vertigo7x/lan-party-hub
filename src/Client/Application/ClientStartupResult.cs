@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain;
 
 namespace LANPartyHub.Client.Application;
@@ -9,6 +10,18 @@ public sealed record ClientStartupResult
 {
     /// <summary>Identity of the client, emitted once and persisted (AD-23).</summary>
     public required ClientIdentity Identity { get; init; }
+
+    /// <summary>
+    /// Layout of the data folder of the client, as the live INSTANCE.
+    ///
+    /// <para>
+    /// La instancia se comparte con las composiciones que la necesitan, porque el
+    /// directorio de instalación es el único confinado y su cambio tiene que surtir
+    /// efecto INMEDIATO: una composición con su propia copia del layout confinaría la
+    /// raíz anterior después de que el jugador la moviera (AD-9).
+    /// </para>
+    /// </summary>
+    public required IClientDataLayout Layout { get; init; }
 
     /// <summary>Absolute path of the data folder of the client.</summary>
     public required string DataFolder { get; init; }
