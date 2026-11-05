@@ -148,6 +148,93 @@ public sealed class ManifestPathPolicyTests
         ManifestPathPolicy.Evaluate(manifest);
     }
 
+    [Fact]
+    public void The_launch_configuration_with_empty_paths_is_admitted()
+    {
+        // La publicación de un paquete puede declarar la configuración de lanzamiento
+        // VACÍA: la operación `setLaunchConfig` no escribe en el disco, así que sus rutas
+        // son opcionales y su ausencia no es una escapada (AD-7, AD-9).
+        var manifest = ManifestWith(
+            new InstallationManifest.CreateDirectory("game"),
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings(string.Empty, [], string.Empty)));
+
+        ManifestPathPolicy.Evaluate(manifest);
+    }
+
+    [Fact]
+    public void The_launch_configuration_with_only_the_working_directory_empty_is_admitted()
+    {
+        var manifest = ManifestWith(
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings("game/game.exe", [], string.Empty)));
+
+        ManifestPathPolicy.Evaluate(manifest);
+    }
+
+    [Fact]
+    public void The_launch_configuration_with_only_the_executable_path_empty_is_admitted()
+    {
+        var manifest = ManifestWith(
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings("   ", [], "game")));
+
+        ManifestPathPolicy.Evaluate(manifest);
+    }
+
+    [Fact]
+    public void The_declared_paths_of_the_launch_are_evaluated()
+    {
+        // La ausencia se admite, pero la ruta DECLARADA sigue evaliéndose: la que es
+        // absoluta se rechaza (AD-9, AC2).
+        var manifest = ManifestWith(
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings(string.Empty, [], @"C:\juegos")));
+
+        var exception = Assert.Throws<PathEscapeException>(() => ManifestPathPolicy.Evaluate(manifest));
+
+        Assert.Equal("setLaunchConfig", exception.Operation);
+    }
+
+    [Fact]
+    public void An_undeclared_path_of_the_launch_is_not_rejected()
+    {
+        // Una ruta VACÍA no se DECLARA, así que no se evalúa: la ausencia no es una
+        // escapada. La ruta VACÍA sigue siendo una ruta no admisible para las
+        // operaciones que ESCRIBEN en el disco, y por eso `IsRejected` la sigue
+        // marcando: lo que se admite es su AUSENCIA, no la ruta.
+        ManifestPathPolicy.RequireDeclaredRelative(string.Empty, "setLaunchConfig");
+        ManifestPathPolicy.RequireDeclaredRelative(null, "setLaunchConfig");
+        ManifestPathPolicy.RequireDeclaredRelative("   ", "setLaunchConfig");
+
+        Assert.True(ManifestPathPolicy.IsRejected(string.Empty, out _));
+    }
+
+    [Fact]
+    public void A_declared_path_of_the_launch_that_leaves_the_root_is_rejected()
+    {
+        var manifest = ManifestWith(
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings("game/game.exe", [], "../fuera")));
+
+        var exception = Assert.Throws<PathEscapeException>(() => ManifestPathPolicy.Evaluate(manifest));
+
+        Assert.Equal("setLaunchConfig", exception.Operation);
+    }
+
+    [Fact]
+    public void The_empty_destination_of_a_writing_operation_is_still_rejected()
+    {
+        // La ausencia se admite sólo donde la ruta NO es obligatoria: los destinos de
+        // las operaciones que ESCRIBEN en el disco tienen que estar declarados.
+        var manifest = ManifestWith(
+            new InstallationManifest.WriteConfig(string.Empty, "contenido"));
+
+        var exception = Assert.Throws<PathEscapeException>(() => ManifestPathPolicy.Evaluate(manifest));
+
+        Assert.Equal("writeConfig", exception.Operation);
+    }
+
     /// <summary>
     /// Builds a manifest with the given operations, so that the policy can be exercised
     /// over the real contract of AD-7.

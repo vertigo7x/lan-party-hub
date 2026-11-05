@@ -229,6 +229,45 @@ public sealed class InstallLayoutTests : IDisposable
     }
 
     /// <summary>
+    /// A manifest whose launch configuration declares NO path is applied and CERTIFIED:
+    /// la operación `setLaunchConfig` no escribe en el disco, así que sus rutas son
+    /// opcionales y su ausencia no es una escapada (AD-7, AD-9, AC5).
+    /// </summary>
+    [Fact]
+    public async Task A_manifest_with_an_empty_launch_configuration_is_applied_inside_the_root()
+    {
+        var layout = ClientDataLayout.Create(_dataFolder, _installDirectory);
+
+        layout.EnsureCreated();
+
+        var resolver = new InstallPathResolver(layout);
+
+        var writer = new ManifestTreeWriter(
+            resolver,
+            NullLogger<ManifestTreeWriter>.Instance);
+
+        var manifest = ManifestWith(
+            new InstallationManifest.CreateDirectory("game"),
+            new InstallationManifest.WriteConfig("game/config.ini", "clave=valor"),
+            new InstallationManifest.SetLaunchConfig(
+                new InstallationManifest.LaunchSettings(string.Empty, [], string.Empty)));
+
+        var outcome = await writer.ApplyAsync(
+            manifest,
+            resolver.RootPath,
+            packagePath: null,
+            TestContext.Current.CancellationToken);
+
+        // El manifiesto NO se rechaza: la certificación llega a `Installed` porque las
+        // rutas del lanzamiento no se declararon.
+        Assert.True(outcome.PathsConfinedToRoot);
+        Assert.Null(outcome.RejectedPath);
+        Assert.True(outcome.VerifyPassed);
+
+        Assert.True(File.Exists(Path.Combine(_installDirectory, "game", "config.ini")));
+    }
+
+    /// <summary>
     /// The confinement is REPEATED before every write: una ruta que era válida deja de
     /// serlo cuando aparece un enlace que sale de la raíz, y la escritura posterior se
     /// rechaza (AD-9, AC1).

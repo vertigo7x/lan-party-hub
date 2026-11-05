@@ -21,6 +21,12 @@ namespace LANPartyHub.Client.Application.Install;
 /// sin problema, pero uno que sí sale es una escapada, y el rechazo tiene que ocurrir
 /// ANTES de tocar el disco para que no quede ninguna escritura (AD-27).
 /// </para>
+/// <para>
+/// Una ruta VACÍA no es una escapada: los destinos de las operaciones que ESCRIBEN en el
+/// disco tienen que estar declarados, así que una ruta vacía ahí se rechaza; pero las
+/// rutas de la configuración de lanzamiento NO escriben en el disco y son opcionales, de
+/// modo que su ausencia se admite y sólo se evalúan las DECLARADAS (AD-7, AD-9).
+/// </para>
 /// </summary>
 public static class ManifestPathPolicy
 {
@@ -76,8 +82,13 @@ public static class ManifestPathPolicy
                     break;
 
                 case InstallationManifest.SetLaunchConfig setLaunchConfig:
-                    RequireRelative(setLaunchConfig.Launch?.ExecutablePath, "setLaunchConfig");
-                    RequireRelative(setLaunchConfig.Launch?.WorkingDirectory, "setLaunchConfig");
+                    // La configuración de lanzamiento NO escribe en el disco, así que sus
+                    // rutas son OPCIONALES: una publicación puede declararlas vacías
+                    // (AD-7). Sólo se evalúan las DECLARADAS, y se rechazan las que
+                    // son absolutas o que escapan de la raíz, igual que los destinos de
+                    // las demás operaciones (AD-9, AC2).
+                    RequireDeclaredRelative(setLaunchConfig.Launch?.ExecutablePath, "setLaunchConfig");
+                    RequireDeclaredRelative(setLaunchConfig.Launch?.WorkingDirectory, "setLaunchConfig");
 
                     break;
 
@@ -120,6 +131,35 @@ public static class ManifestPathPolicy
                 operation,
                 ErrorCatalog.Resolve(ErrorCatalog.InstallPathOutsideRootCode));
         }
+    }
+
+    /// <summary>
+    /// Rejects a DECLARED path of the manifest that is absolute or that traverses out of
+    /// the root (AD-9, AC2).
+    ///
+    /// <para>
+    /// A diferencia de <see cref="RequireRelative"/>, una ruta VACÍA no se rechaza: la
+    /// ruta no está DECLARADA, y una operación que no escribe en el disco puede no
+    /// declararla (AD-7). La ausencia no es una escapada: lo que se rechaza es la ruta
+    /// ABSOLUTA o la que sale de la raíz.
+    /// </para>
+    /// </summary>
+    /// <param name="path">Path of the manifest, as the manifest wrote it.</param>
+    /// <param name="operation">
+    /// Name of the operation of the manifest that declared the path, or <c>null</c>
+    /// when the path is not bound to an operation.
+    /// </param>
+    /// <exception cref="PathEscapeException">
+    /// The path is absolute or it traverses out of the root (AD-9, AC2).
+    /// </exception>
+    public static void RequireDeclaredRelative(string? path, string? operation = null)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        RequireRelative(path, operation);
     }
 
     /// <summary>
