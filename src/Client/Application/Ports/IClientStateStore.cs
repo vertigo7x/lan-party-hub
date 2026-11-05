@@ -110,4 +110,29 @@ public interface IClientStateStore
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes when the ancla is persisted.</returns>
     Task SaveTrustAnchorAsync(PinnedTrustAnchor anchor, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Registers the installation of a videogame, or UPDATES the one that is already
+    /// registered (AD-22, AC1, AC4).
+    ///
+    /// <para>
+    /// La fila la posee el cliente y su CLAVE es el <c>gameId</c> (AD-22). El
+    /// <c>installDirectoryId</c> identifica la raíz de instalación y NO cambia ante una
+    /// reparación ni ante una reinstalación del binario (AC1), así que una fila que ya
+    /// existe conserva el identificador que ya tenía (AC1).
+    /// </para>
+    /// </summary>
+    /// <param name="installation">Installation to register.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the installation is persisted.</returns>
+    Task SaveInstallationAsync(ClientInstallation installation, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the registered installation of a videogame, or <c>null</c> when the client
+    /// has not registered any for it (AD-22).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the installation, or with <c>null</c>.</returns>
+    Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken);
 }

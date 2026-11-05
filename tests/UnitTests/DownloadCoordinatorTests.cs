@@ -609,6 +609,12 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         public Task SaveTrustAnchorAsync(PinnedTrustAnchor anchor, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task SaveInstallationAsync(ClientInstallation installation, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
+            Task.FromResult<ClientInstallation?>(null);
     }
 
     /// <summary>
