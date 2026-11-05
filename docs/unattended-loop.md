@@ -65,7 +65,7 @@ Los cambios de contratos, persistencia, red, instalación, seguridad o firma, lo
 
 ## Ramas, PR y merge
 
-Cada worker parte de `origin/main`, en `story/<epica>-<historia>-<slug>`. El coordinador integra resultados de uno en uno: antes de abrir el PR vuelve a ejecutar las verificaciones y, si `main` avanzó durante la historia, rebasa la rama y las repite sin crear una nueva conversación de IA.
+Cada worker parte de `origin/main`, en `story/<epica>-<historia>-<slug>`. Al recuperar un worktree preservado, el driver lo rebasa antes de comparar su diff y decidir si reutiliza trabajo; así los cambios ya fusionados en `main` no parecen parte de la historia. El coordinador integra resultados de uno en uno: antes de abrir el PR vuelve a ejecutar las verificaciones y, si `main` avanzó durante la historia, rebasa la rama y las repite sin crear una nueva conversación de IA.
 
 El resultado se registra en `.build-lite/results/<epica>-<historia>.json`. Si las puertas pasan, el driver actualiza `sprint-status.yaml`, hace push, abre un PR y lo fusiona con squash. El journal solo marca la historia como completa cuando el merge y la comprobación post-merge confirman que está en `origin/main`. No hay push directo a `main`.
 

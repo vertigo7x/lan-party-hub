@@ -1372,6 +1372,14 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
     worker_plan = tree.path / relative(plan)
     worker_plan.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(plan, worker_plan)
+    # A preserved worker can predate a driver fix merged into main. Rebase it
+    # before comparing its diff with main, otherwise that upstream fix looks
+    # like undeclared story work and the footprint gate rejects it.
+    legacy.git("fetch", "origin", BASE_BRANCH, cwd=tree.path)
+    if not legacy.git(
+        "merge-base", "--is-ancestor", f"origin/{BASE_BRANCH}", "HEAD", check=False, cwd=tree.path
+    ).ok:
+        legacy.rebase_onto_main(cwd=tree.path)
     base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=tree.path).stdout.strip()
 
     try:
