@@ -1,0 +1,32 @@
+{
+  "story": "7-1-orden-normativo-de-la-instalaci\u00c3\u00b3n-y-rechazo-previo-a-persist",
+  "base": "ff58aa958194291ea44f91abc58c063449563210",
+  "risk": [
+    "instalaci\u00f3n",
+    "red o host",
+    "persistencia"
+  ],
+  "paths": [
+    ".gitignore",
+    "src/Client/Application/ClientInstallation.cs",
+    "src/Client/Application/Install/InstallationCoordinator.cs",
+    "src/Client/Application/Ports/IClientStateStore.cs",
+    "src/Client/Application/Ports/IInstallPathResolver.cs",
+    "src/Client/Domain/Install/InstallationCertification.cs",
+    "src/Client/Domain/Install/InstallationVerdict.cs",
+    "src/Client/Host/InstallationComposition.cs",
+    "src/Client/Infrastructure/Filesystem/InstallPathResolver.cs",
+    "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+    "src/Client/Program.cs",
+    "tests/IntegrationTests/InstallationPersistenceTests.cs",
+    "tests/UnitTests/DownloadCoordinatorTests.cs",
+    "tests/UnitTests/DownloadRecoveryTests.cs",
+    "tests/UnitTests/DownloadValidationPersistenceTests.cs",
+    "tests/UnitTests/FixTrustAnchorTests.cs",
+    "tests/UnitTests/InstallPathResolverTests.cs",
+    "tests/UnitTests/InstallationCertificationTests.cs",
+    "tests/UnitTests/InstallationOrderTests.cs",
+    "tests/UnitTests/ValidationFailurePresentationTests.cs"
+  ],
+  "state": "complete"
+}
