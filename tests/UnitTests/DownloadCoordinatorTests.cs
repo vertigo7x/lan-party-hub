@@ -257,13 +257,13 @@ public sealed class DownloadCoordinatorTests : IDisposable
             new Uri("http://168.168.1.10:5000/api/v1/packages/paquete-1/content"),
             TestContext.Current.CancellationToken);
 
-        gate.Release(100);
-
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
         // La segunda operación del MISMO paquete espera su turno: la primera tiene el
         // recurso tomado.
         Assert.Single(engine.RequestedStarts);
+
+        gate.Release(100);
 
         await WaitUntilAsync(() => first.BytesPersisted == 100);
 

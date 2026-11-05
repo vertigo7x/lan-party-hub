@@ -1465,7 +1465,7 @@ public sealed class DownloadOperationHandle
     }
 
     /// <summary>Waits until the current attempt released its partial file and resource lock.</summary>
-    internal async Task WaitForActiveRunAsync()
+    public async Task WaitForActiveRunAsync()
     {
         Task? run;
 

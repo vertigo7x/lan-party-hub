@@ -72,6 +72,7 @@ public sealed class ValidationFailurePresentationTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         var viewModel = new DownloadProgressViewModel();
 
@@ -111,6 +112,7 @@ public sealed class ValidationFailurePresentationTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         var viewModel = new DownloadProgressViewModel();
 
@@ -209,6 +211,7 @@ public sealed class ValidationFailurePresentationTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         var viewModel = new DownloadProgressViewModel();
 
@@ -261,6 +264,7 @@ public sealed class ValidationFailurePresentationTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => handle.StateMachine.Current == DownloadState.Failed);
+        await handle.WaitForActiveRunAsync();
 
         var viewModel = new DownloadProgressViewModel();
 

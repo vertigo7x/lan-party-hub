@@ -2,6 +2,7 @@
 using System.Text.Json;
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
@@ -270,7 +271,7 @@ public sealed class CatalogSurfaceTests : IDisposable
             correlation,
             NullLoggerFactory.Instance,
             connectionGate: null,
-            new AvaloniaUiThread());
+            new ImmediateUiThread());
 
         // La primera sincronización ocurre durante el ARRANQUE, antes de que exista la
         // ventana: el estado que lleva el snapshot se publica sin ningún suscriptor.
@@ -315,7 +316,7 @@ public sealed class CatalogSurfaceTests : IDisposable
             correlation,
             NullLoggerFactory.Instance,
             connectionGate: null,
-            new AvaloniaUiThread());
+            new ImmediateUiThread());
 
         var viewModel = new CatalogSurfaceViewModel();
 
@@ -605,6 +606,20 @@ public sealed class CatalogSurfaceTests : IDisposable
             NullLogger<CatalogSyncService>.Instance);
 
         return await service.SynchronizeAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Delivers publication synchronously in this integration fixture.
+    /// The real dispatcher is exercised separately; these assertions require the state
+    /// that <see cref="CatalogSyncComposition.StartAsync"/> published before returning.
+    /// </summary>
+    private sealed class ImmediateUiThread : IUiThread
+    {
+        public void Post(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            action();
+        }
     }
 
     /// <summary>
