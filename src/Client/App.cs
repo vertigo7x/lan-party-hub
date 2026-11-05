@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Input;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
@@ -431,8 +430,9 @@ public sealed class App : Avalonia.Application
     /// sobre otro (UX-DR-16, UX-DR-23).
     /// </para>
     /// <para>
-    /// <c>Esc</c> cancela la acción NO destructiva, y el foco vuelve al elemento
-    /// INVOCADOR (UX-DR-37).
+    /// El presentador TOMA el foco al abrir el overlay y lo devuelve al elemento
+    /// INVOCADOR al cerrarlo, para que el <c>Esc</c> del jugador cancele la acción NO
+    /// destructiva (AC2, UX-DR-37).
     /// </para>
     /// </summary>
     /// <param name="dialog">Overlay de confirmación de la operación.</param>
@@ -440,42 +440,9 @@ public sealed class App : Avalonia.Application
     /// <returns>A task that completes when the player confirmed or declined.</returns>
     private static Task ShowPrivilegedConfirmation(PrivilegedOperationDialog dialog, Window window)
     {
-        var overlay = new Grid();
+        var overlay = new PrivilegedOperationOverlay(dialog, window);
 
-        void CloseOverlay()
-        {
-            if (overlay.Parent is Panel parent)
-            {
-                parent.Children.Remove(overlay);
-            }
-        }
-
-        dialog.ConfirmButton.Click += (_, _) => CloseOverlay();
-        dialog.CancelButton.Click += (_, _) => CloseOverlay();
-
-        // UX-DR-37: `Esc` cancela la acción no destructiva, y el overlay se cierra.
-        dialog.KeyDown += (_, eventArgs) =>
-        {
-            if (eventArgs.Key == Key.Escape)
-            {
-                CloseOverlay();
-            }
-        };
-
-        overlay.Children.Add(dialog);
-
-        if (window.Content is Panel panel)
-        {
-            panel.Children.Add(overlay);
-        }
-
-        // UX-DR-37: el foco vuelve al elemento INVOCADOR cuando el overlay se cierra.
-        var invoker = TopLevel.GetTopLevel(window)?.FocusManager?.GetFocusedElement();
-
-        if (invoker is Control control)
-        {
-            control.Focus();
-        }
+        overlay.Show();
 
         return Task.CompletedTask;
     }

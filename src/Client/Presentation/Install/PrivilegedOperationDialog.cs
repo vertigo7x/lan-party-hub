@@ -127,8 +127,8 @@ public sealed class PrivilegedOperationDialog : UserControl
             },
         };
 
-        _confirmButton.Click += (_, _) => _decision.TrySetResult(true);
-        _cancelButton.Click += (_, _) => _decision.TrySetResult(false);
+        _confirmButton.Click += (_, _) => Resolve(true);
+        _cancelButton.Click += (_, _) => Resolve(false);
 
         // UX-DR-37: `Esc` cancela la acción NO destructiva y devuelve el foco al
         // elemento invocador.
@@ -169,14 +169,25 @@ public sealed class PrivilegedOperationDialog : UserControl
     public Task<bool> Decision => _decision.Task;
 
     /// <summary>
+    /// Occurs when the player has ALREADY decided, así que el overlay que hospeda al
+    /// diálogo puede cerrarse y devolver el foco al elemento invocador (AC2, UX-DR-37).
+    ///
+    /// <para>
+    /// El aviso es el CAMINO ÚNICO de cierre, porque el `Esc` marca el `KeyDown` como
+    /// `Handled` y un segundo handler en el MISMO elemento nunca se ejecutaría (AC2).
+    /// </para>
+    /// </summary>
+    public event EventHandler<bool>? Dismissed;
+
+    /// <summary>
     /// Cancels the confirmation, as the <c>Esc</c> does (AC2, UX-DR-37).
     /// </summary>
-    public void Decline() => _decision.TrySetResult(false);
+    public void Decline() => Resolve(false);
 
     /// <summary>
     /// Confirms the operation, as the action that confirms does (AC2).
     /// </summary>
-    public void Confirm() => _decision.TrySetResult(true);
+    public void Confirm() => Resolve(true);
 
     /// <summary>
     /// Handles the `Esc`, que cancela la acción no destructiva (AC2, UX-DR-37).
@@ -193,6 +204,21 @@ public sealed class PrivilegedOperationDialog : UserControl
         eventArgs.Handled = true;
 
         Decline();
+    }
+
+    /// <summary>
+    /// Records the DECISION of the player and notifies that the dialog was DISMISSED, para
+    /// que el overlay se cierre y devuelva el foco al elemento invocador (AC2, UX-DR-37).
+    /// </summary>
+    /// <param name="confirmed">Whether the player confirmed the operation.</param>
+    private void Resolve(bool confirmed)
+    {
+        if (!_decision.TrySetResult(confirmed))
+        {
+            return;
+        }
+
+        Dismissed?.Invoke(this, confirmed);
     }
 }
 
