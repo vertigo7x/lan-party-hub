@@ -350,5 +350,11 @@ public sealed class FixTrustAnchorTests
 
             return Task.CompletedTask;
         }
+
+        public Task SaveInstallationAsync(ClientInstallation installation, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
+            Task.FromResult<ClientInstallation?>(null);
     }
 }

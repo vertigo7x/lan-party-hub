@@ -41,6 +41,7 @@ public static class Program
         ConnectionComposition? connection = null;
         TransferComposition? transfer = null;
         DownloadComposition? downloads = null;
+        InstallationComposition? installations = null;
 
         try
         {
@@ -101,6 +102,11 @@ public static class Program
             // complemento del cliente y no su motivo de vida (AD-1).
             downloads = OpenDownloads(startup, transfer, correlationScope, loggerFactory, connection);
 
+            // AD-7, AD-8, AD-9, AC1: la composición de las instalaciones. El manifiesto
+            // firmado se pide al servidor, su firma se valida contra el ancla ya fijada y
+            // SOLO después se crea el directorio de instalación (AC1, AC3).
+            installations = OpenInstallations(startup, correlationScope, loggerFactory);
+
             BuildAvaloniaApp(
                 startup.Settings,
                 catalogSync: catalogSync,
@@ -128,6 +134,7 @@ public static class Program
         {
             catalogSync?.DisposeAsync().AsTask().GetAwaiter().GetResult();
             downloads?.Dispose();
+            installations?.Dispose();
             transfer?.Dispose();
             correlationScope?.Dispose();
             loggerFactory?.Dispose();
@@ -482,6 +489,91 @@ public static class Program
                 .LogWarning(
                     exception,
                     "No se pudo abrir la composición de las descargas: el cliente sigue arrancando sin ella.");
+
+            composition?.Dispose();
+
+            composition = null;
+        }
+
+        return composition;
+    }
+
+    /// <summary>
+    /// Opens the composition of the installations (AD-7, AD-8, AD-9, AC1..AC7).
+    ///
+    /// <para>
+    /// La composición se abre solo cuando el cliente conoce la dirección del servidor:
+    /// sin servidor no hay manifiesto firmado que pedir (AD-3).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arrancar: las
+    /// instalaciones son un complemento del cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static InstallationComposition? OpenInstallations(
+        ClientStartupResult startup,
+        IClientCorrelationScope correlationScope,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(correlationScope);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (string.IsNullOrWhiteSpace(startup.ServerAddress))
+        {
+            return null;
+        }
+
+        InstallationComposition? composition = null;
+
+        try
+        {
+            // AD-11: la fila de la instalación vive en la base de datos del cliente, así
+            // que la composición abre su propio acceso a ella.
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = startup.StateDatabasePath,
+                Pooling = false,
+            }.ToString();
+
+            var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite(
+                    connectionString,
+                    sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                .Options;
+
+            var context = new ClientStateDbContext(options);
+
+            var layout = ClientDataLayout.Create(
+                startup.DataFolder,
+                startup.InstallDirectory);
+
+            // AD-27: la validación de la autenticidad se hace contra el ancla de
+            // confianza YA FIJADA, que vive en la base de datos del cliente. El store es
+            // el que la lee, así que la composición lo recibe como el port que es.
+            var stateStore = new ClientStateStore(context);
+
+            composition = InstallationComposition.Create(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                correlationScope,
+                layout,
+                stateStore,
+                stateStore,
+                loggerFactory);
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede instalar, pero sigue siendo un cliente que arranca: la
+            // ventana se abre y el catálogo sigue disponible (AD-1).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.Install")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir la composición de las instalaciones: el cliente sigue arrancando sin ella.");
 
             composition?.Dispose();
 

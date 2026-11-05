@@ -3,6 +3,7 @@ using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain;
 using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Client.Infrastructure.Persistence.Entities;
+using LANPartyHub.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LANPartyHub.Client.Infrastructure.Persistence;
@@ -300,6 +301,97 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
             });
 
             await _context.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task SaveInstallationAsync(
+        ClientInstallation installation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installation.GameId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installation.InstalledVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installation.InstallPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installation.InstallDirectoryId);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // AD-22: la clave de la fila es el gameId, así que una segunda instalación del
+            // MISMO videojuego actualiza la fila que ya existe en lugar de crear otra.
+            var row = await _context.Installations
+                .FirstOrDefaultAsync(
+                    entity => entity.GameId == installation.GameId,
+                    cancellationToken);
+
+            if (row is null)
+            {
+                _context.Installations.Add(new ClientInstallationEntity
+                {
+                    GameId = installation.GameId,
+                    InstalledVersion = installation.InstalledVersion,
+                    ValidationState = installation.ValidationState.ToString(),
+                    InstallPath = installation.InstallPath,
+                    InstallDirectoryId = installation.InstallDirectoryId,
+                });
+            }
+            else
+            {
+                // AC1: el identificador de la raíz NO cambia ante una reparación, así que
+                // la fila conserva el que ya tenía.
+                row.InstalledVersion = installation.InstalledVersion;
+                row.ValidationState = installation.ValidationState.ToString();
+                row.InstallPath = installation.InstallPath;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<ClientInstallation?> LoadInstallationAsync(
+        string gameId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var row = await _context.Installations
+                .AsNoTracking()
+                .FirstOrDefaultAsync(entity => entity.GameId == gameId, cancellationToken);
+
+            if (row is null)
+            {
+                return null;
+            }
+
+            // El estado persistido es el NOMBRE del valor de la máquina de estados, y un
+            // nombre que la máquina no reconoce NO se inventa: la instalación se lee
+            // como no registrada (AD-10).
+            if (!Enum.TryParse<InstallationState>(row.ValidationState, out var state))
+            {
+                return null;
+            }
+
+            return new ClientInstallation(
+                row.GameId,
+                row.InstalledVersion,
+                state,
+                row.InstallPath,
+                row.InstallDirectoryId);
         }
         finally
         {

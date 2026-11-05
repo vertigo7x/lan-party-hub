@@ -1,0 +1,86 @@
+namespace LANPartyHub.Client.Application.Ports;
+
+/// <summary>
+/// Port of the resolution of the paths of the installation (AD-9, AC5).
+///
+/// <para>
+/// El port existe para que el caso de uso de la instalación pueda pronunciarse sobre el
+/// CONFINÉ de las rutas sin conocer el disco: la resolución canónica y la comprobación
+/// de que la ruta queda dentro de la raíz son una regla de AD-9 y el adaptador la
+/// aplica contra el sistema de archivos (AD-1, AD-9).
+/// </para>
+/// <para>
+/// Toda ruta del manifiesto es RELATIVA a la raíz de instalación: el manifiesto no
+/// admite rutas absolutas (AD-9).
+/// </para>
+/// </summary>
+public interface IInstallPathResolver
+{
+    /// <summary>
+    /// Canonical absolute path of the installation root that confines the installation
+    /// (AD-9).
+    /// </summary>
+    string RootPath { get; }
+
+    /// <summary>
+    /// Resolves a relative path of the manifest against the installation root and
+    /// REQUIRES that the resolved canonical path stays inside the root (AD-9).
+    ///
+    /// <para>
+    /// Un destino fuera de la raíz se RECHAZA, y el rechazo nombra la ruta que lo
+    /// intentó: la ruta canónica se comprueba, y no la forma que el manifiesto escribió
+    /// (AD-9).
+    /// </para>
+    /// </summary>
+    /// <param name="relativePath">Path of the manifest, relative to the installation root.</param>
+    /// <returns>The canonical absolute path that resolves inside the root.</returns>
+    /// <exception cref="ArgumentException">The path is empty or whitespace.</exception>
+    /// <exception cref="InstallPathOutsideRootException">
+    /// The resolved canonical path does NOT stay inside the installation root (AD-9).
+    /// </exception>
+    string ResolveInsideRoot(string relativePath);
+
+    /// <summary>
+    /// Tells whether a relative path of the manifest resolves inside the installation
+    /// root, without throwing (AD-9, AC5).
+    /// </summary>
+    /// <param name="relativePath">Path of the manifest, relative to the installation root.</param>
+    /// <returns><c>true</c> when the path resolves inside the root.</returns>
+    bool IsInsideRoot(string relativePath);
+}
+
+/// <summary>
+/// A path of the installation manifest resolves OUTSIDE the configured installation root
+/// (AD-9).
+///
+/// <para>
+/// El rechazo nombra la ruta canónica que lo intentó, porque el manifiesto puede
+/// escribir la ruta de muchas formas y la que importa es la canónica (AD-9).
+/// </para>
+/// </summary>
+public sealed class InstallPathOutsideRootException : Exception
+{
+    /// <summary>Creates the exception of a path that escapes the installation root.</summary>
+    /// <param name="relativePath">Path of the manifest, relative to the installation root.</param>
+    /// <param name="canonicalPath">Canonical absolute path that the path resolved to.</param>
+    /// <param name="rootPath">Canonical absolute path of the installation root.</param>
+    public InstallPathOutsideRootException(
+        string relativePath,
+        string canonicalPath,
+        string rootPath)
+        : base($"La ruta '{relativePath}' del manifiesto de instalación resuelve en '{canonicalPath}', que está FUERA de la raíz de instalación '{rootPath}'.")
+    {
+        RelativePath = relativePath;
+        CanonicalPath = canonicalPath;
+        RootPath = rootPath;
+    }
+
+    /// <summary>Path of the manifest, relative to the installation root.</summary>
+    public string RelativePath { get; }
+
+    /// <summary>Canonical absolute path that the path resolved to.</summary>
+    public string CanonicalPath { get; }
+
+    /// <summary>Canonical absolute path of the installation root.</summary>
+    public string RootPath { get; }
+}
