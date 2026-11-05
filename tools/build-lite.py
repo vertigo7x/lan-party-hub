@@ -1235,7 +1235,11 @@ def commit_story(story, cwd: Path | None = None) -> None:
     """
     if not legacy.git("status", "--porcelain", cwd=cwd).stdout.strip():
         return
-    legacy.git("add", "-A", "--", ".", f":(exclude){CONTEXT_PATH_PREFIX}", cwd=cwd)
+    # `ensure_contexts_ignored` installs this cache path in the shared Git
+    # exclude file for every worktree. Do not name an ignored pathspec here:
+    # Git rejects an explicit ignored path even when it is paired with an
+    # exclude magic pathspec, which would prevent preserving story work.
+    legacy.git("add", "-A", "--", ".", cwd=cwd)
     if not legacy.git("diff", "--cached", "--name-only", cwd=cwd).stdout.strip():
         return
     legacy.git("commit", "-m", f"feat({story.label}): {story.title}", cwd=cwd)
@@ -2178,10 +2182,36 @@ def self_test_context() -> list[str]:
     if not target.exists():
         failures.append("the context package was not copied into the checkout")
 
+    # A real commit must preserve story files while leaving the ignored cache
+    # out. Naming the ignored path explicitly makes Git fail on Windows, so
+    # exercise the exact staging path rather than only its helper predicates.
+    commit_root = WORKTREE_ROOT / "self-test-context-commit"
+    shutil.rmtree(commit_root, ignore_errors=True)
+    legacy.git("init", "-q", str(commit_root), cwd=REPO_ROOT)
+    legacy.git("config", "user.email", "self-test@example.invalid", cwd=commit_root)
+    legacy.git("config", "user.name", "Build Lite self-test", cwd=commit_root)
+    ensure_contexts_ignored(commit_root)
+    story_file = commit_root / "src" / "Story.cs"
+    story_file.parent.mkdir(parents=True, exist_ok=True)
+    story_file.write_text("class Story {}\n", encoding="utf-8")
+    cached_context = commit_root / ".build-lite" / "contexts" / "99-99.md"
+    cached_context.parent.mkdir(parents=True, exist_ok=True)
+    cached_context.write_text(CONTEXT_SAMPLE, encoding="utf-8")
+    try:
+        commit_story(story, cwd=commit_root)
+        committed = legacy.git("show", "--format=", "--name-only", "HEAD", cwd=commit_root).stdout
+        if "src/Story.cs" not in committed:
+            failures.append("the story change was not committed with an ignored context cache")
+        if ".build-lite/contexts/" in committed:
+            failures.append("the context cache was committed with the story")
+    except legacy.DriverError:
+        failures.append("an ignored context cache prevented committing the story")
+
     context.unlink(missing_ok=True)
     plan.unlink(missing_ok=True)
     epics.unlink(missing_ok=True)
     shutil.rmtree(tree_root, ignore_errors=True)
+    shutil.rmtree(commit_root, ignore_errors=True)
     shutil.rmtree(log_dir, ignore_errors=True)
     return failures
 
