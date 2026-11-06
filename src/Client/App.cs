@@ -113,11 +113,15 @@ public sealed class App : Avalonia.Application
             //
             // AD-19, AC1: la ficha del videojuego lleva la acción «Jugar», que lanza el
             // juego instalado a través del módulo `GameLauncher`.
+            //
+            // AC1, AC2: la primaria es POLIMÓRFICA —«Reparar» o «Descargar de nuevo»—
+            // así que el cableado la ENRUTA por la acción que el jugador pulsó, y cada
+            // una registra la intención que le corresponde.
             var catalogSurface = new CatalogSurface(
                 new CatalogSurfaceViewModel(),
                 () => _ = SynchronizeNowAsync(),
                 gameId => _ = LaunchGameAsync(gameId),
-                gameId => _ = RecordRepairIntentAsync(gameId),
+                (gameId, primary) => _ = RecordPrimaryIntentAsync(gameId, primary),
                 gameId => _ = RecordDiagnoseIntentAsync(gameId));
 
             _catalogSurface = catalogSurface;
@@ -125,10 +129,13 @@ public sealed class App : Avalonia.Application
             // AC1, AC2, AC8: la Biblioteca lista las instalaciones del cliente con la
             // MISMA tabla de acciones que la ficha, así que ninguna de las dos superficies
             // abre un camino de lanzamiento distinto (UX-DR-17, UX-DR-19).
+            //
+            // AC1, AC2: la primaria se ENRUTA igual que en la ficha, así que «Reparar» y
+            // «Descargar de nuevo» registran la intención que les corresponde.
             var librarySurface = new LibrarySurface(
                 new LibrarySurfaceViewModel(),
                 gameId => _ = LaunchGameAsync(gameId),
-                gameId => _ = RecordRepairIntentAsync(gameId),
+                (gameId, primary) => _ = RecordPrimaryIntentAsync(gameId, primary),
                 gameId => _ = RecordDiagnoseIntentAsync(gameId),
                 () => ShowCatalog());
 
@@ -785,19 +792,26 @@ public sealed class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Records the intention of REPAIRING an installation, que es un SEAM: la reparación
-    /// vive en 8.3 y aquí sólo queda registrada la intención (AC1, UX-DR-20).
+    /// Records the intention of the PRIMARY action that the player pressed, que es
+    /// POLIMÓRFICA: «Reparar» o «Descargar de nuevo» (AC1, AC2, UX-DR-20).
+    ///
+    /// <para>
+    /// La ruta la decide la CAPA DE APLICACIÓN, que es su único dueño: «Descargar de
+    /// nuevo» registra la intención de RE-DESCARGAR, así que el puerto de reparación no
+    /// recibe nunca una re-descarga (AC1, AC2, AD-1).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame.</param>
-    private async Task RecordRepairIntentAsync(string gameId)
+    /// <param name="primary">The PRIMARY action that the player pressed.</param>
+    private async Task RecordPrimaryIntentAsync(string gameId, PlayabilityAction primary)
     {
         if (_gameLauncher is null)
         {
             return;
         }
 
-        await _gameLauncher.Intents
-            .RecordRepairAsync(gameId, CancellationToken.None)
+        await _gameLauncher.IntentService
+            .RecordPrimaryAsync(gameId, primary, CancellationToken.None)
             .ConfigureAwait(true);
     }
 
@@ -814,7 +828,7 @@ public sealed class App : Avalonia.Application
             return;
         }
 
-        await _gameLauncher.Intents
+        await _gameLauncher.IntentService
             .RecordDiagnoseAsync(gameId, CancellationToken.None)
             .ConfigureAwait(true);
     }

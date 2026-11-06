@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Design;
 
 namespace LANPartyHub.Client.Presentation.GameLauncher;
@@ -50,6 +51,12 @@ public sealed class GamePlayActionsView : UserControl
     /// <param name="onPrimary">
     /// Action of the PRIMARY button, or <c>null</c> when the table is built without it
     /// (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
     /// </param>
     /// <param name="onSecondary">
     /// Action of the SECONDARY button, or <c>null</c> when the table is built without it
@@ -58,7 +65,7 @@ public sealed class GamePlayActionsView : UserControl
     public GamePlayActionsView(
         GamePlayActionsViewModel viewModel,
         Action<string>? onPlay = null,
-        Action<string>? onPrimary = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
         Action<string>? onSecondary = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
@@ -150,7 +157,7 @@ public sealed class GamePlayActionsView : UserControl
         // El botón queda HABILITADO para que `Tab` lo alcance (AC5, UX-DR-26).
         _play.Click += (_, _) => InvokePlay(onPlay);
 
-        _primary.Click += (_, _) => onPrimary?.Invoke(viewModel.GameId);
+        _primary.Click += (_, _) => onPrimary?.Invoke(viewModel.GameId, viewModel.PrimaryAction);
 
         _secondary.Click += (_, _) => onSecondary?.Invoke(viewModel.GameId);
 

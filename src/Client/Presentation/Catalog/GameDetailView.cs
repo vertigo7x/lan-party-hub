@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.GameLauncher;
 
@@ -54,6 +55,12 @@ public sealed class GameDetailView : UserControl
     /// <param name="onPrimary">
     /// Action of the PRIMARY button of the table of actions, or <c>null</c> when the
     /// ficha is built without it (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
     /// </param>
     /// <param name="onSecondary">
     /// Action of the SECONDARY button of the table of actions, or <c>null</c> when the
@@ -62,7 +69,7 @@ public sealed class GameDetailView : UserControl
     public GameDetailView(
         GameDetailViewModel viewModel,
         Action<string>? onPlay = null,
-        Action<string>? onPrimary = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
         Action<string>? onSecondary = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);

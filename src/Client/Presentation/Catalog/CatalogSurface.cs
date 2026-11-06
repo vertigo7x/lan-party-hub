@@ -42,7 +42,7 @@ public sealed class CatalogSurface : UserControl
 
     private string? _openGameId;
     private readonly Action<string>? _onPlay;
-    private readonly Action<string>? _onPrimary;
+    private readonly Action<string, PlayabilityAction>? _onPrimary;
     private readonly Action<string>? _onSecondary;
 
     /// <summary>
@@ -60,6 +60,12 @@ public sealed class CatalogSurface : UserControl
     /// <param name="onPrimary">
     /// Action of the PRIMARY button of the table of actions, or <c>null</c> when the
     /// surface is built without it (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
     /// </param>
     /// <param name="onSecondary">
     /// Action of the SECONDARY button of the table of actions, or <c>null</c> when the
@@ -69,7 +75,7 @@ public sealed class CatalogSurface : UserControl
         CatalogSurfaceViewModel viewModel,
         Action? onEmptyAction = null,
         Action<string>? onPlay = null,
-        Action<string>? onPrimary = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
         Action<string>? onSecondary = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);

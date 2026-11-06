@@ -29,6 +29,9 @@ public sealed class LibrarySurface : UserControl
     private readonly Button _emptyAction;
     private readonly StackPanel _list;
     private readonly StackPanel _root;
+    private readonly Action<string>? _onPlay;
+    private readonly Action<string, PlayabilityAction>? _onPrimary;
+    private readonly Action<string>? _onSecondary;
 
     /// <summary>
     /// Creates the Biblioteca of the player.
@@ -41,6 +44,12 @@ public sealed class LibrarySurface : UserControl
     /// <param name="onPrimary">
     /// Action of the PRIMARY button of the table of actions, or <c>null</c> when the
     /// Biblioteca is built without it (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
     /// </param>
     /// <param name="onSecondary">
     /// Action of the SECONDARY button of the table of actions, or <c>null</c> when the
@@ -53,13 +62,21 @@ public sealed class LibrarySurface : UserControl
     public LibrarySurface(
         LibrarySurfaceViewModel viewModel,
         Action<string>? onPlay = null,
-        Action<string>? onPrimary = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
         Action<string>? onSecondary = null,
         Action? onViewCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
         _viewModel = viewModel;
+
+        // AC1, AC2: la fila de la Biblioteca lleva la MISMA tabla de acciones que la
+        // ficha, así que sus delegates se GUARDAN y se REENVÍAN a cada fila: sin ellos
+        // «Jugar», «Reparar»/«Descargar de nuevo» y «Diagnosticar» serían pulsaciones
+        // MUERTAS (AC1, AC2).
+        _onPlay = onPlay;
+        _onPrimary = onPrimary;
+        _onSecondary = onSecondary;
 
         _emptyText = new TextBlock
         {
@@ -185,7 +202,11 @@ public sealed class LibrarySurface : UserControl
 
             // AC1, AC3: la fila lleva la MISMA tabla de acciones que la ficha, con el
             // motivo visible del bloqueo junto a la etiqueta de «Jugar».
-            new GamePlayActionsView(entry.Actions),
+            //
+            // AC1, AC2: la tabla se construye CON los delegates de la Biblioteca, así que
+            // «Jugar», «Reparar»/«Descargar de nuevo» y «Diagnosticar» disparan la
+            // acción que el jugador pidió y NO son pulsaciones muertas.
+            new GamePlayActionsView(entry.Actions, _onPlay, _onPrimary, _onSecondary),
         },
     };
 }
