@@ -1,0 +1,87 @@
+﻿Serie de pruebas para C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\bin\Debug\net10.0\LANPartyHub.IntegrationTests.dll (.NETCoreApp,Version=v10.0)
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\bin\Debug\net10.0\LANPartyHub.IntegrationTests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)
+[xUnit.net 00:00:00.24]   Discovering: LANPartyHub.IntegrationTests
+[xUnit.net 00:00:00.59]   Discovered:  LANPartyHub.IntegrationTests
+[xUnit.net 00:00:00.81]   Starting:    LANPartyHub.IntegrationTests
+dotnet : [xUnit.net 00:00:08.44]     LANPartyHub.IntegrationTests.GameLaunchTests.The_arguments_reach_the_child_process
+_and_the_working_directory_is_the_root [FAIL]
+En línea: 1 Carácter: 1
++ dotnet test tests\IntegrationTests\LANPartyHub.IntegrationTests.cspro ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0...the_root [FAIL]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[xUnit.net 00:00:08.44]       System.TimeoutException : El proceso hijo no escribi├│ los archivos del probe.
+[xUnit.net 00:00:08.44]       Stack Trace:
+[xUnit.net 00:00:08.44]         C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs(220,0): at LANPartyHub.IntegrationTests.GameLaunchTests.WaitForProbeAsync()
+[xUnit.net 00:00:08.44]         C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs(79,0): at LANPartyHub.IntegrationTests.GameLaunchTests.The_arguments_reach_the_child_process_and_the_working_directory_is_the_root()
+[xUnit.net 00:00:08.44]         --- End of stack trace from previous location ---
+  Con error LANPartyHub.IntegrationTests.GameLaunchTests.The_arguments_reach_the_child_process_and_the_working_directory_is_the_root [7 s]
+  Mensaje de error:
+   System.TimeoutException : El proceso hijo no escribi├│ los archivos del probe.
+  Seguimiento de la pila:
+     at LANPartyHub.IntegrationTests.GameLaunchTests.WaitForProbeAsync() in C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs:line 220
+   at LANPartyHub.IntegrationTests.GameLaunchTests.The_arguments_reach_the_child_process_and_the_working_directory_is_the_root() in C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs:line 79
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.85]     
+LANPartyHub.IntegrationTests.GameLaunchTests.An_installation_that_is_not_certified_starts_no_process [FAIL]
+[xUnit.net 00:00:08.85]       Assert.True() Failure
+[xUnit.net 00:00:08.85]       Expected: True
+[xUnit.net 00:00:08.85]       Actual:   False
+[xUnit.net 00:00:08.85]       Stack Trace:
+[xUnit.net 00:00:08.85]         C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs(197,0): at LANPartyHub.IntegrationTests.GameLaunchTests.An_installation_that_is_not_certified_starts_no_process()
+[xUnit.net 00:00:08.85]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:08.94]     
+LANPartyHub.IntegrationTests.GameLaunchTests.An_executable_outside_the_root_is_rejected_and_starts_no_process [FAIL]
+[xUnit.net 00:00:08.94]       Assert.Equal() Failure: Strings differ
+[xUnit.net 00:00:08.94]                              Ôåô (pos 12)
+[xUnit.net 00:00:08.94]       Expected: "GAME_LAUNCH_PATH_OUTSIDE_ROOT"
+[xUnit.net 00:00:08.94]       Actual:   "GAME_LAUNCH_INSTALLATION_INVALID"
+[xUnit.net 00:00:08.94]                              Ôåæ (pos 12)
+[xUnit.net 00:00:08.94]       Stack Trace:
+[xUnit.net 00:00:08.94]         C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs(147,0): at LANPartyHub.IntegrationTests.GameLaunchTests.An_executable_outside_the_root_is_rejected_and_starts_no_process()
+[xUnit.net 00:00:08.94]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:09.07]     
+LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected_with_its_exact_path [FAIL]
+[xUnit.net 00:00:09.07]       Assert.True() Failure
+[xUnit.net 00:00:09.07]       Expected: True
+[xUnit.net 00:00:09.07]       Actual:   False
+[xUnit.net 00:00:09.07]       Stack Trace:
+[xUnit.net 00:00:09.07]         C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs(123,0): at LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected_with_its_exact_path()
+[xUnit.net 00:00:09.07]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:09.27]   Finished:    LANPartyHub.IntegrationTests (ID = 'ad2ddf05db11a678802f221f6ecd89358987be68554939fe394c00c976812f3d')
+  Con error LANPartyHub.IntegrationTests.GameLaunchTests.An_installation_that_is_not_certified_starts_no_process [389 ms]
+  Mensaje de error:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Seguimiento de la pila:
+     at LANPartyHub.IntegrationTests.GameLaunchTests.An_installation_that_is_not_certified_starts_no_process() in C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs:line 197
+--- End of stack trace from previous location ---
+  Con error LANPartyHub.IntegrationTests.GameLaunchTests.An_executable_outside_the_root_is_rejected_and_starts_no_process [92 ms]
+  Mensaje de error:
+   Assert.Equal() Failure: Strings differ
+                       Ôåô (pos 12)
+Expected: "GAME_LAUNCH_PATH_OUTSIDE_ROOT"
+Actual:   "GAME_LAUNCH_INSTALLATION_INVALID"
+                       Ôåæ (pos 12)
+  Seguimiento de la pila:
+     at LANPartyHub.IntegrationTests.GameLaunchTests.An_executable_outside_the_root_is_rejected_and_starts_no_process() in C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs:line 147
+--- End of stack trace from previous location ---
+  Con error LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected_with_its_exact_path [131 ms]
+  Mensaje de error:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Seguimiento de la pila:
+     at LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected_with_its_exact_path() in C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\GameLaunchTests.cs:line 123
+--- End of stack trace from previous location ---
+  Correctas LANPartyHub.IntegrationTests.GameLaunchTests.The_client_tells_whether_the_process_is_still_running [168 ms]
+
+No se pudo ejecutar la serie de pruebas.
+Pruebas totales: 5
+     Correcto: 1
+     Incorrecto: 4
+ Tiempo total: 9,8747 Segundos
