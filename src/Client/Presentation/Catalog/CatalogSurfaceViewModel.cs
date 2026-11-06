@@ -413,7 +413,11 @@ public sealed class CatalogSurfaceViewModel
         return new GameDetailViewModel(
             _selectedGame,
             viewState,
-            installation?.InstalledVersion);
+            installation?.InstalledVersion,
+
+            // AC1: la acción «Jugar» se habilita SÓLO con una instalación CERTIFICADA
+            // como válida, que es el estado `Installed` de la máquina (AC1, AD-19).
+            installation?.ValidationState == InstallationState.Installed);
     }
 
     /// <summary>

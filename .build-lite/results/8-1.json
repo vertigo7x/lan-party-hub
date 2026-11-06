@@ -1,0 +1,35 @@
+{
+  "story": "8-1-detecci\u00c3\u00b3n-del-ejecutable-y-lanzamiento-con-argumentos-y-dire",
+  "base": "8f362d9f7b6a2f98756bdc9a050fefae3fefe2d5",
+  "risk": [
+    "instalaci\u00f3n",
+    "red o host",
+    "contrato compartido"
+  ],
+  "paths": [
+    ".build-lite/int-run.txt",
+    ".build-lite/test-run.txt",
+    ".build-lite/test-run2.txt",
+    "src/Client/App.cs",
+    "src/Client/Application/GameLauncher/GameLaunchOutcome.cs",
+    "src/Client/Application/GameLauncher/GameLaunchService.cs",
+    "src/Client/Application/Ports/IGameProcessRunner.cs",
+    "src/Client/Application/Ports/IInstallationInspector.cs",
+    "src/Client/Host/GameLauncherComposition.cs",
+    "src/Client/Infrastructure/Install/InstallationInspector.cs",
+    "src/Client/Infrastructure/Process/SystemGameProcessRunner.cs",
+    "src/Client/Presentation/Catalog/CatalogSurface.cs",
+    "src/Client/Presentation/Catalog/CatalogSurfaceViewModel.cs",
+    "src/Client/Presentation/Catalog/GameDetailView.cs",
+    "src/Client/Presentation/Catalog/GameDetailViewModel.cs",
+    "src/Client/Presentation/Status/ConnectionStatusPanel.cs",
+    "src/Client/Presentation/Status/ConnectionStatusPanelViewModel.cs",
+    "src/Client/Presentation/Status/GameRunStatusViewModel.cs",
+    "src/Client/Program.cs",
+    "src/Shared/Contracts/ErrorCatalog.cs",
+    "tests/IntegrationTests/GameLaunchTests.cs",
+    "tests/UnitTests/GameLaunchServiceTests.cs",
+    "tests/UnitTests/GameRunStatusViewModelTests.cs"
+  ],
+  "state": "complete"
+}

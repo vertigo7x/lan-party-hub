@@ -34,6 +34,7 @@ namespace LANPartyHub.Client.Presentation.Status;
 public sealed class ConnectionStatusPanel : UserControl
 {
     private readonly ConnectionStatusPanelViewModel _viewModel;
+    private readonly GameRunStatusViewModel? _gameRunStatusViewModel;
     private readonly Border _presenceBadge;
     private readonly TextBlock _presenceText;
     private readonly TextBlock _presenceValue;
@@ -43,6 +44,7 @@ public sealed class ConnectionStatusPanel : UserControl
     private readonly TextBlock _address;
     private readonly TextBlock _serverVersion;
     private readonly TextBlock _lastOperation;
+    private readonly TextBlock _gameRunStatus;
 
     /// <summary>
     /// Creates the persistent panel of the connection.
@@ -58,14 +60,21 @@ public sealed class ConnectionStatusPanel : UserControl
     /// panel is built without it. AC4: el panel muestra la fase y el porcentaje de la
     /// instalación con su barra.
     /// </param>
+    /// <param name="gameRunStatus">
+    /// View model of the state of the game that is running, or <c>null</c> when the panel
+    /// is built without it. AC2: el panel muestra «En ejecución» o «Ningún juego en
+    /// ejecución».
+    /// </param>
     public ConnectionStatusPanel(
         ConnectionStatusPanelViewModel viewModel,
         DownloadProgressControl? downloadProgress = null,
-        InstallProgressControl? installProgress = null)
+        InstallProgressControl? installProgress = null,
+        GameRunStatusViewModel? gameRunStatus = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
         _viewModel = viewModel;
+        _gameRunStatusViewModel = gameRunStatus;
 
         // El punto de presencia es una insignia con su color canónico y su texto: el
         // verde de la LAN cuando el servidor está disponible y el ámbar del aviso cuando
@@ -105,6 +114,10 @@ public sealed class ConnectionStatusPanel : UserControl
         _serverVersion = new TextBlock();
         _lastOperation = new TextBlock { TextWrapping = TextWrapping.Wrap };
 
+        // AC2, UX-DR-6: la fila del estado de ejecución dice «En ejecución» o «Ningún
+        // juego en ejecución». El panel NUNCA deja un espacio vacío (AC2).
+        _gameRunStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+
         // La fila de la presencia lleva SU PROPIO texto: el texto de la insignia ya es su
         // hijo visual, y un control de Avalonia NO puede estar en dos sitios a la vez
         // (AC1).
@@ -132,6 +145,17 @@ public sealed class ConnectionStatusPanel : UserControl
                 BuildRow(ConnectionStatusPanelViewModel.LastOperationLabelText, _lastOperation),
             },
         };
+
+        // AC2, UX-DR-6: la fila del estado de ejecución SÓLO existe cuando el panel
+        // conoce el view model del juego en ejecución, así que el panel no inventa el
+        // texto (AC4, R-MVP-7).
+        if (gameRunStatus is not null)
+        {
+            ((StackPanel)Content).Children.Add(
+                BuildRow(GameRunStatusViewModel.GameRunLabelText, _gameRunStatus));
+
+            gameRunStatus.Changed += Render;
+        }
 
         // UX-DR-11: el panel muestra ABAJO la operación en curso con su barra, y su
         // progreso. La operación en curso se dibuja con el MISMO view model que la barra
@@ -177,6 +201,12 @@ public sealed class ConnectionStatusPanel : UserControl
     /// the outside (AC2).
     /// </summary>
     public TextBlock LastOperation => _lastOperation;
+
+    /// <summary>
+    /// The text of the state of the game that is running, so it can be inspected and
+    /// driven from the outside (AC2, UX-DR-6).
+    /// </summary>
+    public TextBlock GameRunStatus => _gameRunStatus;
 
     /// <summary>
     /// Builds a row of the panel: a label and its value (AC1, UX-DR-11).
@@ -239,5 +269,9 @@ public sealed class ConnectionStatusPanel : UserControl
         _address.Text = _viewModel.AddressText;
         _serverVersion.Text = _viewModel.ServerVersionText;
         _lastOperation.Text = _viewModel.LastOperationText;
+
+        // AC2, UX-DR-6: la fila del estado de ejecución muestra «En ejecución» o «Ningún
+        // juego en ejecución», y NUNCA un espacio vacío (AC2).
+        _gameRunStatus.Text = _gameRunStatusViewModel?.StatusText ?? GameRunStatusViewModel.NoGameRunningText;
     }
 }

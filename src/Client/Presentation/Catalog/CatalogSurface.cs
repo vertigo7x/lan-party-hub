@@ -40,6 +40,7 @@ public sealed class CatalogSurface : UserControl
     private readonly ContentControl _detail;
 
     private string? _openGameId;
+    private readonly Action<string>? _onPlay;
 
     /// <summary>
     /// Creates the surface of the catalog.
@@ -49,9 +50,18 @@ public sealed class CatalogSurface : UserControl
     /// Action that the player triggers with «Sincronizar ahora» or «Conectar al servidor»
     /// when the catalog is empty, or <c>null</c> when the surface is built without it.
     /// </param>
-    public CatalogSurface(CatalogSurfaceViewModel viewModel, Action? onEmptyAction = null)
+    /// <param name="onPlay">
+    /// Action that the player triggers with «Jugar» on the ficha, or <c>null</c> when the
+    /// surface is built without it (AC1).
+    /// </param>
+    public CatalogSurface(
+        CatalogSurfaceViewModel viewModel,
+        Action? onEmptyAction = null,
+        Action<string>? onPlay = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
+
+        _onPlay = onPlay;
 
         _viewModel = viewModel;
 
@@ -190,6 +200,28 @@ public sealed class CatalogSurface : UserControl
         _viewModel.ApplyInstallations(installations);
 
     /// <summary>
+    /// Presents the ERROR of a failed launch in the ficha that is open, so the aviso
+    /// aparece JUNTO a la acción «Jugar» (AC1, UX-DR-36).
+    ///
+    /// <para>
+    /// La ficha abierta se repinta con el error nuevo: el jugador lee el diagnóstico sin
+    /// abrir el registro de diagnóstico (AC1).
+    /// </para>
+    /// </summary>
+    /// <param name="errorCode">
+    /// Stable code of the error of the catalog, or <c>null</c> when the launch did not
+    /// fail.
+    /// </param>
+    public void ApplyLaunchError(string? errorCode)
+    {
+        var detail = _viewModel.BuildGameDetail();
+
+        detail?.ApplyLaunchError(errorCode);
+
+        RenderDetail(detail);
+    }
+
+    /// <summary>
     /// Reverses the filters of a search without results, without leaving the surface
     /// (AC3, UX-DR-28).
     /// </summary>
@@ -227,7 +259,7 @@ public sealed class CatalogSurface : UserControl
         {
             _openGameId = detail.GameId;
 
-            _detail.Content = new GameDetailView(detail);
+            _detail.Content = new GameDetailView(detail, _onPlay);
         }
         else if (_detail.Content is GameDetailView open)
         {

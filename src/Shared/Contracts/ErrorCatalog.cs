@@ -272,6 +272,54 @@ public static class ErrorCatalog
     /// </summary>
     public const string InstallOperationFailedCode = "INSTALL_OPERATION_FAILED";
 
+    /// <summary>
+    /// The videogame could NOT be launched because the installation is not certified as
+    /// valid (AD-19, AC1).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del de la ruta que sale de la raíz y del del ejecutable
+    /// ausente: la instalación inválida, la ruta fuera del confine y el binario que no
+    /// existe son tres diagnósticos distintos, así que la métrica de errores por código
+    /// no los mezcla (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string GameLaunchInstallationInvalidCode = "GAME_LAUNCH_INSTALLATION_INVALID";
+
+    /// <summary>
+    /// The videogame could NOT be launched because the executable does not exist inside
+    /// the installation root (AD-19, AD-9, AC1).
+    ///
+    /// <para>
+    /// El diagnóstico Nombra la ruta EXACTA del ejecutable que falta, porque el jugador
+    /// tiene que saber QUÉ archivo no está (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string GameLaunchExecutableMissingCode = "GAME_LAUNCH_EXECUTABLE_MISSING";
+
+    /// <summary>
+    /// The videogame could NOT be launched because the executable resolves OUTSIDE the
+    /// installation root (AD-19, AD-9, AC1).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del del ejecutable ausente: el archivo puede existir, pero
+    /// la ruta que declara el manifiesto sale del directorio autorizado, así que el
+    /// lanzamiento se RECHAZA antes de ejecutar nada (AD-9, AD-15).
+    /// </para>
+    /// </summary>
+    public const string GameLaunchPathOutsideRootCode = "GAME_LAUNCH_PATH_OUTSIDE_ROOT";
+
+    /// <summary>
+    /// The videogame could NOT be launched because the process did not start (AD-19,
+    /// AC1).
+    ///
+    /// <para>
+    /// El fallo del PROCESO es su propio código, distinto del de la ruta y del del
+    /// ejecutable ausente: el binario estaba y la ruta era válida, así que lo que falló
+    /// fue el arranque (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string GameLaunchProcessFailedCode = "GAME_LAUNCH_PROCESS_FAILED";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -514,6 +562,26 @@ public static class ErrorCatalog
             "La instalación del juego falló",
             "Una operación del manifiesto no pudo aplicarse dentro del directorio autorizado y la instalación quedó interrumpida.",
             "Vuelve a intentarlo con la acción «Reintentar»: el error queda registrado y no hace falta reinstalar el cliente."),
+        new(
+            GameLaunchInstallationInvalidCode,
+            "No se pudo iniciar: la instalación no está certificada como válida.",
+            "La instalación del juego no está en el estado «Instalado», así que el cliente no ejecuta ningún binario de esa instalación.",
+            "Repara o reinstala el juego y vuelve a intentarlo: no se ha ejecutado ningún proceso."),
+        new(
+            GameLaunchExecutableMissingCode,
+            "No se pudo iniciar: el ejecutable del juego no existe.",
+            "El ejecutable que declara el manifiesto firmado no está en la raíz de instalación, así que el cliente no ejecuta nada.",
+            "Vuelve a instalar el juego y comprueba la ruta exacta del ejecutable antes de intentarlo de nuevo."),
+        new(
+            GameLaunchPathOutsideRootCode,
+            "No se pudo iniciar: el ejecutable del juego está fuera del directorio autorizado.",
+            "La ruta del ejecutable resuelve fuera de la raíz de instalación configurada, así que el cliente rechaza el lanzamiento antes de ejecutar nada.",
+            "Revisa la ruta que declara el manifiesto firmado: el cliente nunca ejecuta un binario fuera del directorio autorizado."),
+        new(
+            GameLaunchProcessFailedCode,
+            "No se pudo iniciar: el proceso del juego no arrancó.",
+            "El ejecutable está dentro de la raíz de instalación y el cliente lo invocó, pero el proceso no llegó a arrancar.",
+            "Comprueba los requisitos del juego en el equipo e inténtalo de nuevo: no se ha quedado ningún proceso en marcha."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

@@ -1,0 +1,28 @@
+﻿Serie de pruebas para C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\EndToEndTests\bin\Debug\net10.0\LANPartyHub.EndToEndTests.dll (.NETCoreApp,Version=v10.0)
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+Serie de pruebas para C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\IntegrationTests\bin\Debug\net10.0\LANPartyHub.IntegrationTests.dll (.NETCoreApp,Version=v10.0)
+Serie de pruebas para C:\PROJECTS\lan-party-hub\.build-lite\worktrees\8-1\tests\UnitTests\bin\Debug\net10.0\LANPartyHub.UnitTests.dll (.NETCoreApp,Version=v10.0)
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+1 archivos de prueba en total coincidieron con el patr├│n especificado.
+
+Correctas! - Con error:     0, Superado:     3, Omitido:     1, Total:     4, Duraci├│n: 57 ms - LANPartyHub.EndToEndTests.dll (net10.0)
+dotnet : [xUnit.net 00:00:01.97]     
+LANPartyHub.UnitTests.GameDetailViewModelTests.The_view_of_the_ficha_defines_no_text_of_state [FAIL]
+En línea: 1 Carácter: 1
++ dotnet test --nologo -v q 2>&1 | Out-File -FilePath .build-lite\test- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0...of_state [FAIL]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[xUnit.net 00:00:08.66]     LANPartyHub.IntegrationTests.GameLaunchTests.The_arguments_reach_the_child_process_and_the_
+working_directory_is_the_root [FAIL]
+[xUnit.net 00:00:08.92]     
+LANPartyHub.IntegrationTests.GameLaunchTests.An_installation_that_is_not_certified_starts_no_process [FAIL]
+[xUnit.net 00:00:09.05]     
+LANPartyHub.IntegrationTests.GameLaunchTests.An_executable_outside_the_root_is_rejected_and_starts_no_process [FAIL]
+[xUnit.net 00:00:09.17]     
+LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected_with_its_exact_path [FAIL]
+
+Con error! - Con error:     1, Superado:   937, Omitido:     0, Total:   938, Duraci├│n: 30 s - LANPartyHub.UnitTests.dll (net10.0)
+
+Con error! - Con error:     4, Superado:   269, Omitido:     0, Total:   273, Duraci├│n: 4 m 47 s - LANPartyHub.IntegrationTests.dll (net10.0)
