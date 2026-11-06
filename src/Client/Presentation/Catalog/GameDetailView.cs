@@ -40,7 +40,7 @@ public sealed class GameDetailView : UserControl
     private readonly TextBlock _license;
     private readonly TextBlock _installedVersion;
     private readonly Button _playButton;
-    private readonly TextBlock _launchError;
+    private readonly TextBlock _launchFailure;
 
     /// <summary>
     /// Creates the ficha del videojuego.
@@ -148,7 +148,7 @@ public sealed class GameDetailView : UserControl
             HorizontalAlignment = HorizontalAlignment.Left,
         };
 
-        _launchError = new TextBlock
+        _launchFailure = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = new SolidColorBrush(DesignTokens.StateDanger),
@@ -174,7 +174,7 @@ public sealed class GameDetailView : UserControl
                 BuildFact("Licencia", _license),
                 _installedVersion,
                 _playButton,
-                _launchError,
+                _launchFailure,
             },
         };
 
@@ -318,12 +318,10 @@ public sealed class GameDetailView : UserControl
         // aviso del error de lanzamiento aparece JUNTO a la acción (AC1, UX-DR-36).
         _playButton.IsEnabled = viewModel.CanPlay;
 
-        var launchError = viewModel.LaunchError;
+        var launchFailureText = viewModel.LaunchFailureText;
 
-        _launchError.Text = launchError is null
-            ? string.Empty
-            : $"{GameDetailViewModel.LaunchErrorPrefixText}{launchError.Message} {launchError.Cause} {launchError.NextStep}";
+        _launchFailure.Text = launchFailureText ?? string.Empty;
 
-        _launchError.IsVisible = launchError is not null;
+        _launchFailure.IsVisible = launchFailureText is not null;
     }
 }

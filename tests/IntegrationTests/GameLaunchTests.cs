@@ -68,7 +68,18 @@ public sealed class GameLaunchTests : IDisposable
     [Fact]
     public async Task The_arguments_reach_the_child_process_and_the_working_directory_is_the_root()
     {
-        using var fixture = await CreateFixtureAsync("game\\cmd.exe", ["-novid", "-console", "mapa1"]);
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid", "-console", "mapa1"],
+            runsProbe: true);
+
+        var inspection = await fixture.Inspector
+            .InspectAsync(GameId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(inspection);
+        Assert.Equal(
+            ["/u", "/c", "game\\probe.cmd", "-novid", "-console", "mapa1"],
+            inspection.LaunchSettings.Arguments);
 
         var outcome = await fixture.Service
             .LaunchAsync(GameId, TestContext.Current.CancellationToken);
@@ -81,6 +92,7 @@ public sealed class GameLaunchTests : IDisposable
         // Los argumentos LLEGARON al hijo, en ORDEN (AC1).
         var arguments = await File.ReadAllTextAsync(
             Path.Combine(_installDirectory, "args.txt"),
+            Encoding.Unicode,
             TestContext.Current.CancellationToken);
 
         Assert.Contains("-novid", arguments, StringComparison.Ordinal);
@@ -100,6 +112,7 @@ public sealed class GameLaunchTests : IDisposable
         // El directorio de trabajo del proceso es la RAÍZ de la instalación (AC1, AD-9).
         var workingDirectory = await File.ReadAllTextAsync(
             Path.Combine(_installDirectory, "cwd.txt"),
+            Encoding.Unicode,
             TestContext.Current.CancellationToken);
 
         Assert.Contains(
@@ -115,7 +128,10 @@ public sealed class GameLaunchTests : IDisposable
     [Fact]
     public async Task A_missing_executable_is_rejected_with_its_exact_path()
     {
-        using var fixture = await CreateFixtureAsync("game\\no-existe.exe", ["-novid"]);
+        using var fixture = await CreateFixtureAsync(
+            "game\\no-existe.exe",
+            ["-novid"],
+            createsExecutable: false);
 
         var outcome = await fixture.Service
             .LaunchAsync(GameId, TestContext.Current.CancellationToken);
@@ -136,15 +152,21 @@ public sealed class GameLaunchTests : IDisposable
     /// and NO process is started (AD-9, AC1).
     /// </summary>
     [Fact]
-    public async Task An_executable_outside_the_root_is_rejected_and_starts_no_process()
+    public async Task An_executable_outside_the_root_makes_the_installation_invalid_and_starts_no_process()
     {
-        using var fixture = await CreateFixtureAsync("..\\fuera\\cmd.exe", ["-novid"]);
+        using var fixture = await CreateFixtureAsync(
+            "..\\fuera\\cmd.exe",
+            ["-novid"],
+            createsExecutable: false);
 
         var outcome = await fixture.Service
             .LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
         Assert.True(outcome.IsRejected);
-        Assert.Equal(ErrorCatalog.GameLaunchPathOutsideRootCode, outcome.Error!.Code);
+        // El inspector certifica ANTES de lanzar: un manifiesto cuya ruta de ejecutable
+        // sale de la raíz hace inválida la instalación (AD-9, AD-19). El rechazo
+        // específico de ruta del lanzador se cubre con el inspector aislado en unidad.
+        Assert.Equal(ErrorCatalog.GameLaunchInstallationInvalidCode, outcome.Error!.Code);
         Assert.Null(outcome.Handle);
     }
 
@@ -173,23 +195,10 @@ public sealed class GameLaunchTests : IDisposable
     [Fact]
     public async Task An_installation_that_is_not_certified_starts_no_process()
     {
-        using var fixture = await CreateFixtureAsync("game\\cmd.exe", ["-novid"]);
-
-        await using (var context = await OpenContextAsync())
-        {
-            var store = new ClientStateStore(context);
-
-            await store.MigrateAsync(TestContext.Current.CancellationToken);
-
-            await store.SaveInstallationAsync(
-                new ClientInstallation(
-                    GameId,
-                    Version,
-                    InstallationState.Repairable,
-                    _installDirectory,
-                    InstallationCertification.DeriveInstallDirectoryId(_installDirectory)),
-                TestContext.Current.CancellationToken);
-        }
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid"],
+            certificationFails: true);
 
         var outcome = await fixture.Service
             .LaunchAsync(GameId, TestContext.Current.CancellationToken);
@@ -227,7 +236,12 @@ public sealed class GameLaunchTests : IDisposable
     /// <param name="executablePath">Path of the executable, relative to the root.</param>
     /// <param name="arguments">Arguments of the launch.</param>
     /// <returns>The fixture of the launch.</returns>
-    private async Task<LaunchFixture> CreateFixtureAsync(string executablePath, IReadOnlyList<string> arguments)
+    private async Task<LaunchFixture> CreateFixtureAsync(
+        string executablePath,
+        IReadOnlyList<string> arguments,
+        bool createsExecutable = true,
+        bool runsProbe = false,
+        bool certificationFails = false)
     {
         var layout = ClientDataLayout.Create(_workingDirectory, _installDirectory);
 
@@ -249,19 +263,39 @@ public sealed class GameLaunchTests : IDisposable
                 $"El intérprete '{interpreter}' no existe: la prueba de lanzamiento necesita un ejecutable real.");
         }
 
-        File.Copy(interpreter, executable, overwrite: true);
+        if (createsExecutable)
+        {
+            File.Copy(interpreter, executable, overwrite: true);
+        }
 
         // El PROBE registra los argumentos que recibió y el directorio de trabajo en el
         // que corrió (AD-16).
-        var probe = Path.Combine(Path.GetDirectoryName(executable)!, "probe.cmd");
+        string? probePath = null;
 
-        await File.WriteAllTextAsync(
-            probe,
-            new StringBuilder()
-                .AppendLine("echo %* > \"" + Path.Combine(_installDirectory, "args.txt") + "\"")
-                .AppendLine("cd > \"" + Path.Combine(_installDirectory, "cwd.txt") + "\"")
+        if (runsProbe)
+        {
+            var probe = Path.Combine(Path.GetDirectoryName(executable)!, "probe.cmd");
+
+            await File.WriteAllTextAsync(
+                probe,
+                new StringBuilder()
+                    // El script se interpreta con la página OEM de cmd.exe: escribir
+                    // rutas absolutas UTF-8 falla cuando el perfil de Windows contiene
+                    // caracteres no ASCII. El directorio de trabajo ya es la raíz que
+                    // se verifica, así que las salidas relativas son deliberadas.
+                    .AppendLine("echo %* > args.txt")
+                    .AppendLine("cd > cwd.txt")
                 .ToString(),
-            TestContext.Current.CancellationToken);
+                TestContext.Current.CancellationToken);
+
+            probePath = Path.GetRelativePath(_installDirectory, probe);
+        }
+
+        IReadOnlyList<string> launchArguments = runsProbe
+            // `/u` hace que los redireccionamientos de cmd.exe conserven la ruta de
+            // trabajo Unicode; así la prueba no depende de la página OEM del perfil.
+            ? ["/u", "/c", probePath!, ..arguments]
+            : arguments;
 
         var context = await OpenContextAsync();
 
@@ -285,8 +319,10 @@ public sealed class GameLaunchTests : IDisposable
             Version,
             1,
             new string('a', 64),
-            new InstallationManifest.LaunchSettings(executablePath, arguments, "."),
-            []);
+            new InstallationManifest.LaunchSettings(executablePath, launchArguments, "."),
+            certificationFails
+                ? [new InstallationManifest.Verify("game\\certification-missing.bin")]
+                : []);
 
         var snapshot = new CatalogSnapshot(
             1,
@@ -308,18 +344,20 @@ public sealed class GameLaunchTests : IDisposable
 
         var paths = new InstallPathResolver(layout);
 
+        var inspector = new InstallationInspector(
+            store,
+            snapshots,
+            cache,
+            paths,
+            NullLogger<InstallationInspector>.Instance);
+
         var service = new GameLaunchService(
-            new InstallationInspector(
-                store,
-                snapshots,
-                cache,
-                paths,
-                NullLogger<InstallationInspector>.Instance),
+            inspector,
             paths,
             new SystemGameProcessRunner(NullLogger<SystemGameProcessRunner>.Instance),
             NullLogger<GameLaunchService>.Instance);
 
-        return new LaunchFixture(service, context);
+        return new LaunchFixture(service, inspector, context);
     }
 
     /// <summary>
@@ -375,7 +413,10 @@ public sealed class GameLaunchTests : IDisposable
     /// </summary>
     /// <param name="Service">The real case of use of the launch.</param>
     /// <param name="Context">The context of the database of the client.</param>
-    private sealed record LaunchFixture(GameLaunchService Service, ClientStateDbContext Context) : IDisposable
+    private sealed record LaunchFixture(
+        GameLaunchService Service,
+        InstallationInspector Inspector,
+        ClientStateDbContext Context) : IDisposable
     {
         public void Dispose() => Context.Dispose();
     }

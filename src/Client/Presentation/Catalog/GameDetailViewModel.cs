@@ -199,6 +199,27 @@ public sealed class GameDetailViewModel
     public string PlayLabel => PlayActionText;
 
     /// <summary>
+    /// Text of the notice of the FAILED launch, ready to show, or <c>null</c> when the
+    /// last launch did not fail (AC1, UX-DR-36).
+    ///
+    /// <para>
+    /// El aviso se compone AQUÍ, con su prefijo y sus TRES partes, para que la vista NO
+    /// tenga que escribir ningún texto de error (AC4, AR-8).
+    /// </para>
+    /// </summary>
+    public string? LaunchFailureText
+    {
+        get
+        {
+            var failure = LaunchError;
+
+            return failure is null
+                ? null
+                : $"{LaunchErrorPrefixText}{failure.Message} {failure.Cause} {failure.NextStep}";
+        }
+    }
+
+    /// <summary>
     /// Stable code of the error of a FAILED launch, or <c>null</c> when the last launch
     /// did not fail (AC1, AD-15).
     /// </summary>
