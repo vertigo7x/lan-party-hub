@@ -81,7 +81,11 @@ public sealed class InstallationInspector : IInstallationInspector
             return null;
         }
 
-        var manifest = await LoadSignedManifestAsync(gameId, cancellationToken).ConfigureAwait(false);
+        var manifest = await LoadSignedManifestAsync(
+                gameId,
+                registered.InstalledVersion,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         // Sin manifiesto FIRMADO no hay configuración de lanzamiento confiable: la
         // instalación NO se puede certificar, porque la firma es la que da la confianza
@@ -121,12 +125,21 @@ public sealed class InstallationInspector : IInstallationInspector
     /// El manifiesto se busca por el PAQUETE del juego, porque la caché de manifiestos
     /// está indexada por identificador de paquete (AD-9).
     /// </para>
+    /// <para>
+    /// El catálogo admite VARIOS paquetes vivos del mismo juego, así que el snapshot
+    /// lleva más de un paquete del juego. El que se busca es el de la VERSIÓN
+    /// INSTALADA, porque es el único que describe el árbol que hay en disco: leer el
+    /// manifiesto de otra versión dejaría el juego instalado y válido sin poder jugarse,
+    /// o ejecutaría el ejecutable de la otra versión contra el árbol instalado (AC1).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The signed manifest, or <c>null</c> when the client has none.</returns>
     private async Task<InstallationManifest?> LoadSignedManifestAsync(
         string gameId,
+        string installedVersion,
         CancellationToken cancellationToken)
     {
         var snapshot = await _snapshots.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -137,7 +150,8 @@ public sealed class InstallationInspector : IInstallationInspector
         }
 
         var package = snapshot.Packages.FirstOrDefault(candidate =>
-            string.Equals(candidate.GameId, gameId, StringComparison.Ordinal));
+            string.Equals(candidate.GameId, gameId, StringComparison.Ordinal)
+            && string.Equals(candidate.Version, installedVersion, StringComparison.Ordinal));
 
         if (package is null)
         {

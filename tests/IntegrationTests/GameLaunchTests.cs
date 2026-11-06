@@ -37,6 +37,12 @@ public sealed class GameLaunchTests : IDisposable
     private const string PackageId = "paquete-lanzador-1";
     private const string Version = "1.0.0";
 
+    /// <summary>
+    /// Version of ANOTHER live package of the SAME game: la que está instalada NO es
+    /// (AC1, AD-26).
+    /// </summary>
+    private const string OtherVersion = "0.9.0";
+
     private readonly string _workingDirectory;
     private readonly string _databasePath;
     private readonly string _installDirectory;
@@ -209,6 +215,137 @@ public sealed class GameLaunchTests : IDisposable
     }
 
     /// <summary>
+    /// AC1: a game with SEVERAL live packages is inspected with the manifest of the
+    /// INSTALLED VERSION, and not with the manifest of another one (AC1, AD-26).
+    ///
+    /// <para>
+    /// El catálogo admite VARIOS paquetes vivos del mismo juego, así que el snapshot
+    /// lleva más de un paquete del juego. El manifiesto que se lee es el de la VERSIÓN
+    /// INSTALADA, porque es el único que describe el árbol que hay en disco (AC1).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_manifest_of_the_installed_version_is_the_one_that_is_inspected()
+    {
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid"],
+            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])]);
+
+        var inspection = await fixture.Inspector
+            .InspectAsync(GameId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(inspection);
+
+        // La instalación está CERTIFICADA, aunque el snapshot lleve otro paquete del
+        // mismo juego con OTRA versión (AC1).
+        Assert.True(inspection.Verdict.IsInstalled);
+
+        // Los argumentos NO son los de la otra versión: el manifiesto de la versión
+        // INSTALADA es el que se lee (AC1).
+        Assert.Equal(["-novid"], inspection.LaunchSettings.Arguments);
+        Assert.DoesNotContain("-otra-version", inspection.LaunchSettings.Arguments);
+    }
+
+    /// <summary>
+    /// AC1: the manifest of ANOTHER version is NOT the one that is read, so the launch
+    /// does NOT run the executable and the arguments of the other version against the
+    /// installed tree (AC1, AD-26).
+    ///
+    /// <para>
+    /// La caché guarda el manifiesto de la versión ANTERIOR porque ese paquete se
+    /// validó antes, así que leerlo devolvería el ejecutable y los argumentos de la
+    /// OTRA versión contra el árbol instalado (AC1).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_manifest_of_another_version_is_not_the_one_that_is_inspected()
+    {
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid"],
+            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])]);
+
+        var inspection = await fixture.Inspector
+            .InspectAsync(GameId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(inspection);
+        Assert.True(inspection.Verdict.IsInstalled);
+
+        // Los argumentos NO son los de la otra versión: el manifiesto de la versión
+        // INSTALADA es el que se lee (AC1).
+        Assert.Equal(["-novid"], inspection.LaunchSettings.Arguments);
+        Assert.DoesNotContain("-otra-version", inspection.LaunchSettings.Arguments);
+    }
+
+    /// <summary>
+    /// AC1: an installation whose manifest of the OTHER version is NOT in the cache is
+    /// STILL certified, because the manifest of the INSTALLED version is the one that
+    /// is read (AC1, AD-26).
+    ///
+    /// <para>
+    /// El paquete de la otra versión NO se descargó, así que su manifiesto no está en la
+    /// caché. Leer el manifiesto equivocado devolvería «no certificada» y el juego
+    /// instalado y válido quedaría sin poder jugarse (AC1).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_installation_is_certified_when_the_manifest_of_the_other_version_is_not_cached()
+    {
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid"],
+            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])],
+            cachesOtherManifests: false);
+
+        var inspection = await fixture.Inspector
+            .InspectAsync(GameId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(inspection);
+
+        // La instalación es VÁLIDA y está CERTIFICADA: el manifiesto que se lee es el de
+        // la versión INSTALADA, que sí está en la caché (AC1).
+        Assert.True(inspection.Verdict.IsInstalled);
+        Assert.Equal(["-novid"], inspection.LaunchSettings.Arguments);
+    }
+
+    /// <summary>
+    /// AC1: the launch of an installed game whose OTHER version is ALSO published does
+    /// NOT start the process of the other version (AC1, AD-26).
+    ///
+    /// <para>
+    /// El proceso real arranca: lo que se observa es qué ejecutable y qué argumentos
+    /// corrieron de verdad (AD-16, AC1).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_launch_runs_the_installed_version_and_not_the_other_one()
+    {
+        using var fixture = await CreateFixtureAsync(
+            "game\\cmd.exe",
+            ["-novid"],
+            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])],
+            runsProbe: true);
+
+        var outcome = await fixture.Service
+            .LaunchAsync(GameId, TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.IsLaunched);
+
+        await WaitForProbeAsync();
+
+        // Los argumentos que LLEGARON al proceso son los de la versión INSTALADA, no los
+        // de la otra versión (AC1).
+        var arguments = await File.ReadAllTextAsync(
+            Path.Combine(_installDirectory, "args.txt"),
+            Encoding.Unicode,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("-novid", arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("-otra-version", arguments, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Waits until the probe of the child process has written its files (AD-16).
     /// </summary>
     private async Task WaitForProbeAsync()
@@ -235,13 +372,26 @@ public sealed class GameLaunchTests : IDisposable
     /// </summary>
     /// <param name="executablePath">Path of the executable, relative to the root.</param>
     /// <param name="arguments">Arguments of the launch.</param>
+    /// <param name="createsExecutable">Whether the executable is written on disk.</param>
+    /// <param name="runsProbe">Whether the child process writes the probe files.</param>
+    /// <param name="certificationFails">Whether the manifest declares a missing file.</param>
+    /// <param name="otherPackages">
+    /// OTHER live packages of the SAME game, with their own version and their own
+    /// launch configuration (AD-26).
+    /// </param>
+    /// <param name="cachesOtherManifests">
+    /// Whether the manifest of the OTHER packages is written in the cache, as it happens
+    /// when those packages were validated before (AD-2).
+    /// </param>
     /// <returns>The fixture of the launch.</returns>
     private async Task<LaunchFixture> CreateFixtureAsync(
         string executablePath,
         IReadOnlyList<string> arguments,
         bool createsExecutable = true,
         bool runsProbe = false,
-        bool certificationFails = false)
+        bool certificationFails = false,
+        IReadOnlyList<OtherPackage>? otherPackages = null,
+        bool cachesOtherManifests = true)
     {
         var layout = ClientDataLayout.Create(_workingDirectory, _installDirectory);
 
@@ -327,7 +477,23 @@ public sealed class GameLaunchTests : IDisposable
         var snapshot = new CatalogSnapshot(
             1,
             [],
-            [new PackageDescriptor(PackageId, GameId, Version, 1, 0, new string('a', 64), PackageId)]);
+            [
+                // El catálogo admite VARIOS paquetes vivos del mismo juego, y el snapshot
+                // los lleva TODOS (AD-26). El servidor los ORDENA por identificador de
+                // paquete, así que el paquete de la OTRA versión —con un identificador
+                // menor— va ANTES que el de la versión instalada: es el primero que
+                // encuentra una búsqueda que no distingue la versión (AC1).
+                ..(otherPackages ?? []).Select(package =>
+                    new PackageDescriptor(
+                        package.PackageId,
+                        GameId,
+                        package.Version,
+                        1,
+                        0,
+                        new string('a', 64),
+                        package.PackageId)),
+                new PackageDescriptor(PackageId, GameId, Version, 1, 0, new string('a', 64), PackageId),
+            ]);
 
         var snapshots = new CatalogSnapshotStore(context);
 
@@ -341,6 +507,31 @@ public sealed class GameLaunchTests : IDisposable
                 manifest,
                 new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
             TestContext.Current.CancellationToken);
+
+        // El manifiesto de la OTRA versión TAMBIÉN puede estar en la caché, porque ese
+        // paquete se validó antes: leerlo ejecutaría el ejecutable y los argumentos de
+        // la otra versión contra el árbol instalado (AC1).
+        foreach (var package in cachesOtherManifests ? otherPackages ?? [] : [])
+        {
+            var otherManifest = new InstallationManifest(
+                1,
+                package.PackageId,
+                package.Version,
+                1,
+                new string('a', 64),
+                new InstallationManifest.LaunchSettings(
+                    package.ExecutablePath,
+                    package.Arguments,
+                    "."),
+                []);
+
+            await cache.StoreAsync(
+                package.PackageId,
+                System.Text.Json.JsonSerializer.Serialize(
+                    otherManifest,
+                    new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+                TestContext.Current.CancellationToken);
+        }
 
         var paths = new InstallPathResolver(layout);
 
@@ -359,6 +550,29 @@ public sealed class GameLaunchTests : IDisposable
 
         return new LaunchFixture(service, inspector, context);
     }
+
+    /// <summary>
+    /// Builds another live package of the SAME game, with its own version and its own
+    /// launch configuration (AD-26).
+    ///
+    /// <para>
+    /// El identificador del paquete es MENOR que el del paquete instalado, así que el
+    /// servidor lo ordena ANTES en el snapshot, como ordena por identificador de
+    /// paquete (AD-26).
+    /// </para>
+    /// </summary>
+    /// <param name="version">Version that the other package publishes.</param>
+    /// <param name="executablePath">Path of the executable that the other package declares.</param>
+    /// <param name="arguments">Arguments that the other package declares.</param>
+    /// <returns>The other package of the game.</returns>
+    private static OtherPackage AnotherPackage(
+        string version,
+        string executablePath,
+        IReadOnlyList<string> arguments) => new(
+            $"paquete-00-{version}",
+            version,
+            executablePath,
+            arguments);
 
     /// <summary>
     /// Opens the database of the client over the REAL SQLite file (AD-11, AD-16).
@@ -420,4 +634,18 @@ public sealed class GameLaunchTests : IDisposable
     {
         public void Dispose() => Context.Dispose();
     }
+
+    /// <summary>
+    /// Another live package of the SAME game, with its own version and its own launch
+    /// configuration (AD-26).
+    ///
+    /// <param name="PackageId">Identifier of the other package.</param>
+    /// <param name="Version">Version that the other package publishes.</param>
+    /// <param name="ExecutablePath">Path of the executable that the other package declares.</param>
+    /// <param name="Arguments">Arguments that the other package declares.</param>
+    private sealed record OtherPackage(
+        string PackageId,
+        string Version,
+        string ExecutablePath,
+        IReadOnlyList<string> Arguments);
 }
