@@ -7,6 +7,7 @@ using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.Library;
 using LANPartyHub.Client.Presentation.Status;
 
 namespace LANPartyHub.Client.Presentation;
@@ -35,6 +36,7 @@ public sealed class MainWindow : Window
 {
     private readonly CatalogSyncBanner? _banner;
     private readonly CatalogSurface? _catalogSurface;
+    private readonly LibrarySurface? _librarySurface;
     private readonly ConnectionStatusPanel? _statusPanel;
 
     /// <summary>
@@ -59,12 +61,17 @@ public sealed class MainWindow : Window
     /// Persistent panel of the connection, or <c>null</c> when the window is built without
     /// it.
     /// </param>
+    /// <param name="librarySurface">
+    /// Surface of the Biblioteca of the player, or <c>null</c> when the window is built
+    /// without it (AC8).
+    /// </param>
     public MainWindow(
         ClientSettings? settings = null,
         Func<Task>? onSynchronizeNow = null,
         CatalogSurface? catalogSurface = null,
         ConnectionSurface? connectionSurface = null,
-        ConnectionStatusPanel? statusPanel = null)
+        ConnectionStatusPanel? statusPanel = null,
+        LibrarySurface? librarySurface = null)
     {
         Title = "LAN Party Hub";
         Width = 1280;
@@ -115,6 +122,7 @@ public sealed class MainWindow : Window
         _banner = banner;
 
         _catalogSurface = catalogSurface;
+        _librarySurface = librarySurface;
         _statusPanel = statusPanel;
 
         var content = new StackPanel
@@ -145,6 +153,13 @@ public sealed class MainWindow : Window
         if (catalogSurface is not null)
         {
             layout.Children.Add(catalogSurface);
+        }
+
+        // AC8: la Biblioteca vive en la MISMA columna que el catálogo, con sus
+        // instalaciones y su estado vacío accionable (UX-DR-28).
+        if (librarySurface is not null)
+        {
+            layout.Children.Add(librarySurface);
         }
 
         // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
@@ -211,6 +226,12 @@ public sealed class MainWindow : Window
     /// without it (AC1).
     /// </summary>
     public ConnectionStatusPanel? StatusPanel => _statusPanel;
+
+    /// <summary>
+    /// The surface of the Biblioteca of the player, or <c>null</c> when the window is
+    /// built without it (AC8).
+    /// </summary>
+    public LibrarySurface? LibrarySurface => _librarySurface;
 
     /// <summary>
     /// The notice of the pending synchronization of the catalog, or <c>null</c> when the

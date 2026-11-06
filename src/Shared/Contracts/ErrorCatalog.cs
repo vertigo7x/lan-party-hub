@@ -320,6 +320,43 @@ public static class ErrorCatalog
     /// </summary>
     public const string GameLaunchProcessFailedCode = "GAME_LAUNCH_PROCESS_FAILED";
 
+    /// <summary>
+    /// The installation of the game is INCOMPLETE, so the action «Jugar» is blocked with
+    /// the reason VISIBLE next to its label (FR-9, UX-DR-18).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del de la firma inválida y del del hash que no coincide:
+    /// una instalación incompleta, un paquete dañado y un ejecutable ausente son TRES
+    /// diagnósticos distintos, así que la métrica de errores por código no los mezcla
+    /// (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string InstallationIncompleteCode = "INSTALLATION_INCOMPLETE";
+
+    /// <summary>
+    /// The EXECUTABLE of the installed game is MISSING, so the action «Jugar» is blocked
+    /// with the reason VISIBLE next to its label (FR-9, UX-DR-18).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del del fallo del PROCESO y del de la ruta que sale del
+    /// confine: el binario que no está, el proceso que no arrancó y la ruta que se escapa
+    /// son tres diagnósticos distintos (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string GameExecutableMissingCode = "GAME_EXECUTABLE_MISSING";
+
+    /// <summary>
+    /// The PACKAGE of the installation does NOT match the validation, so the action
+    /// «Jugar» is blocked with the reason VISIBLE next to its label (FR-9, UX-DR-18).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del de la integridad del paquete de DESCARGA: uno habla de
+    /// los bytes que bajaron y el otro de la validación contra la que no coinciden
+    /// (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string InstallationPackageMismatchCode = "INSTALLATION_PACKAGE_MISMATCH";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -582,6 +619,21 @@ public static class ErrorCatalog
             "No se pudo iniciar: el proceso del juego no arrancó.",
             "El ejecutable está dentro de la raíz de instalación y el cliente lo invocó, pero el proceso no llegó a arrancar.",
             "Comprueba los requisitos del juego en el equipo e inténtalo de nuevo: no se ha quedado ningún proceso en marcha."),
+        new(
+            InstallationIncompleteCode,
+            "No se puede jugar: instalación incompleta",
+            "La instalación del juego no tiene todos los archivos que declara el manifiesto firmado, así que el cliente no ejecuta ningún binario de esa instalación.",
+            "Repara la instalación o vuelve a descargar el juego: no se ha ejecutado ningún proceso."),
+        new(
+            GameExecutableMissingCode,
+            "No se puede jugar: falta el ejecutable",
+            "El ejecutable que declara el manifiesto firmado no está dentro de la raíz de instalación, así que el cliente no ejecuta nada.",
+            "Repara la instalación o vuelve a descargar el juego: no se ha ejecutado ningún proceso."),
+        new(
+            InstallationPackageMismatchCode,
+            "No se puede jugar: el paquete no coincide con la validación",
+            "El paquete que respalda la instalación no conserva el hash con el que se validó contra el ancla de confianza, así que el cliente no ejecuta ningún binario de esa instalación.",
+            "Repara la instalación o vuelve a descargar el juego: no se ha ejecutado ningún proceso."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

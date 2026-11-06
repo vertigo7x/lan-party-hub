@@ -1,6 +1,8 @@
 using LANPartyHub.Client.Application.Catalog;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Errors;
 using LANPartyHub.Client.Presentation.Formatting;
+using LANPartyHub.Client.Presentation.GameLauncher;
 using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
@@ -42,7 +44,7 @@ public sealed class GameDetailViewModel
     /// (AD-18, AR-3).
     /// </para>
     /// </summary>
-    public const string PlayActionText = "Jugar";
+    public const string PlayActionText = GamePlayActionsViewModel.PlayActionText;
 
     /// <summary>
     /// Text of the notice of a failed launch (AC1, UX-DR-36).
@@ -56,7 +58,6 @@ public sealed class GameDetailViewModel
 
     private readonly GameDescriptor _game;
     private string? _launchErrorCode;
-    private bool _isInstalled;
 
     /// <summary>
     /// Creates the view model of the ficha of a videogame.
@@ -66,15 +67,15 @@ public sealed class GameDetailViewModel
     /// <param name="installedVersion">
     /// Version that the client has installed, or <c>null</c> when it has no installation.
     /// </param>
-    /// <param name="isInstalled">
-    /// Whether the installation of the videogame is CERTIFIED as valid, que es la única
-    /// condición que habilita el lanzamiento (AC1).
+    /// <param name="decision">
+    /// Decision about the playability of the installation, que es la MISMA tabla de
+    /// acciones que la Biblioteca aplica (AC1, AC2, UX-DR-17).
     /// </param>
     public GameDetailViewModel(
         GameDescriptor game,
         CatalogViewState viewState,
         string? installedVersion = null,
-        bool isInstalled = false)
+        PlayabilityDecision? decision = null)
     {
         ArgumentNullException.ThrowIfNull(game);
 
@@ -88,7 +89,11 @@ public sealed class GameDetailViewModel
 
         InstalledVersion = installedVersion;
 
-        _isInstalled = isInstalled;
+        // La ficha y la Biblioteca comparten la MISMA tabla de acciones, así que ninguna de
+        // las dos abre un camino de lanzamiento distinto (AC1, AC2, UX-DR-17, UX-DR-19).
+        Actions = new GamePlayActionsViewModel(
+            game.GameId,
+            decision ?? PlayabilityDecision.Playable());
     }
 
     /// <summary>Raised when the ficha has to be rendered again.</summary>
@@ -183,6 +188,17 @@ public sealed class GameDetailViewModel
     public void Refresh() => Changed?.Invoke();
 
     /// <summary>
+    /// The table of the actions of the videogame, con el motivo VISIBLE del bloqueo
+    /// (AC1, AC2, UX-DR-17, UX-DR-18).
+    ///
+    /// <para>
+    /// La tabla es la MISMA que la Biblioteca aplica, así que la ficha no abre un camino
+    /// de lanzamiento distinto (AC4, UX-DR-19).
+    /// </para>
+    /// </summary>
+    public GamePlayActionsViewModel Actions { get; }
+
+    /// <summary>
     /// Whether the action «Jugar» is ENABLED (AC1).
     ///
     /// <para>
@@ -191,12 +207,12 @@ public sealed class GameDetailViewModel
     /// ningún proceso (AC1, AD-19).
     /// </para>
     /// </summary>
-    public bool CanPlay => _isInstalled;
+    public bool CanPlay => Actions.CanPlay;
 
     /// <summary>
     /// Text of the action «Jugar» (AC1).
     /// </summary>
-    public string PlayLabel => PlayActionText;
+    public string PlayLabel => Actions.PlayLabel;
 
     /// <summary>
     /// Text of the notice of the FAILED launch, ready to show, or <c>null</c> when the
@@ -252,12 +268,16 @@ public sealed class GameDetailViewModel
     /// <summary>
     /// Records the state of the installation of the videogame, so la acción «Jugar» se
     /// habilita sólo con una instalación certificada (AC1).
-    ///
-    /// <param name="isInstalled">Whether the installation is certified as valid.</param>
-    public void ApplyInstallation(bool isInstalled)
+    /// </summary>
+    /// <param name="decision">
+    /// The new decision about the playability of the installation. La decisión se
+    /// REderiva al pintar, así que no hay columna nueva ni migración (AD-11, AD-22).
+    /// </param>
+    public void ApplyDecision(PlayabilityDecision decision)
     {
-        _isInstalled = isInstalled;
+        Actions.Apply(decision);
 
         Refresh();
     }
 }
+

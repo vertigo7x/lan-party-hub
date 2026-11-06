@@ -37,6 +37,8 @@ public sealed class GameLauncherComposition
     private readonly IGameProcessRunner _runner;
     private readonly IInstallationInspector _inspector;
     private readonly GameLaunchService _service;
+    private readonly PlayabilityProjection _projection;
+    private readonly IPlayabilityIntentPort _intents;
 
     /// <summary>
     /// Creates the composition of the launcher of the videogames.
@@ -78,6 +80,17 @@ public sealed class GameLauncherComposition
             paths,
             _runner,
             loggerFactory.CreateLogger<GameLaunchService>());
+
+        // AC1, AC2: la proyección de la jugabilidad REderiva la decisión al pintar, a
+        // partir del veredicto de la certificación y del inspector, así que no hay columna
+        // nueva ni migración (AD-11, AD-22).
+        _projection = new PlayabilityProjection(stateStore, _inspector);
+
+        // AC1, AC2: las primarias y la secundaria son SEAMS: el puerto REGISTRA la
+        // intención y la ejecución vive en 8.3, en 5.x/6.x y en el registro de
+        // diagnóstico.
+        _intents = new LoggingPlayabilityIntentPort(
+            loggerFactory.CreateLogger<LoggingPlayabilityIntentPort>());
     }
 
     /// <summary>
@@ -96,4 +109,16 @@ public sealed class GameLauncherComposition
     /// implementation (AD-19, AC5).
     /// </summary>
     public IInstallationInspector Inspector => _inspector;
+
+    /// <summary>
+    /// The projection of the playability of the installations, que REderiva la decisión
+    /// al pintar (AC1, AC2, AD-11).
+    /// </summary>
+    public PlayabilityProjection Projection => _projection;
+
+    /// <summary>
+    /// Port of the registry of the intentions of a blocked installation, delivered with
+    /// its only implementation (AC1, AC2, AD-1).
+    /// </summary>
+    public IPlayabilityIntentPort Intents => _intents;
 }

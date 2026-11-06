@@ -1,4 +1,4 @@
-using LANPartyHub.Client.Application;
+﻿using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Downloads;
 using LANPartyHub.Client.Application.Ports;
@@ -867,7 +867,13 @@ public sealed class DownloadRecoveryTests : IDisposable
             Task.CompletedTask;
 
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
+
             Task.FromResult<ClientInstallation?>(null);
+
+
+        public Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(CancellationToken cancellationToken) =>
+
+            Task.FromResult<IReadOnlyList<ClientInstallation>>([]);
 
         public Task SaveInstallationFailureAsync(
             ClientInstallation installation,
@@ -924,7 +930,13 @@ public sealed class DownloadRecoveryTests : IDisposable
             Task.CompletedTask;
 
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
+
             Task.FromResult<ClientInstallation?>(null);
+
+
+        public Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(CancellationToken cancellationToken) =>
+
+            Task.FromResult<IReadOnlyList<ClientInstallation>>([]);
 
         public Task SaveInstallationFailureAsync(
             ClientInstallation installation,
