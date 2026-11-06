@@ -142,6 +142,11 @@ MILESTONE_KINDS: tuple[str, ...] = (
 # A test milestone comes from the input of a completed shell tool call, never
 # from a substring in a prompt, context package or tool output.
 TEST_COMMAND_PATTERN = re.compile(r"(?:^|[;&|]\s*)(?:dotnet\s+test)\b", re.IGNORECASE)
+FAILED_TEST_PATTERN = re.compile(
+    r"^\s*(?:Con error|Failed)\s+([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){2,})\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+VERIFICATION_EVIDENCE_MAX_CHARS = 4000
 
 # The window of the scheduler. Four workers is the ceiling of the project:
 # a fifth story waits for a free slot instead of starting.
@@ -1127,9 +1132,43 @@ def ensure_contexts_ignored(cwd: Path | None = None) -> None:
         )
 
 
-def repair_prompt(story, evidence: str) -> str:
+@dataclass(frozen=True)
+class VerificationFailure:
+    """A failed deterministic gate and the bounded evidence needed to repair it."""
+
+    label: str
+    command: str
+    evidence: str
+    target_test: str = ""
+    target_command: str = ""
+
+
+def repair_prompt(story, failures: Sequence[VerificationFailure]) -> str:
+    evidence = "\n\n".join(
+        f"### {failure.label}\nComando fallido: `{failure.command}`\n{failure.evidence}"
+        for failure in failures
+    )
+    targeted = [failure for failure in failures if failure.target_test]
+    focused_instruction = (
+        "Después del cambio, ejecuta y deja verde estas comprobaciones focalizadas: "
+        + "; ".join(f"`{failure.target_command}`" for failure in targeted)
+        + ". No hagas exploración abierta ni ejecutes la batería completa: el driver la ejecuta después."
+        if targeted
+        else "Después del cambio, ejecuta el comando fallido pertinente y deja evidencia verde. No ejecutes la batería completa salvo que ese mismo comando sea la única comprobación demostrable: el driver la ejecuta después."
+    )
     return f"""Repara exclusivamente el fallo confirmado de la Story {story.short_id}.
-Evidencia: {evidence}
+Evidencia reproducible:
+{evidence}
+
+{focused_instruction}
+Haz el cambio mínimo. No replanifiques, no revises de nuevo, no abras PR y no modifiques alcance
+ajeno. Si la evidencia no basta, registra `BLOQUEO:` mediante un comando con la causa demostrable."""
+
+
+def review_repair_prompt(story, blocking: str) -> str:
+    """Keep review findings separate from deterministic verification failures."""
+    return f"""Repara exclusivamente el hallazgo bloqueante confirmado de la Story {story.short_id}.
+Evidencia: {blocking}
 Haz el cambio mínimo y sus pruebas. No replanifiques, no revises de nuevo, no abras PR y no
 modifiques alcance ajeno."""
 
@@ -1203,6 +1242,98 @@ def run_verifications(log_dir: Path, cwd: Path | None = None) -> list[tuple]:
     return results
 
 
+def verification_failures(results: Sequence[tuple]) -> list[VerificationFailure]:
+    """Keep concrete failure evidence instead of reducing a repair to a gate label."""
+    failures: list[VerificationFailure] = []
+    for label, result in results:
+        if result.ok:
+            continue
+        command = subprocess.list2cmdline(list(result.argv))
+        output = verification_output(result)
+        evidence = tail_evidence(output)
+        target_test = failed_test_name(evidence) if label == "dotnet test" else ""
+        failures.append(
+            VerificationFailure(
+                label=label,
+                command=command,
+                evidence=evidence,
+                target_test=target_test,
+                target_command=focused_test_command(result.argv, target_test),
+            )
+        )
+    return failures
+
+
+def verification_output(result) -> str:
+    """Read a command result without treating a missing log as successful evidence."""
+    if result.log is not None:
+        try:
+            return result.log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            pass
+    return result.stdout
+
+
+def tail_evidence(output: str) -> str:
+    """Bound the repair prompt to the relevant end of a deterministic command log."""
+    if not output.strip():
+        return "El comando no produjo salida capturable."
+    return output[-VERIFICATION_EVIDENCE_MAX_CHARS:].strip()
+
+
+def failed_test_name(output: str) -> str:
+    """Return a test name only when the runner output demonstrates one."""
+    match = FAILED_TEST_PATTERN.search(output)
+    return match.group(1) if match else ""
+
+
+def focused_test_command(argv: Sequence[str], target_test: str) -> str:
+    """Build the exact bounded command only from a demonstrated test name."""
+    if not target_test:
+        return ""
+    command = list(argv)
+    command.extend(("--filter", f"FullyQualifiedName={target_test}"))
+    return subprocess.list2cmdline(command)
+
+
+def recovery_check_passed(transcript: Path, failure: VerificationFailure) -> bool:
+    """Require a successful, relevant tool invocation rather than worker prose."""
+    try:
+        lines = transcript.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        part = event.get("part")
+        if not isinstance(part, dict) or part.get("type") != "tool":
+            continue
+        state = part.get("state")
+        if not isinstance(state, dict) or state.get("status") != "completed":
+            continue
+        command = ImplementationProgress._tool_command(state)
+        metadata = state.get("metadata")
+        if not isinstance(metadata, dict) or metadata.get("exit") != 0:
+            continue
+        if not failure.target_test:
+            if failure.command in command:
+                return True
+            continue
+        test_class = failure.target_test.rsplit(".", 1)[0]
+        if (
+            not TEST_COMMAND_PATTERN.search(command)
+            or "--filter" not in command
+            or (failure.target_test not in command and test_class not in command)
+        ):
+            continue
+        output = str(state.get("output") or metadata.get("output") or "")
+        if re.search(r"\b(?:Passed|Correct(?:o|as))!", output, re.IGNORECASE):
+            return True
+    return False
+
+
 def verify_or_repair(
     story,
     log_dir: Path,
@@ -1211,8 +1342,8 @@ def verify_or_repair(
     journal: PhaseJournal | None = None,
 ) -> bool:
     results = run_verifications(log_dir, cwd=cwd)
-    failed = [label for label, result in results if not result.ok]
-    if not failed:
+    failures = verification_failures(results)
+    if not failures:
         if journal is not None:
             journal.record("verification", PHASE_COMPLETE, evidence=relative(log_dir))
         return False
@@ -1221,31 +1352,41 @@ def verify_or_repair(
             "verification",
             PHASE_VERIFICATION_FAILURE,
             evidence=relative(log_dir),
-            error=", ".join(failed),
+            error=", ".join(failure.label for failure in failures),
         )
     if not repair_available:
-        raise legacy.DriverError(f"verification failed after the repair budget was spent: {', '.join(failed)}")
-    evidence = "; ".join(failed)
-    run_phase(
+        raise legacy.DriverError(
+            "verification failed after the repair budget was spent: "
+            + ", ".join(failure.label for failure in failures)
+        )
+    outcome = run_phase(
         "repair",
         IMPLEMENT_MODEL,
-        repair_prompt(story, evidence),
+        repair_prompt(story, failures),
         log_dir,
         timeout_minutes=30,
         cwd=cwd,
         journal=journal,
     )
+    for failure in failures:
+        if not recovery_check_passed(outcome.log or Path(), failure):
+            raise legacy.DriverError(
+                f"targeted recovery did not demonstrate a passing check for {failure.label}"
+            )
     second = run_verifications(log_dir / "after-repair", cwd=cwd)
-    failed = [label for label, result in second if not result.ok]
-    if failed:
+    failures = verification_failures(second)
+    if failures:
         if journal is not None:
             journal.record(
                 "verification",
                 PHASE_VERIFICATION_FAILURE,
                 evidence=relative(log_dir / "after-repair"),
-                error=", ".join(failed),
+                error=", ".join(failure.label for failure in failures),
             )
-        raise legacy.DriverError(f"verification still fails after the single repair: {', '.join(failed)}")
+        raise legacy.DriverError(
+            "verification still fails after the single repair: "
+            + ", ".join(failure.label for failure in failures)
+        )
     if journal is not None:
         journal.record("verification", PHASE_COMPLETE, evidence=relative(log_dir / "after-repair"))
     return True
@@ -1429,7 +1570,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
                     cwd=tree.path, journal=journal,
                 )
                 commit_story(story, cwd=tree.path)
@@ -1771,7 +1912,7 @@ def process_story(story, args: argparse.Namespace) -> None:
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
                     journal=journal,
                 )
                 commit_story(story)
@@ -2051,6 +2192,7 @@ def self_test() -> int:
     failures.extend(self_test_scheduler())
     failures.extend(self_test_context())
     failures.extend(self_test_phases())
+    failures.extend(self_test_targeted_recovery())
 
     if failures:
         for failure in failures:
@@ -2058,6 +2200,75 @@ def self_test() -> int:
         return 1
     print("the build-lite self test passed")
     return 0
+
+
+def self_test_targeted_recovery() -> list[str]:
+    """The repair contract retains deterministic evidence and rejects an unproven test."""
+    failures: list[str] = []
+    target = "LANPartyHub.IntegrationTests.GameLaunchTests.A_missing_executable_is_rejected"
+    failed = legacy.CommandResult(
+        argv=("dotnet", "test", "LANPartyHub.sln"),
+        code=1,
+        stdout=f"Con error {target} [42 ms]\nCon error! - Con error: 1",
+    )
+    parsed = verification_failures([("dotnet test", failed)])
+    if len(parsed) != 1 or parsed[0].target_test != target:
+        failures.append("a demonstrated failed test was not targeted")
+    if (
+        "dotnet test LANPartyHub.sln" not in parsed[0].command
+        or target not in parsed[0].evidence
+        or f"FullyQualifiedName={target}" not in parsed[0].target_command
+    ):
+        failures.append("the targeted repair lost command or failure evidence")
+    non_target = verification_failures(
+        [("check-encoding", legacy.CommandResult(argv=("powershell", "check.ps1"), code=1, stdout="bad"))]
+    )
+    if non_target[0].target_test:
+        failures.append("a non-test verification failure invented a targeted test")
+    transcript = LOG_ROOT / "self-test-targeted-recovery.jsonl"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    def write_event(command: str, exit_code: int, output: str = "Correctas! - Con error: 0") -> None:
+        transcript.write_text(
+            json.dumps(
+                {
+                    "part": {
+                        "type": "tool",
+                        "state": {
+                            "status": "completed",
+                            "input": {"command": command},
+                            "output": output,
+                            "metadata": {"exit": exit_code},
+                        },
+                    }
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 0)
+    if not recovery_check_passed(transcript, parsed[0]):
+        failures.append("a successful targeted test was not recognised")
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 0, "No test matches the given testcase filter")
+    if recovery_check_passed(transcript, parsed[0]):
+        failures.append("a zero-match targeted test was accepted")
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 1)
+    if recovery_check_passed(transcript, parsed[0]):
+        failures.append("a failing targeted test was accepted")
+    non_target_failure = non_target[0]
+    write_event("powershell check.ps1", 0, "OK")
+    if not recovery_check_passed(transcript, non_target_failure):
+        failures.append("a successful non-test recovery check was not recognised")
+    expected_prefix = subprocess.list2cmdline(list(failed.argv))
+    if not parsed[0].target_command.startswith(expected_prefix + " "):
+        failures.append("the focused test did not preserve the original verification argv")
+    if "--no-restore" in parsed[0].target_command:
+        failures.append("the focused test added an unsupported no-restore option")
+    review_prompt_text = review_repair_prompt(type("Story", (), {"short_id": "0.0"})(), "BLOCKING: evidence")
+    if "BLOCKING: evidence" not in review_prompt_text:
+        failures.append("the review repair prompt lost its blocking evidence")
+    transcript.unlink(missing_ok=True)
+    return failures
 
 
 CONTEXT_SAMPLE = """## Requisitos y criterios de aceptación
