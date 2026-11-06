@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.Catalog;
+using LANPartyHub.Client.Presentation.Errors;
 using LANPartyHub.Client.Presentation.Formatting;
 using LANPartyHub.Shared.Contracts;
 
@@ -32,7 +33,30 @@ namespace LANPartyHub.Client.Presentation.Catalog;
 /// </summary>
 public sealed class GameDetailViewModel
 {
+    /// <summary>
+    /// Text of the action that launches the videogame (AC1, UX-DR-43).
+    ///
+    /// <para>
+    /// La acción se llama «Jugar» y su TEXTO no es un texto de estado: es una acción, y
+    /// por eso vive en el cliente y no en la tabla de microcopy de <c>Shared</c>
+    /// (AD-18, AR-3).
+    /// </para>
+    /// </summary>
+    public const string PlayActionText = "Jugar";
+
+    /// <summary>
+    /// Text of the notice of a failed launch (AC1, UX-DR-36).
+    ///
+    /// <para>
+    /// El aviso lleva el error del catálogo con sus TRES partes, tal cual, y el mensaje
+    /// nombra la ruta exacta cuando el problema es de ruta (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string LaunchErrorPrefixText = "No se pudo iniciar: ";
+
     private readonly GameDescriptor _game;
+    private string? _launchErrorCode;
+    private bool _isInstalled;
 
     /// <summary>
     /// Creates the view model of the ficha of a videogame.
@@ -42,10 +66,15 @@ public sealed class GameDetailViewModel
     /// <param name="installedVersion">
     /// Version that the client has installed, or <c>null</c> when it has no installation.
     /// </param>
+    /// <param name="isInstalled">
+    /// Whether the installation of the videogame is CERTIFIED as valid, que es la única
+    /// condición que habilita el lanzamiento (AC1).
+    /// </param>
     public GameDetailViewModel(
         GameDescriptor game,
         CatalogViewState viewState,
-        string? installedVersion = null)
+        string? installedVersion = null,
+        bool isInstalled = false)
     {
         ArgumentNullException.ThrowIfNull(game);
 
@@ -54,10 +83,12 @@ public sealed class GameDetailViewModel
         ViewState = viewState;
 
         // El texto de la insignia sale de la tabla de microcopy y de NINGÚN otro sitio
-        // (AC4, AR-8, R-MVP-7).
+        // (AC4, AR-8).
         ViewStateText = StateDisplayMap.GetText(viewState);
 
         InstalledVersion = installedVersion;
+
+        _isInstalled = isInstalled;
     }
 
     /// <summary>Raised when the ficha has to be rendered again.</summary>
@@ -150,4 +181,62 @@ public sealed class GameDetailViewModel
     /// Notifies that the ficha has to be rendered again.
     /// </summary>
     public void Refresh() => Changed?.Invoke();
+
+    /// <summary>
+    /// Whether the action «Jugar» is ENABLED (AC1).
+    ///
+    /// <para>
+    /// La acción se habilita SÓLO con una instalación CERTIFICADA como válida, que es la
+    /// única condición que permite lanzar: una instalación reparable o fallida NO lanza
+    /// ningún proceso (AC1, AD-19).
+    /// </para>
+    /// </summary>
+    public bool CanPlay => _isInstalled;
+
+    /// <summary>
+    /// Text of the action «Jugar» (AC1).
+    /// </summary>
+    public string PlayLabel => PlayActionText;
+
+    /// <summary>
+    /// Stable code of the error of a FAILED launch, or <c>null</c> when the last launch
+    /// did not fail (AC1, AD-15).
+    /// </summary>
+    public string? LaunchErrorCode => _launchErrorCode;
+
+    /// <summary>
+    /// The notice of the FAILED launch, con sus TRES partes, or <c>null</c> when the last
+    /// launch did not fail (AC1, AD-15, AD-25).
+    /// </summary>
+    public ErrorMessageViewModel? LaunchError =>
+        _launchErrorCode is null
+            ? null
+            : new ErrorMessageViewModel(_launchErrorCode);
+
+    /// <summary>
+    /// Records the ERROR of a failed launch, so the ficha lo presenta junto a la acción
+    /// «Jugar» (AC1, UX-DR-36).
+    ///
+    /// <param name="errorCode">
+    /// Stable code of the error of the catalog, or <c>null</c> when the launch did not
+    /// fail.
+    /// </param>
+    public void ApplyLaunchError(string? errorCode)
+    {
+        _launchErrorCode = errorCode;
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// Records the state of the installation of the videogame, so la acción «Jugar» se
+    /// habilita sólo con una instalación certificada (AC1).
+    ///
+    /// <param name="isInstalled">Whether the installation is certified as valid.</param>
+    public void ApplyInstallation(bool isInstalled)
+    {
+        _isInstalled = isInstalled;
+
+        Refresh();
+    }
 }

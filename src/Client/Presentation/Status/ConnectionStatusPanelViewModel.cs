@@ -106,6 +106,8 @@ public sealed class ConnectionStatusPanelViewModel
         ServerVersion: null,
         Available: false);
 
+    private GameRunStatusViewModel? _gameRunStatus;
+
     /// <summary>
     /// Raised when the panel has to be rendered again, because the availability of the
     /// server changed (AC3, AC4).
@@ -216,10 +218,10 @@ public sealed class ConnectionStatusPanelViewModel
         Changed?.Invoke();
     }
 
-    /// <summary>
+/// <summary>
     /// Records the last operation that finished, so the panel shows su resultado en vez de
     /// un espacio vacío (AC2, UX-DR-11).
-    ///
+    /// </summary>
     /// <param name="description">Description of the last operation that finished.</param>
     public void ApplyLastOperation(string? description)
     {
@@ -227,4 +229,30 @@ public sealed class ConnectionStatusPanelViewModel
 
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// The state of the game that is RUNNING, que el panel presenta como «En ejecución» o
+    /// «Ningún juego en ejecución» (AC2, UX-DR-6).
+    ///
+    /// <para>
+    /// El estado de ejecución es DEL CLIENTE y no de <c>Shared</c>: el panel lo presenta
+    /// pero no lo declara, así que el contrato compartido no crece (AD-18, AD-22, AR-3).
+    /// </para>
+    /// </summary>
+    /// <param name="gameRunStatus">State of the game that is running.</param>
+    public void ApplyGameRunStatus(GameRunStatusViewModel gameRunStatus)
+    {
+        ArgumentNullException.ThrowIfNull(gameRunStatus);
+
+        _gameRunStatus = gameRunStatus;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The state of the game that is running, or <c>null</c> when the panel does not know
+    /// any (AC2).
+    /// </summary>
+public GameRunStatusViewModel? GameRunStatus => _gameRunStatus;
 }
+

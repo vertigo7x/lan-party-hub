@@ -38,6 +38,9 @@ public sealed class App : Avalonia.Application
     private ConnectionSurfaceViewModel? _connectionViewModel;
     private ServerAvailabilityMonitor? _availabilityMonitor;
     private InstallationComposition? _installations;
+    private GameLauncherComposition? _gameLauncher;
+    private CatalogSurface? _catalogSurface;
+    private GameRunStatusViewModel? _gameRunStatus;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -64,6 +67,10 @@ public sealed class App : Avalonia.Application
     /// Composition of the installations, or <c>null</c> when the client was not able to
     /// open it.
     /// </param>
+    /// <param name="gameLauncher">
+    /// Composition of the launcher of the videogames, or <c>null</c> when the client was
+    /// not able to open it.
+    /// </param>
     public App(
         ClientSettings? settings,
         string? startupError,
@@ -71,7 +78,8 @@ public sealed class App : Avalonia.Application
         ConnectionComposition? connection = null,
         IUiThread? uiThread = null,
         DownloadComposition? downloads = null,
-        InstallationComposition? installations = null)
+        InstallationComposition? installations = null,
+        GameLauncherComposition? gameLauncher = null)
     {
         _settings = settings;
         _startupError = startupError;
@@ -79,6 +87,7 @@ public sealed class App : Avalonia.Application
         _connection = connection;
         _downloads = downloads;
         _installations = installations;
+        _gameLauncher = gameLauncher;
 
         // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
         // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
@@ -97,9 +106,15 @@ public sealed class App : Avalonia.Application
             // La superficie del catálogo filtra sobre el snapshot que el cliente ya
             // sincronizó, así que se construye con su propio view model y se enlaza al
             // estado de la sincronización (AC1, AC2, AC3).
+            //
+            // AD-19, AC1: la ficha del videojuego lleva la acción «Jugar», que lanza el
+            // juego instalado a través del módulo `GameLauncher`.
             var catalogSurface = new CatalogSurface(
                 new CatalogSurfaceViewModel(),
-                () => _ = SynchronizeNowAsync());
+                () => _ = SynchronizeNowAsync(),
+                gameId => _ = LaunchGameAsync(gameId));
+
+            _catalogSurface = catalogSurface;
 
             // Las instalaciones que el cliente registró son LOCALES: la ficha del
             // videojuego las lee para derivar la insignia de su estado de vista, y la
@@ -145,7 +160,14 @@ public sealed class App : Avalonia.Application
             var installViewModel = new InstallProgressViewModel();
             var installControl = new InstallProgressControl(installViewModel);
 
-            var statusPanel = new ConnectionStatusPanel(statusViewModel, downloadControl, installControl);
+            // AC2, UX-DR-6: el estado de ejecución del juego vive en el MISMO panel
+            // persistente, con «En ejecución» o «Ningún juego en ejecución». El estado
+            // vive EN MEMORIA del cliente: no se persiste (AD-22, AC2).
+            var gameRunStatus = new GameRunStatusViewModel();
+
+            _gameRunStatus = gameRunStatus;
+
+            var statusPanel = new ConnectionStatusPanel(statusViewModel, downloadControl, installControl, gameRunStatus);
 
             // A failure of the startup is shown in a window of its own: the client is a
             // graphical application and the player would never read a message that only
@@ -344,6 +366,45 @@ public sealed class App : Avalonia.Application
 
             _uiThread.Post(() => viewModel.ApplyError(null));
         };
+    }
+
+    /// <summary>
+    /// Launches the videogame of a game with the module <c>GameLauncher</c> (AD-19, AC1,
+    /// AC2).
+    ///
+    /// <para>
+    /// El juego se lanza como proceso PROPIO: se ejecuta FUERA de la ventana de LAN Party
+    /// Hub, el cliente queda en segundo plano y el panel pasa a «En ejecución» (AC3,
+    /// UX-DR-43).
+    /// </para>
+    /// <para>
+    /// Un lanzamiento RECHAZADO no deja ningún proceso en marcha y su error se presenta
+    /// junto a la acción «Jugar», con su ruta exacta cuando el problema es de ruta (AC1,
+    /// AD-15).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame to launch.</param>
+    private async Task LaunchGameAsync(string gameId)
+    {
+        if (_gameLauncher is null)
+        {
+            return;
+        }
+
+        var outcome = await _gameLauncher.Service
+            .LaunchAsync(gameId, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (outcome.IsRejected)
+        {
+            _uiThread.Post(() => _catalogSurface?.ApplyLaunchError(outcome.Error?.Code));
+
+            return;
+        }
+
+        // AC2, UX-DR-6: el panel pasa a «En ejecución» y el estado vive EN MEMORIA del
+        // cliente: no se persiste (AD-22, AC2).
+        _uiThread.Post(() => _gameRunStatus?.ApplyLaunch(outcome.Handle!, gameId));
     }
 
     /// <summary>

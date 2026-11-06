@@ -39,12 +39,18 @@ public sealed class GameDetailView : UserControl
     private readonly TextBlock _requirements;
     private readonly TextBlock _license;
     private readonly TextBlock _installedVersion;
+    private readonly Button _playButton;
+    private readonly TextBlock _launchError;
 
     /// <summary>
     /// Creates the ficha del videojuego.
     /// </summary>
     /// <param name="viewModel">View model of the ficha.</param>
-    public GameDetailView(GameDetailViewModel viewModel)
+    /// <param name="onPlay">
+    /// Action that the player triggers with «Jugar», or <c>null</c> when the ficha is
+    /// built without it (AC1).
+    /// </param>
+    public GameDetailView(GameDetailViewModel viewModel, Action<string>? onPlay = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
@@ -133,6 +139,24 @@ public sealed class GameDetailView : UserControl
             Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
         };
 
+        // AC1: la acción «Jugar» se habilita SÓLO con una instalación certificada como
+        // válida, y el aviso del error de lanzamiento aparece JUNTO a ella (AC1).
+        _playButton = new Button
+        {
+            Content = GameDetailViewModel.PlayActionText,
+            Height = DesignTokens.FieldInputHeight,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+
+        _launchError = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(DesignTokens.StateDanger),
+            IsVisible = false,
+        };
+
+        _playButton.Click += (_, _) => onPlay?.Invoke(viewModel.GameId);
+
         Content = new StackPanel
         {
             Margin = new Thickness(16),
@@ -149,6 +173,8 @@ public sealed class GameDetailView : UserControl
                 BuildFact("Requisitos", _requirements),
                 BuildFact("Licencia", _license),
                 _installedVersion,
+                _playButton,
+                _launchError,
             },
         };
 
@@ -287,5 +313,17 @@ public sealed class GameDetailView : UserControl
         _installedVersion.Text = viewModel.InstalledVersionText ?? string.Empty;
 
         _installedVersion.IsVisible = viewModel.InstalledVersionText is not null;
+
+        // AC1: «Jugar» se habilita SÓLO con una instalación certificada como válida, y el
+        // aviso del error de lanzamiento aparece JUNTO a la acción (AC1, UX-DR-36).
+        _playButton.IsEnabled = viewModel.CanPlay;
+
+        var launchError = viewModel.LaunchError;
+
+        _launchError.Text = launchError is null
+            ? string.Empty
+            : $"{GameDetailViewModel.LaunchErrorPrefixText}{launchError.Message} {launchError.Cause} {launchError.NextStep}";
+
+        _launchError.IsVisible = launchError is not null;
     }
 }

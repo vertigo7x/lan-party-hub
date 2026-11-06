@@ -3,6 +3,7 @@ using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
+using LANPartyHub.Client.Infrastructure.Filesystem;
 using LANPartyHub.Client.Infrastructure.Logging;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using LANPartyHub.Client.Presentation;
@@ -43,6 +44,7 @@ public static class Program
         TransferComposition? transfer = null;
         DownloadComposition? downloads = null;
         InstallationComposition? installations = null;
+        GameLauncherComposition? gameLauncher = null;
         DialogPrivilegedOperationConfirmation? privilegedConfirmation = null;
 
         try
@@ -116,12 +118,19 @@ public static class Program
 
             installations = OpenInstallations(startup, correlationScope, loggerFactory, privilegedConfirmation);
 
+            // AD-19, AC1: la composición del lanzador de juegos. El lanzador NO necesita
+            // servidor para arrancar: lee la instalación que el cliente ya registró y el
+            // manifiesto firmado que ya está en la caché local, así que un cliente sin
+            // servidor puede lanzar lo que ya tiene instalado (AD-3, AD-19).
+            gameLauncher = OpenGameLauncher(startup, loggerFactory);
+
             BuildAvaloniaApp(
                 startup.Settings,
                 catalogSync: catalogSync,
                 connection: connection,
                 downloads: downloads,
-                installations: installations)
+                installations: installations,
+                gameLauncher: gameLauncher)
                 .StartWithClassicDesktopLifetime(args);
 
             return 0;
@@ -166,14 +175,25 @@ public static class Program
     /// <param name="installations">
     /// Composition of the installations, or <c>null</c> when there is none.
     /// </param>
+    /// <param name="gameLauncher">
+    /// Composition of the launcher of the videogames, or <c>null</c> when there is none.
+    /// </param>
     public static AppBuilder BuildAvaloniaApp(
         ClientSettings? settings = null,
         string? startupError = null,
         CatalogSyncComposition? catalogSync = null,
         ConnectionComposition? connection = null,
         DownloadComposition? downloads = null,
-        InstallationComposition? installations = null) =>
-        AppBuilder.Configure(() => new App(settings, startupError, catalogSync, connection, downloads: downloads, installations: installations)).UsePlatformDetect();
+        InstallationComposition? installations = null,
+        GameLauncherComposition? gameLauncher = null) =>
+        AppBuilder.Configure(() => new App(
+            settings,
+            startupError,
+            catalogSync,
+            connection,
+            downloads: downloads,
+            installations: installations,
+            gameLauncher: gameLauncher)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -601,6 +621,77 @@ public static class Program
                     "No se pudo abrir la composición de las instalaciones: el cliente sigue arrancando sin ella.");
 
             composition?.Dispose();
+
+            composition = null;
+        }
+
+        return composition;
+    }
+
+    /// <summary>
+    /// Opens the composition of the launcher of the videogames (AD-19, AC1).
+    ///
+    /// <para>
+    /// La composición se abre SIN servidor: el lanzador lee la instalación que el
+    /// cliente ya registró y el manifiesto firmado que ya está en la caché local, así que
+    /// un cliente sin servidor puede lanzar lo que ya tiene instalado (AD-3, AD-19).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arrancar: el lanzador es
+    /// un complemento del cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static GameLauncherComposition? OpenGameLauncher(
+        ClientStartupResult startup,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        GameLauncherComposition? composition = null;
+
+        try
+        {
+            // AD-11: la fila de la instalación vive en la base de datos del cliente, así
+            // que la composición abre su propio acceso a ella.
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = startup.StateDatabasePath,
+                Pooling = false,
+            }.ToString();
+
+            var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite(
+                    connectionString,
+                    sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                .Options;
+
+            var context = new ClientStateDbContext(options);
+
+            // AD-9: la composición comparte la MISMA instancia del layout que el
+            // arranque, así que el resolvedor de rutas lee la raíz vigente en cada
+            // llamada.
+            var layout = startup.Layout;
+
+            composition = new GameLauncherComposition(
+                new ClientStateStore(context, layout),
+                new CatalogSnapshotStore(context),
+                new ManifestCache(layout),
+                new InstallPathResolver(layout),
+                loggerFactory);
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede lanzar juegos, pero sigue siendo un cliente que
+            // arranca: la ventana se abre y el catálogo sigue disponible (AD-1).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.GameLauncher")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir la composición del lanzador de juegos: el cliente sigue arrancando sin ella.");
 
             composition = null;
         }
