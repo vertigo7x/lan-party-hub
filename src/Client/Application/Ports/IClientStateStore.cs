@@ -137,6 +137,21 @@ public interface IClientStateStore
     Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads EVERY installation that the client registered, so the Biblioteca can show
+    /// the games that are installed with their actions (AD-22, AC8).
+    ///
+    /// <para>
+    /// La lectura es LOCAL: las instalaciones pertenecen al cliente y la Biblioteca nunca
+    /// va al servidor por ellas (AD-5, AD-22). La lista viene ORDENADA por identificador
+    /// de juego, así que la Biblioteca muestra siempre las mismas filas en el mismo
+    /// orden (AC8).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the registered installations.</returns>
+    Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Persists the FAILURE of an installation, so the error queda registrado y la
     /// operación es REINTENTABLE sin reinstalar el cliente (AD-8, AD-11, AC5).
     ///

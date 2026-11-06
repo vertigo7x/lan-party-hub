@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.GameLauncher;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
 
@@ -39,7 +41,7 @@ public sealed class GameDetailView : UserControl
     private readonly TextBlock _requirements;
     private readonly TextBlock _license;
     private readonly TextBlock _installedVersion;
-    private readonly Button _playButton;
+    private readonly GamePlayActionsView _playActions;
     private readonly TextBlock _launchFailure;
 
     /// <summary>
@@ -50,7 +52,25 @@ public sealed class GameDetailView : UserControl
     /// Action that the player triggers with «Jugar», or <c>null</c> when the ficha is
     /// built without it (AC1).
     /// </param>
-    public GameDetailView(GameDetailViewModel viewModel, Action<string>? onPlay = null)
+    /// <param name="onPrimary">
+    /// Action of the PRIMARY button of the table of actions, or <c>null</c> when the
+    /// ficha is built without it (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
+    /// </param>
+    /// <param name="onSecondary">
+    /// Action of the SECONDARY button of the table of actions, or <c>null</c> when the
+    /// ficha is built without it (AC1, AC2).
+    /// </param>
+    public GameDetailView(
+        GameDetailViewModel viewModel,
+        Action<string>? onPlay = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
+        Action<string>? onSecondary = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
@@ -139,14 +159,9 @@ public sealed class GameDetailView : UserControl
             Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
         };
 
-        // AC1: la acción «Jugar» se habilita SÓLO con una instalación certificada como
-        // válida, y el aviso del error de lanzamiento aparece JUNTO a ella (AC1).
-        _playButton = new Button
-        {
-            Content = GameDetailViewModel.PlayActionText,
-            Height = DesignTokens.FieldInputHeight,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
+        // AC1, AC2: la ficha lleva la MISMA tabla de acciones que la Biblioteca, con el
+        // motivo VISIBLE del bloqueo junto a la etiqueta de «Jugar» (AC3, UX-DR-18).
+        _playActions = new GamePlayActionsView(viewModel.Actions, onPlay, onPrimary, onSecondary);
 
         _launchFailure = new TextBlock
         {
@@ -154,8 +169,6 @@ public sealed class GameDetailView : UserControl
             Foreground = new SolidColorBrush(DesignTokens.StateDanger),
             IsVisible = false,
         };
-
-        _playButton.Click += (_, _) => onPlay?.Invoke(viewModel.GameId);
 
         Content = new StackPanel
         {
@@ -173,7 +186,7 @@ public sealed class GameDetailView : UserControl
                 BuildFact("Requisitos", _requirements),
                 BuildFact("Licencia", _license),
                 _installedVersion,
-                _playButton,
+                _playActions,
                 _launchFailure,
             },
         };
@@ -314,9 +327,9 @@ public sealed class GameDetailView : UserControl
 
         _installedVersion.IsVisible = viewModel.InstalledVersionText is not null;
 
-        // AC1: «Jugar» se habilita SÓLO con una instalación certificada como válida, y el
-        // aviso del error de lanzamiento aparece JUNTO a la acción (AC1, UX-DR-36).
-        _playButton.IsEnabled = viewModel.CanPlay;
+        // AC1, AC3: la tabla de acciones se repinta con la decisión vigente, y el aviso
+        // del error de lanzamiento aparece JUNTO a ella (AC1, UX-DR-36).
+        _playActions.Actions.Apply(viewModel.Actions.Decision);
 
         var launchFailureText = viewModel.LaunchFailureText;
 

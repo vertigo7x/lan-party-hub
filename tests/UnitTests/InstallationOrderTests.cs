@@ -645,6 +645,9 @@ public sealed class InstallationOrderTests : IDisposable
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
             Task.FromResult<ClientInstallation?>(SavedInstallations.Count == 0 ? null : SavedInstallations[^1]);
 
+        public Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ClientInstallation>>(SavedInstallations);
+
         public Task SaveInstallationFailureAsync(
             ClientInstallation installation,
             string errorCode,

@@ -4,6 +4,7 @@ using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
@@ -12,7 +13,9 @@ using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Downloads;
+using LANPartyHub.Client.Presentation.GameLauncher;
 using LANPartyHub.Client.Presentation.Install;
+using LANPartyHub.Client.Presentation.Library;
 using LANPartyHub.Client.Presentation.Status;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -40,6 +43,7 @@ public sealed class App : Avalonia.Application
     private InstallationComposition? _installations;
     private GameLauncherComposition? _gameLauncher;
     private CatalogSurface? _catalogSurface;
+    private LibrarySurface? _librarySurface;
     private GameRunStatusViewModel? _gameRunStatus;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
@@ -109,19 +113,40 @@ public sealed class App : Avalonia.Application
             //
             // AD-19, AC1: la ficha del videojuego lleva la acción «Jugar», que lanza el
             // juego instalado a través del módulo `GameLauncher`.
+            //
+            // AC1, AC2: la primaria es POLIMÓRFICA —«Reparar» o «Descargar de nuevo»—
+            // así que el cableado la ENRUTA por la acción que el jugador pulsó, y cada
+            // una registra la intención que le corresponde.
             var catalogSurface = new CatalogSurface(
                 new CatalogSurfaceViewModel(),
                 () => _ = SynchronizeNowAsync(),
-                gameId => _ = LaunchGameAsync(gameId));
+                gameId => _ = LaunchGameAsync(gameId),
+                (gameId, primary) => _ = RecordPrimaryIntentAsync(gameId, primary),
+                gameId => _ = RecordDiagnoseIntentAsync(gameId));
 
             _catalogSurface = catalogSurface;
+
+            // AC1, AC2, AC8: la Biblioteca lista las instalaciones del cliente con la
+            // MISMA tabla de acciones que la ficha, así que ninguna de las dos superficies
+            // abre un camino de lanzamiento distinto (UX-DR-17, UX-DR-19).
+            //
+            // AC1, AC2: la primaria se ENRUTA igual que en la ficha, así que «Reparar» y
+            // «Descargar de nuevo» registran la intención que les corresponde.
+            var librarySurface = new LibrarySurface(
+                new LibrarySurfaceViewModel(),
+                gameId => _ = LaunchGameAsync(gameId),
+                (gameId, primary) => _ = RecordPrimaryIntentAsync(gameId, primary),
+                gameId => _ = RecordDiagnoseIntentAsync(gameId),
+                () => ShowCatalog());
+
+            _librarySurface = librarySurface;
 
             // Las instalaciones que el cliente registró son LOCALES: la ficha del
             // videojuego las lee para derivar la insignia de su estado de vista, y la
             // lectura NO va al servidor (AC3, AD-22). La lectura NO bloquea el arranque:
             // la ficha se abre igual y su insignia sale del estado que el servidor
             // publica (AC3, AD-26).
-            _ = LoadInstallationsAsync(catalogSurface);
+            _ = LoadInstallationsAsync(catalogSurface, librarySurface);
 
             // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
             // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
@@ -178,7 +203,8 @@ public sealed class App : Avalonia.Application
                     SynchronizeNowAsync,
                     catalogSurface,
                     connectionSurface,
-                    statusPanel)
+                    statusPanel,
+                    librarySurface)
                 : new StartupErrorWindow(_startupError);
 
             // El overlay de la confirmación de la cancelación vive DENTRO de la ventana,
@@ -671,9 +697,18 @@ public sealed class App : Avalonia.Application
     /// Reads the installations that the client registered and hands them to the surface of
     /// the catalog (AC3).
     ///
+    /// <para>
+    /// La lectura es LOCAL y su fallo NO puede impedir que el jugador abra el catálogo:
+    /// la ficha se abre y su insignia sale del estado que el servidor publica (AC3,
+    /// AD-26).
+    /// </para>
+    /// </summary>
     /// <param name="catalogSurface">Surface of the catalog of the player.</param>
+    /// <param name="librarySurface">Surface of the Biblioteca of the player (AC8).</param>
     /// <returns>A task that completes when the installations have been read.</returns>
-    private async Task LoadInstallationsAsync(CatalogSurface catalogSurface)
+    private async Task LoadInstallationsAsync(
+        CatalogSurface catalogSurface,
+        LibrarySurface librarySurface)
     {
         if (_catalogSync is null)
         {
@@ -687,6 +722,20 @@ public sealed class App : Avalonia.Application
                 .ConfigureAwait(true);
 
             catalogSurface.ApplyInstallations(installations);
+
+            // AC1, AC2, AC8: la decisión sobre la jugabilidad se REderiva al pintar, a
+            // partir del veredicto de la certificación y del inspector, así que no hay
+            // columna nueva ni migración (AD-11, AD-22).
+            var projection = await ProjectPlayabilityAsync().ConfigureAwait(true);
+
+            if (projection is null)
+            {
+                return;
+            }
+
+            catalogSurface.ApplyDecisions(DecisionsOf(projection));
+
+            librarySurface.ApplyInstallations(projection);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -695,6 +744,100 @@ public sealed class App : Avalonia.Application
             // el servidor publica (AC3, AD-26).
         }
     }
+
+    /// <summary>
+    /// Projects the playability of the installations that the client registered (AC1,
+    /// AC2, AC8).
+    /// </summary>
+    /// <returns>The projection, or <c>null</c> when the client cannot project it.</returns>
+    private async Task<IReadOnlyList<InstalledGamePlayability>?> ProjectPlayabilityAsync()
+    {
+        if (_gameLauncher is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _gameLauncher.Projection
+                .ProjectAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La proyección es LOCAL y su fallo NO puede impedir que el jugador use el
+            // cliente: la Biblioteca se abre y cada superficie aplica su decisión
+            // (AC8).
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Builds the decisions of the projection, keyed by the identifier of the videogame
+    /// (AC1, AC2).
+    /// </summary>
+    /// <param name="projection">Projection of the installations.</param>
+    /// <returns>The decisions, keyed by the identifier of the videogame.</returns>
+    private static IReadOnlyDictionary<string, PlayabilityDecision> DecisionsOf(
+        IReadOnlyList<InstalledGamePlayability> projection)
+    {
+        var decisions = new Dictionary<string, PlayabilityDecision>(StringComparer.Ordinal);
+
+        foreach (var installation in projection)
+        {
+            decisions[installation.GameId] = installation.Decision;
+        }
+
+        return decisions;
+    }
+
+    /// <summary>
+    /// Records the intention of the PRIMARY action that the player pressed, que es
+    /// POLIMÓRFICA: «Reparar» o «Descargar de nuevo» (AC1, AC2, UX-DR-20).
+    ///
+    /// <para>
+    /// La ruta la decide la CAPA DE APLICACIÓN, que es su único dueño: «Descargar de
+    /// nuevo» registra la intención de RE-DESCARGAR, así que el puerto de reparación no
+    /// recibe nunca una re-descarga (AC1, AC2, AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="primary">The PRIMARY action that the player pressed.</param>
+    private async Task RecordPrimaryIntentAsync(string gameId, PlayabilityAction primary)
+    {
+        if (_gameLauncher is null)
+        {
+            return;
+        }
+
+        await _gameLauncher.IntentService
+            .RecordPrimaryAsync(gameId, primary, CancellationToken.None)
+            .ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Records the intention of OPENING the registered error, que es un SEAM: el
+    /// registro de diagnóstico es de Epic 11 y aquí sólo queda registrada la intención
+    /// (AC1, AC2).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    private async Task RecordDiagnoseIntentAsync(string gameId)
+    {
+        if (_gameLauncher is null)
+        {
+            return;
+        }
+
+        await _gameLauncher.IntentService
+            .RecordDiagnoseAsync(gameId, CancellationToken.None)
+            .ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Shows the surface of the catalog, que es la salida accionable del estado vacío de
+    /// la Biblioteca (AC8, UX-DR-28).
+    /// </summary>
+    private void ShowCatalog() => _catalogSurface?.Focus();
 
     /// <summary>
     /// Searches the servers of the event and hands them to the surface of the connection

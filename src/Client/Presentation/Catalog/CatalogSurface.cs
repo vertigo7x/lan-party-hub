@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.GameLauncher;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
 
@@ -41,6 +42,8 @@ public sealed class CatalogSurface : UserControl
 
     private string? _openGameId;
     private readonly Action<string>? _onPlay;
+    private readonly Action<string, PlayabilityAction>? _onPrimary;
+    private readonly Action<string>? _onSecondary;
 
     /// <summary>
     /// Creates the surface of the catalog.
@@ -54,14 +57,32 @@ public sealed class CatalogSurface : UserControl
     /// Action that the player triggers with «Jugar» on the ficha, or <c>null</c> when the
     /// surface is built without it (AC1).
     /// </param>
+    /// <param name="onPrimary">
+    /// Action of the PRIMARY button of the table of actions, or <c>null</c> when the
+    /// surface is built without it (AC1, AC2).
+    ///
+    /// <para>
+    /// La primaria es POLIMÓRFICA: es «Reparar» o «Descargar de nuevo» según la
+    /// decisión, así que la acción recibe ALSO WHICH primary action was pressed, so the
+    /// wiring registers the RIGHT intention (AC1, AC2).
+    /// </para>
+    /// </param>
+    /// <param name="onSecondary">
+    /// Action of the SECONDARY button of the table of actions, or <c>null</c> when the
+    /// surface is built without it (AC1, AC2).
+    /// </param>
     public CatalogSurface(
         CatalogSurfaceViewModel viewModel,
         Action? onEmptyAction = null,
-        Action<string>? onPlay = null)
+        Action<string>? onPlay = null,
+        Action<string, PlayabilityAction>? onPrimary = null,
+        Action<string>? onSecondary = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
         _onPlay = onPlay;
+        _onPrimary = onPrimary;
+        _onSecondary = onSecondary;
 
         _viewModel = viewModel;
 
@@ -200,6 +221,18 @@ public sealed class CatalogSurface : UserControl
         _viewModel.ApplyInstallations(installations);
 
     /// <summary>
+    /// Replaces the decision about the playability of every installation, which the ficha
+    /// paints como el motivo VISIBLE del bloqueo de «Jugar» (AC1, AC2, AC3).
+    /// </summary>
+    /// <param name="decisions">Decisions keyed by the identifier of the videogame.</param>
+    public void ApplyDecisions(IReadOnlyDictionary<string, PlayabilityDecision> decisions)
+    {
+        _viewModel.ApplyDecisions(decisions);
+
+        RenderDetail(_viewModel.BuildGameDetail());
+    }
+
+    /// <summary>
     /// Presents the ERROR of a failed launch in the ficha that is open, so the aviso
     /// aparece JUNTO a la acción «Jugar» (AC1, UX-DR-36).
     ///
@@ -259,7 +292,7 @@ public sealed class CatalogSurface : UserControl
         {
             _openGameId = detail.GameId;
 
-            _detail.Content = new GameDetailView(detail, _onPlay);
+            _detail.Content = new GameDetailView(detail, _onPlay, _onPrimary, _onSecondary);
         }
         else if (_detail.Content is GameDetailView open)
         {

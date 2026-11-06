@@ -1,4 +1,4 @@
-using LANPartyHub.Client.Application;
+﻿using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Domain;
@@ -355,7 +355,13 @@ public sealed class FixTrustAnchorTests
             Task.CompletedTask;
 
         public Task<ClientInstallation?> LoadInstallationAsync(string gameId, CancellationToken cancellationToken) =>
+
             Task.FromResult<ClientInstallation?>(null);
+
+
+        public Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(CancellationToken cancellationToken) =>
+
+            Task.FromResult<IReadOnlyList<ClientInstallation>>([]);
 
         public Task SaveInstallationFailureAsync(
             ClientInstallation installation,

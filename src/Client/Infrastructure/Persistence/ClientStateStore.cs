@@ -413,6 +413,48 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<ClientInstallation>> LoadInstallationsAsync(
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var rows = await _context.Installations
+                .AsNoTracking()
+                .OrderBy(entity => entity.GameId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var installations = new List<ClientInstallation>(rows.Count);
+
+            foreach (var row in rows)
+            {
+                // El estado persistido es el NOMBRE del valor de la máquina de estados, y
+                // un nombre que la máquina no reconoce NO se inventa: esa instalación se
+                // lee como no registrada (AD-10).
+                if (!Enum.TryParse<InstallationState>(row.ValidationState, out var state))
+                {
+                    continue;
+                }
+
+                installations.Add(new ClientInstallation(
+                    row.GameId,
+                    row.InstalledVersion,
+                    state,
+                    row.InstallPath,
+                    row.InstallDirectoryId));
+            }
+
+            return installations;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public async Task SaveInstallationFailureAsync(
         ClientInstallation installation,
         string errorCode,

@@ -1,5 +1,6 @@
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
@@ -81,6 +82,19 @@ public sealed class CatalogSurfaceViewModel
     private long? _snapshotCatalogVersion;
     private long? _serverCatalogVersion;
     private IReadOnlyList<InstalledGameView> _installations = [];
+
+    /// <summary>
+    /// The decision about the playability of every installation, keyed by the identifier
+    /// of the videogame (AC1, AC2).
+    ///
+    /// <para>
+    /// La decisión se REderiva al pintar, a partir del veredicto de la certificación y del
+    /// inspector, así que no se persiste: no hay columna nueva ni migración (AD-11,
+    /// AD-22).
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, PlayabilityDecision> _decisions =
+        new(StringComparer.Ordinal);
 
     /// <summary>
     /// Creates the view model of the surface of the catalog.
@@ -347,6 +361,40 @@ public sealed class CatalogSurfaceViewModel
     }
 
     /// <summary>
+    /// Replaces the decision about the playability of every installation, which the
+    /// ficha paints como el motivo VISIBLE del bloqueo de «Jugar» (AC1, AC2, AC3).
+    ///
+    /// <para>
+    /// La decisión se REderiva al pintar y NO se persiste: no hay columna nueva ni
+    /// migración (AD-11, AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="decisions">Decisions keyed by the identifier of the videogame.</param>
+    public void ApplyDecisions(IReadOnlyDictionary<string, PlayabilityDecision> decisions)
+    {
+        _decisions.Clear();
+
+        if (decisions is null)
+        {
+            return;
+        }
+
+        foreach (var (gameId, decision) in decisions)
+        {
+            _decisions[gameId] = decision;
+        }
+    }
+
+    /// <summary>
+    /// The decision about the playability of a videogame, or <c>null</c> when the client
+    /// does not know one (AC1).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <returns>The decision, or <c>null</c>.</returns>
+    public PlayabilityDecision? DecisionOf(string gameId) =>
+        _decisions.TryGetValue(gameId, out var decision) ? decision : null;
+
+    /// <summary>
     /// The game whose ficha is open, or <c>null</c> when no ficha is open (AC1).
     /// </summary>
     public GameDescriptor? SelectedGame => _selectedGame;
@@ -415,9 +463,12 @@ public sealed class CatalogSurfaceViewModel
             viewState,
             installation?.InstalledVersion,
 
-            // AC1: la acción «Jugar» se habilita SÓLO con una instalación CERTIFICADA
-            // como válida, que es el estado `Installed` de la máquina (AC1, AD-19).
-            installation?.ValidationState == InstallationState.Installed);
+            // AC1, AC2: la ficha lleva la MISMA decisión que la Biblioteca, así que
+            // ninguna de las dos superficies abre un camino de lanzamiento distinto
+            // (AC4, UX-DR-19). Un juego SIN instalación registrada no tiene nada que
+            // lanzar, así que «Jugar» queda bloqueada con su motivo visible (AC1).
+            DecisionOf(_selectedGame.GameId)
+            ?? PlayabilityResolver.Resolve(verdict: null));
     }
 
     /// <summary>
