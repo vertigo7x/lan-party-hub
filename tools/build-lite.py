@@ -143,8 +143,8 @@ MILESTONE_KINDS: tuple[str, ...] = (
 # from a substring in a prompt, context package or tool output.
 TEST_COMMAND_PATTERN = re.compile(r"(?:^|[;&|]\s*)(?:dotnet\s+test)\b", re.IGNORECASE)
 FAILED_TEST_PATTERN = re.compile(
-    r"(?:Con error|Failed)\s+([A-Za-z_][\w.]+(?:\([^\r\n]*\))?)",
-    re.IGNORECASE,
+    r"^\s*(?:Con error|Failed)\s+([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){2,})\b",
+    re.IGNORECASE | re.MULTILINE,
 )
 VERIFICATION_EVIDENCE_MAX_CHARS = 4000
 
@@ -1154,7 +1154,7 @@ def repair_prompt(story, failures: Sequence[VerificationFailure]) -> str:
         + "; ".join(f"`{failure.target_command}`" for failure in targeted)
         + ". No hagas exploración abierta ni ejecutes la batería completa: el driver la ejecuta después."
         if targeted
-        else "Después del cambio, ejecuta el comando fallido pertinente. No ejecutes la batería completa: el driver la ejecuta después."
+        else "Después del cambio, ejecuta el comando fallido pertinente y deja evidencia verde. No ejecutes la batería completa salvo que ese mismo comando sea la única comprobación demostrable: el driver la ejecuta después."
     )
     return f"""Repara exclusivamente el fallo confirmado de la Story {story.short_id}.
 Evidencia reproducible:
@@ -1163,6 +1163,14 @@ Evidencia reproducible:
 {focused_instruction}
 Haz el cambio mínimo. No replanifiques, no revises de nuevo, no abras PR y no modifiques alcance
 ajeno. Si la evidencia no basta, registra `BLOQUEO:` mediante un comando con la causa demostrable."""
+
+
+def review_repair_prompt(story, blocking: str) -> str:
+    """Keep review findings separate from deterministic verification failures."""
+    return f"""Repara exclusivamente el hallazgo bloqueante confirmado de la Story {story.short_id}.
+Evidencia: {blocking}
+Haz el cambio mínimo y sus pruebas. No replanifiques, no revises de nuevo, no abras PR y no
+modifiques alcance ajeno."""
 
 
 def review_prompt(story, diff_file: Path, risk: Risk) -> str:
@@ -1242,12 +1250,13 @@ def verification_failures(results: Sequence[tuple]) -> list[VerificationFailure]
             continue
         command = subprocess.list2cmdline(list(result.argv))
         output = verification_output(result)
-        target_test = failed_test_name(output) if label == "dotnet test" else ""
+        evidence = tail_evidence(output)
+        target_test = failed_test_name(evidence) if label == "dotnet test" else ""
         failures.append(
             VerificationFailure(
                 label=label,
                 command=command,
-                evidence=tail_evidence(output),
+                evidence=evidence,
                 target_test=target_test,
                 target_command=focused_test_command(result.argv, target_test),
             )
@@ -1283,16 +1292,12 @@ def focused_test_command(argv: Sequence[str], target_test: str) -> str:
     if not target_test:
         return ""
     command = list(argv)
-    if "--no-restore" not in command:
-        command.append("--no-restore")
     command.extend(("--filter", f"FullyQualifiedName={target_test}"))
     return subprocess.list2cmdline(command)
 
 
-def targeted_test_passed(transcript: Path, target_test: str) -> bool:
-    """A focused recovery is demonstrated only by a successful real shell invocation."""
-    if not target_test:
-        return True
+def recovery_check_passed(transcript: Path, failure: VerificationFailure) -> bool:
+    """Require a successful, relevant tool invocation rather than worker prose."""
     try:
         lines = transcript.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -1309,10 +1314,22 @@ def targeted_test_passed(transcript: Path, target_test: str) -> bool:
         if not isinstance(state, dict) or state.get("status") != "completed":
             continue
         command = ImplementationProgress._tool_command(state)
-        if not TEST_COMMAND_PATTERN.search(command) or target_test not in command:
-            continue
         metadata = state.get("metadata")
-        if isinstance(metadata, dict) and metadata.get("exit") == 0:
+        if not isinstance(metadata, dict) or metadata.get("exit") != 0:
+            continue
+        if not failure.target_test:
+            if failure.command in command:
+                return True
+            continue
+        test_class = failure.target_test.rsplit(".", 1)[0]
+        if (
+            not TEST_COMMAND_PATTERN.search(command)
+            or "--filter" not in command
+            or (failure.target_test not in command and test_class not in command)
+        ):
+            continue
+        output = str(state.get("output") or metadata.get("output") or "")
+        if re.search(r"\b(?:Passed|Correct(?:o|as))!", output, re.IGNORECASE):
             return True
     return False
 
@@ -1352,9 +1369,9 @@ def verify_or_repair(
         journal=journal,
     )
     for failure in failures:
-        if failure.target_test and not targeted_test_passed(outcome.log or Path(), failure.target_test):
+        if not recovery_check_passed(outcome.log or Path(), failure):
             raise legacy.DriverError(
-                f"targeted recovery did not demonstrate a passing test for {failure.target_test}"
+                f"targeted recovery did not demonstrate a passing check for {failure.label}"
             )
     second = run_verifications(log_dir / "after-repair", cwd=cwd)
     failures = verification_failures(second)
@@ -1553,7 +1570,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
                     cwd=tree.path, journal=journal,
                 )
                 commit_story(story, cwd=tree.path)
@@ -1895,7 +1912,7 @@ def process_story(story, args: argparse.Namespace) -> None:
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
                     journal=journal,
                 )
                 commit_story(story)
@@ -2210,30 +2227,46 @@ def self_test_targeted_recovery() -> list[str]:
         failures.append("a non-test verification failure invented a targeted test")
     transcript = LOG_ROOT / "self-test-targeted-recovery.jsonl"
     transcript.parent.mkdir(parents=True, exist_ok=True)
-    transcript.write_text(
-        json.dumps(
-            {
-                "part": {
-                    "type": "tool",
-                    "state": {
-                        "status": "completed",
-                        "input": {"command": f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}"},
-                        "metadata": {"exit": 0},
-                    },
+    def write_event(command: str, exit_code: int, output: str = "Correctas! - Con error: 0") -> None:
+        transcript.write_text(
+            json.dumps(
+                {
+                    "part": {
+                        "type": "tool",
+                        "state": {
+                            "status": "completed",
+                            "input": {"command": command},
+                            "output": output,
+                            "metadata": {"exit": exit_code},
+                        },
+                    }
                 }
-            }
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    if not targeted_test_passed(transcript, target):
+
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 0)
+    if not recovery_check_passed(transcript, parsed[0]):
         failures.append("a successful targeted test was not recognised")
-    transcript.write_text(
-        transcript.read_text(encoding="utf-8").replace('"exit": 0', '"exit": 1'),
-        encoding="utf-8",
-    )
-    if targeted_test_passed(transcript, target):
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 0, "No test matches the given testcase filter")
+    if recovery_check_passed(transcript, parsed[0]):
+        failures.append("a zero-match targeted test was accepted")
+    write_event(f"dotnet test LANPartyHub.sln --filter FullyQualifiedName={target}", 1)
+    if recovery_check_passed(transcript, parsed[0]):
         failures.append("a failing targeted test was accepted")
+    non_target_failure = non_target[0]
+    write_event("powershell check.ps1", 0, "OK")
+    if not recovery_check_passed(transcript, non_target_failure):
+        failures.append("a successful non-test recovery check was not recognised")
+    expected_prefix = subprocess.list2cmdline(list(failed.argv))
+    if not parsed[0].target_command.startswith(expected_prefix + " "):
+        failures.append("the focused test did not preserve the original verification argv")
+    if "--no-restore" in parsed[0].target_command:
+        failures.append("the focused test added an unsupported no-restore option")
+    review_prompt_text = review_repair_prompt(type("Story", (), {"short_id": "0.0"})(), "BLOCKING: evidence")
+    if "BLOCKING: evidence" not in review_prompt_text:
+        failures.append("the review repair prompt lost its blocking evidence")
     transcript.unlink(missing_ok=True)
     return failures
 
