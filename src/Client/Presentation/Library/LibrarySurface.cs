@@ -148,13 +148,23 @@ public sealed class LibrarySurface : UserControl
     /// va al servidor por ellas (AD-5, AD-22).
     /// </para>
     /// </summary>
-    /// <param name="installations">
-    /// Installations that the client registered, with the decision about their
-    /// playability.
-    /// </param>
+    /// <param name="installations">Installations that the client registered, with the decision about their playability.</param>
     public void ApplyInstallations(IReadOnlyList<InstalledGamePlayability> installations)
     {
         _viewModel.ApplyInstallations(installations);
+
+        Render();
+    }
+
+    /// <summary>
+    /// Applies the decision of a REPAIR IN PROGRESS a la fila del juego que se repara,
+    /// así que la acción «Jugar» queda bloqueada con el motivo VISIBLE (AC2, UX-DR-17,
+    /// UX-DR-18).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is being repaired.</param>
+    public void ApplyRepairInProgress(string gameId)
+    {
+        _viewModel.ApplyRepairInProgress(gameId);
 
         Render();
     }

@@ -145,16 +145,16 @@ public sealed class GameDetailViewModelTests
     [Fact]
     public void The_line_of_the_installed_version_uses_the_text_of_the_microcopy_table()
     {
-        // La línea de la versión instalada dice «Instalado», que es el texto de
-        // InstallationState.Installed en la tabla de microcopy (AC4, AR-8).
+        // La línea de la versión instalada dice «Ya instalado · 1.9.0», que compone el
+        // texto de la tabla de microcopy con la versión EXACTA (AC3, UX-DR-6, AR-8).
         var viewModel = new GameDetailViewModel(
             CreateGame(),
             CatalogViewState.InstalledOutdatedVersion,
             "1.9.0");
 
-        Assert.Equal("Instalado: 1.9.0", viewModel.InstalledVersionText);
+        Assert.Equal("Ya instalado · 1.9.0", viewModel.InstalledVersionText);
         Assert.StartsWith(
-            StateDisplayMap.GetText(InstallationState.Installed),
+            StateDisplayMap.AlreadyInstalledText,
             viewModel.InstalledVersionText,
             StringComparison.Ordinal);
     }

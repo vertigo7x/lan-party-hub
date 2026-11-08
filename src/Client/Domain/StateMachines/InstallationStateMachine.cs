@@ -32,7 +32,20 @@ public sealed class InstallationStateMachine
                 InstallationState.Failed,
             ],
             [InstallationState.Installed] = [],
-            [InstallationState.Repairable] = [],
+
+            // AD-10, AC1: «Reparable» NO es terminal, porque una instalación reparable se
+            // puede REABRIR: la reparación rehace la instalación desde el paquete ya
+            // validado y la máquina vuelve a pasar por `Installing` y por
+            // `ValidatingInstallation` (AC1, AC2).
+            //
+            // La reparación termina en `Installed` o en `Failed`, y NUNCA vuelve a
+            // `Repairable`: si el paquete validado ya no conserva su hash, la instalación
+            // deja de ser reparable (AC1).
+            [InstallationState.Repairable] =
+            [
+                InstallationState.Installing,
+                InstallationState.Failed,
+            ],
             [InstallationState.Failed] = [],
         };
 

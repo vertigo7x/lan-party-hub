@@ -93,6 +93,35 @@ public sealed class LibrarySurfaceViewModel
     /// Notifies that the Biblioteca has to be rendered again.
     /// </summary>
     public void Refresh() => Changed?.Invoke();
+
+    /// <summary>
+    /// Applies the decision of a REPAIR IN PROGRESS a la fila del juego que se repara,
+    /// así que la acción «Jugar» queda bloqueada con el motivo VISIBLE (AC2, UX-DR-17,
+    /// UX-DR-18).
+    ///
+    /// <para>
+    /// La fila se REPONE porque el estado de la reparación vive FUERA de la proyección:
+    /// la proyección se REderiva al terminar, y mientras tanto la fila dice que se está
+    /// reparando (AC2, AC3).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is being repaired.</param>
+    public void ApplyRepairInProgress(string gameId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+
+        foreach (var entry in _entries)
+        {
+            if (!string.Equals(entry.GameId, gameId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            entry.ApplyDecision(PlayabilityDecision.RepairInProgress());
+        }
+
+        Changed?.Invoke();
+    }
 }
 
 /// <summary>
@@ -138,13 +167,28 @@ public sealed class LibraryEntryViewModel
     public GamePlayActionsViewModel Actions { get; }
 
     /// <summary>
+    /// Replaces the decision about the playability of the videogame, así que la fila
+    /// muestra el motivo VISIBLE que le corresponde (AC2, UX-DR-17).
+    /// </summary>
+    /// <param name="decision">The new decision about the playability of the videogame.</param>
+    public void ApplyDecision(PlayabilityDecision decision) => Actions.Apply(decision);
+
+    /// <summary>
     /// Text of the state of the installation, taken from the single table of microcopy
     /// (AC4, AR-8).
     /// </summary>
     public string ValidationStateText => StateDisplayMap.GetText(ValidationState);
 
     /// <summary>
-    /// Text of the line of the installed version (AC2).
+    /// Text of the line of the installed version, composed con la tabla de microcopia
+    /// (AC3, UX-DR-6, AR-8).
+    ///
+    /// <para>
+    /// La insignia dice «Instalado · v1.2»: el texto del estado sale de
+    /// <see cref="StateDisplayMap"/> y la versión se muestra en su forma EXACTA
+    /// (UX-DR-6).
+    /// </para>
     /// </summary>
-    public string InstalledVersionText => $"{ValidationStateText}: {InstalledVersion}";
+    public string InstalledVersionText =>
+        StateDisplayMap.GetInstalledBadge(ValidationState, InstalledVersion);
 }

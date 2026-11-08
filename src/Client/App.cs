@@ -800,6 +800,12 @@ public sealed class App : Avalonia.Application
     /// nuevo» registra la intención de RE-DESCARGAR, así que el puerto de reparación no
     /// recibe nunca una re-descarga (AC1, AC2, AD-1).
     /// </para>
+    /// <para>
+    /// AC1, UX-DR-20: «Reparar» EJECUTA la reparación, que es la ejecución de esta
+    /// historia: la reparación reutiliza el paquete ya validado y NO vuelve a descargar.
+    /// La intención se registra IGUAL, así que el diagnóstico conserva la pulsación del
+    /// jugador (AC1, AC2).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame.</param>
     /// <param name="primary">The PRIMARY action that the player pressed.</param>
@@ -813,6 +819,114 @@ public sealed class App : Avalonia.Application
         await _gameLauncher.IntentService
             .RecordPrimaryAsync(gameId, primary, CancellationToken.None)
             .ConfigureAwait(true);
+
+        // AC1, UX-DR-20: la reparación se EJECUTA aquí, y su ejecución es de CERO RED: el
+        // paquete ya validado y el manifiesto firmado en caché son locales.
+        if (primary == PlayabilityAction.Repair)
+        {
+            await RepairInstallationAsync(gameId).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// REPAIRS an invalid installation from the package that was already validated,
+    /// WITHOUT downloading it again (AC1, UX-DR-20).
+    ///
+    /// <para>
+    /// AC2, UX-DR-17, UX-DR-18: mientras la reparación dura, la acción «Jugar» sigue
+    /// BLOQUEADA con el motivo VISIBLE de la reparación en curso, así que el jugador
+    /// nunca puede lanzar un juego que se está reparando.
+    /// </para>
+    /// <para>
+    /// AC3: al terminar, la insignia y la acción primaria se REderivan de la
+    /// certificación, así que la instalación reparada muestra «Instalado · v1.2» y «Jugar»
+    /// vuelve a ser la primaria (AC3, UX-DR-17).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame whose installation is repaired.</param>
+    /// <returns>A task that completes when the repair has been attempted.</returns>
+    private async Task RepairInstallationAsync(string gameId)
+    {
+        if (_installations is null || _gameLauncher is null)
+        {
+            return;
+        }
+
+        // AC2: la reparación en curso bloquea «Jugar» con su motivo VISIBLE, así que la
+        // decisión se aplica ANTES de que la reparación arranque.
+        ApplyRepairInProgress(gameId);
+
+        try
+        {
+            var installation = await _gameLauncher.Projection
+                .FindInstallationAsync(gameId, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (installation is null)
+            {
+                return;
+            }
+
+            var outcome = await _installations.RepairService
+                .RepairAsync(
+                    gameId,
+                    installation.InstalledVersion,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (outcome.IsRejected)
+            {
+                _uiThread.Post(() => _catalogSurface?.ApplyLaunchError(outcome.Error?.Code));
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La reparación NO puede impedir que el jugador use el cliente: el estado se
+            // REderiva y la instalación vuelve a su estado vigente (AC1).
+        }
+        finally
+        {
+            // AC3: la decisión se REderiva de la certificación, así que la insignia final
+            // y la primaria «Jugar» son las que la certificación declara.
+            await RefreshDecisionsAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Applies the decision of a REPAIR IN PROGRESS, así que la acción «Jugar» queda
+    /// bloqueada con el motivo VISIBLE (AC2, UX-DR-17, UX-DR-18).
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    private void ApplyRepairInProgress(string gameId) =>
+        _uiThread.Post(() =>
+        {
+            _catalogSurface?.ApplyDecision(gameId, PlayabilityDecision.RepairInProgress());
+
+            _librarySurface?.ApplyRepairInProgress(gameId);
+        });
+
+    /// <summary>
+    /// REderiva las decisiones de jugabilidad y las aplica a las dos superficies, así que
+    /// la insignia y la primaria reflejan la certificación vigente (AC3, AC1, AD-11).
+    /// </summary>
+    /// <returns>A task that completes when the decisions have been applied.</returns>
+    private async Task RefreshDecisionsAsync()
+    {
+        var projection = await ProjectPlayabilityAsync().ConfigureAwait(true);
+
+        if (projection is null)
+        {
+            return;
+        }
+
+        var decisions = DecisionsOf(projection);
+
+        _uiThread.Post(() =>
+        {
+            _catalogSurface?.ApplyDecisions(decisions);
+
+            _librarySurface?.ApplyInstallations(projection);
+        });
     }
 
     /// <summary>

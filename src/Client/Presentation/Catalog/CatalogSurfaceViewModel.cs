@@ -395,6 +395,25 @@ public sealed class CatalogSurfaceViewModel
         _decisions.TryGetValue(gameId, out var decision) ? decision : null;
 
     /// <summary>
+    /// Replaces the decision about the playability of ONE videogame, sin tocar las demás
+    /// (AC2, UX-DR-17).
+    ///
+    /// <para>
+    /// La reparación en curso cambia SÓLO la decisión del juego que se repara, así que
+    /// las demás instalaciones conservan la suya (AC2).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="decision">The new decision about the playability of the videogame.</param>
+    public void ApplyDecision(string gameId, PlayabilityDecision decision)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+        ArgumentNullException.ThrowIfNull(decision);
+
+        _decisions[gameId] = decision;
+    }
+
+    /// <summary>
     /// The game whose ficha is open, or <c>null</c> when no ficha is open (AC1).
     /// </summary>
     public GameDescriptor? SelectedGame => _selectedGame;

@@ -54,6 +54,19 @@ public sealed class GamePlayActionsViewModel
     /// </summary>
     public const string DiagnoseActionText = "Diagnosticar";
 
+    /// <summary>
+    /// Text that NAMES the CONSEQUENCE of the repair, así que el jugador sabe lo que va a
+    /// pasar ANTES de que ocurra (AC1, UX-DR-20).
+    ///
+    /// <para>
+    /// La consecuencia se NOMBRA y no se CONFIRMA: la reparación no pide un modal porque
+    /// no destruye trabajo recuperable —reutiliza el paquete ya validado— y una
+    /// confirmación sin consecuencia sería ruido (UX-DR-20, UX-DR-22).
+    /// </para>
+    /// </summary>
+    public const string RepairConsequence =
+        "Se reparará la instalación; la descarga no se repite";
+
     private PlayabilityDecision _decision;
 
     /// <summary>
@@ -113,6 +126,24 @@ public sealed class GamePlayActionsViewModel
     /// Whether the reason of the block is VISIBLE next to the label (AC3, UX-DR-18).
     /// </summary>
     public bool ShowsReason => _decision.ReasonText is not null;
+
+    /// <summary>
+    /// Whether the REPAIR of the installation is IN PROGRESS (AC2, UX-DR-17).
+    /// </summary>
+    public bool IsRepairInProgress =>
+        _decision.ReasonCode == ErrorCatalog.InstallationRepairInProgressCode;
+
+    /// <summary>
+    /// The text that NAMES the CONSEQUENCE of the repair, que se muestra JUNTO a la acción
+    /// «Reparar» (AC1, UX-DR-20).
+    ///
+    /// <para>
+    /// La consecuencia se nombra, NO se confirma: no hay modal, porque la reparación no
+    /// destruye trabajo recuperable y reutiliza el paquete ya validado (UX-DR-20).
+    /// </para>
+    /// </summary>
+    public string? RepairConsequenceText =>
+        IsPrimaryRepair ? RepairConsequence : null;
 
     /// <summary>
     /// The three parts of the error of the block, or <c>null</c> when the action is

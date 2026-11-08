@@ -601,6 +601,11 @@ public static class Program
             // reinicio del cliente (NFR-9).
             var stateStore = new ClientStateStore(context, layout);
 
+            // AC1, UX-DR-20: la REPARACIÓN resuelve el paquete de la VERSIÓN INSTALADA en
+            // el snapshot del catálogo, así que la composición abre su propio acceso a él
+            // sobre la MISMA base de datos (AD-11, AD-22).
+            var snapshotStore = new CatalogSnapshotStore(context);
+
             composition = InstallationComposition.Create(
                 new Uri(startup.ServerAddress, UriKind.Absolute),
                 correlationScope,
@@ -608,7 +613,8 @@ public static class Program
                 stateStore,
                 stateStore,
                 loggerFactory,
-                confirmation);
+                confirmation,
+                snapshotStore);
         }
         catch (Exception exception)
         {
