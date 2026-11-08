@@ -89,6 +89,44 @@ public static class StateDisplayMap
         };
 
     /// <summary>
+    /// Text of the badge of a game that the client ALREADY HAS INSTALLED (UX-DR-6, AC3).
+    ///
+    /// <para>
+    /// La insignia del catálogo dice «Ya instalado» y la de la Biblioteca dice
+    /// «Instalado»: son DOS textos del CONTRATO y no uno inventado por la vista, así que
+    /// viven aquí, en la ÚNICA tabla de microcopia (AD-25, AR-8, R-MVP-7).
+    /// </para>
+    /// </summary>
+    public const string AlreadyInstalledText = "Ya instalado";
+
+    /// <summary>
+    /// Separator between the text of the state and the version that is installed
+    /// (UX-DR-6, AC3).
+    ///
+    /// <para>
+    /// El separador es el punto medio del contrato («Instalado · v1.2»), y no el punto y
+    /// coma de una línea de estado: la insignia compone el texto del estado con la
+    /// versión EXACTA, y los literales no se redondean ni se traducen (UX-DR-6).
+    /// </para>
+    /// </summary>
+    public const string InstalledVersionSeparator = " · ";
+
+    /// <summary>
+    /// Composes the badge of an installation with the text of its state and the version
+    /// that is installed (UX-DR-6, AC3, AR-8).
+    ///
+    /// <para>
+    /// La composición vive AQUÍ, en la tabla de microcopia, así que la vista NO escribe
+    /// ningún texto de estado ni ningún separador por su cuenta (AD-25, R-MVP-7).
+    /// </para>
+    /// </summary>
+    /// <param name="state">State of the installation.</param>
+    /// <param name="installedVersion">Version that is installed, in its EXACT value.</param>
+    /// <returns>The badge of the installation.</returns>
+    public static string GetInstalledBadge(InstallationState state, string installedVersion) =>
+        $"{GetText(state)}{InstalledVersionSeparator}{installedVersion}";
+
+    /// <summary>
     /// Text of the state of a package whose bytes do NOT match the signed manifest: the
     /// package is DAMAGED (AD-8, AC1).
     /// </summary>

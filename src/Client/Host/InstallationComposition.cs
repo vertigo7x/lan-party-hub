@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Install;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.Install;
@@ -50,6 +51,10 @@ namespace LANPartyHub.Client.Host;
         /// composition is built without it. Sin confirmación, la operación privilegiada NO
         /// se ejecuta: es la NO ejecución la que protege al jugador (AC2).
         /// </param>
+        /// <param name="snapshots">
+        /// Port of the persistence of the snapshot of the catalog, que es donde se resuelve
+        /// el paquete de la VERSIÓN INSTALADA que se repara (AC1).
+        /// </param>
         /// <param name="httpClient">
         /// Client of the server of the event, when the composition OWNS it, or <c>null</c>
         /// when the caller does.
@@ -64,6 +69,7 @@ namespace LANPartyHub.Client.Host;
             IInstallPathResolver paths,
             ILoggerFactory loggerFactory,
             IPrivilegedOperationConfirmation? confirmation = null,
+            ICatalogSnapshotStore? snapshots = null,
             HttpClient? httpClient = null)
         {
             ArgumentNullException.ThrowIfNull(manifests);
@@ -95,6 +101,23 @@ namespace LANPartyHub.Client.Host;
                 paths,
                 Executor,
                 loggerFactory.CreateLogger<ManifestTreeWriter>());
+
+            // AC1, UX-DR-20: la REPARACIÓN reutiliza el mismo ejecutor y el mismo
+            // confine que la instalación, y su caso de uso es de CERO RED: localiza el
+            // paquete YA VALIDADO en la carpeta de descargas y el manifiesto FIRMADO en
+            // la caché (AC1, AD-9).
+            //
+            // Sin el snapshot del catálogo la reparación NO puede resolver el paquete de
+            // la versión instalada, así que el caso de uso queda SIN resolver y la
+            // instalación no es reparable (AC1).
+            RepairService = new InstallationRepairService(
+                new ValidatedPackageStore(layout),
+                manifestCache,
+                snapshots ?? EmptyCatalogSnapshotStore.Instance,
+                paths,
+                Tree,
+                stateStore,
+                loggerFactory.CreateLogger<InstallationRepairService>());
 
             Coordinator = new InstallationCoordinator(
                 manifests,
@@ -138,6 +161,12 @@ namespace LANPartyHub.Client.Host;
     public InstallationCoordinator Coordinator { get; }
 
     /// <summary>
+    /// The case of use of the REPAIR of an invalid installation, que reutiliza el paquete
+    /// ya validado SIN volver a descargar (AC1, UX-DR-20).
+    /// </summary>
+    public InstallationRepairService RepairService { get; }
+
+    /// <summary>
     /// Builds the composition of the installations over the client HTTP surface of the
     /// event server, with the anchor reader that the store of the client is (AD-2,
     /// AD-27).
@@ -159,6 +188,10 @@ namespace LANPartyHub.Client.Host;
     /// composition is built without interfaz. Sin confirmación, la operación privilegiada
     /// NO se ejecuta (AC2).
     /// </param>
+    /// <param name="snapshots">
+    /// Port of the persistence of the snapshot of the catalog, que es donde se resuelve el
+    /// paquete de la VERSIÓN INSTALADA que se repara (AC1).
+    /// </param>
     /// <returns>The composition of the installations.</returns>
     public static InstallationComposition Create(
         Uri serverAddress,
@@ -167,7 +200,8 @@ namespace LANPartyHub.Client.Host;
         IClientStateStore stateStore,
         ITrustAnchorReader trustAnchorReader,
         ILoggerFactory loggerFactory,
-        IPrivilegedOperationConfirmation? confirmation = null)
+        IPrivilegedOperationConfirmation? confirmation = null,
+        ICatalogSnapshotStore? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -199,6 +233,7 @@ namespace LANPartyHub.Client.Host;
             new InstallPathResolver(layout),
             loggerFactory,
             confirmation,
+            snapshots,
             httpClient);
     }
 

@@ -1,0 +1,38 @@
+{
+  "story": "8-3-reparar-sin-volver-a-descargar",
+  "base": "70c0f593ec6f0cca3762d2cdfa36234df9e04d81",
+  "risk": [
+    "instalaci\u00f3n",
+    "red o host",
+    "contrato compartido"
+  ],
+  "paths": [
+    "src/Client/App.cs",
+    "src/Client/Application/CatalogSync/EmptyCatalogSnapshotStore.cs",
+    "src/Client/Application/GameLauncher/PlayabilityDecision.cs",
+    "src/Client/Application/GameLauncher/PlayabilityProjection.cs",
+    "src/Client/Application/Install/InstallationRepairService.cs",
+    "src/Client/Application/Install/RepairOutcome.cs",
+    "src/Client/Application/Ports/IValidatedPackageStore.cs",
+    "src/Client/Domain/StateMachines/InstallationStateMachine.cs",
+    "src/Client/Host/InstallationComposition.cs",
+    "src/Client/Infrastructure/Filesystem/ValidatedPackageStore.cs",
+    "src/Client/Presentation/Catalog/CatalogSurface.cs",
+    "src/Client/Presentation/Catalog/CatalogSurfaceViewModel.cs",
+    "src/Client/Presentation/Catalog/GameDetailViewModel.cs",
+    "src/Client/Presentation/GameLauncher/GamePlayActionsView.cs",
+    "src/Client/Presentation/GameLauncher/GamePlayActionsViewModel.cs",
+    "src/Client/Presentation/Library/LibrarySurface.cs",
+    "src/Client/Presentation/Library/LibrarySurfaceViewModel.cs",
+    "src/Client/Program.cs",
+    "src/Shared/Contracts/ErrorCatalog.cs",
+    "src/Shared/Contracts/StateDisplayMap.cs",
+    "tests/IntegrationTests/InstallationRepairTests.cs",
+    "tests/UnitTests/GameDetailViewModelTests.cs",
+    "tests/UnitTests/InstallationRepairServiceTests.cs",
+    "tests/UnitTests/InstallationStateMachineTests.cs",
+    "tests/UnitTests/LibrarySurfaceViewModelTests.cs",
+    "tests/UnitTests/RepairPresentationTests.cs"
+  ],
+  "state": "complete"
+}

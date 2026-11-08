@@ -36,6 +36,7 @@ public sealed class GamePlayActionsView : UserControl
     private readonly Grid _playCell;
     private readonly Border _playFocus;
     private readonly TextBlock _reason;
+    private readonly TextBlock _consequence;
     private readonly Button _primary;
     private readonly Button _secondary;
     private readonly StackPanel _actions;
@@ -123,6 +124,16 @@ public sealed class GamePlayActionsView : UserControl
             IsVisible = false,
         };
 
+        // AC1, UX-DR-20: la CONSECUENCIA de la reparación se NOMBRA junto a la acción
+        // «Reparar», sin modal: el jugador sabe lo que va a pasar antes de que ocurra.
+        _consequence = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
+            IsVisible = false,
+        };
+
         // La primaria y la secundaria son SEAMS habilitadas: su ejecución vive en 8.3 y
         // en 5.x/6.x, y aquí el puerto registra la intención (AC1, AC2).
         _primary = new Button
@@ -175,6 +186,7 @@ public sealed class GamePlayActionsView : UserControl
             Children =
             {
                 _actions,
+                _consequence,
                 _reason,
             },
         };
@@ -200,6 +212,12 @@ public sealed class GamePlayActionsView : UserControl
     /// UX-DR-18).
     /// </summary>
     public TextBlock ReasonText => _reason;
+
+    /// <summary>
+    /// The VISIBLE consequence of the repair, so it can be inspected from the outside
+    /// (AC1, UX-DR-20).
+    /// </summary>
+    public TextBlock ConsequenceText => _consequence;
 
     /// <summary>
     /// The PRIMARY action of the surface, so it can be inspected and driven from the
@@ -286,6 +304,14 @@ public sealed class GamePlayActionsView : UserControl
         _reason.Text = reason ?? string.Empty;
 
         _reason.IsVisible = reason is not null;
+
+        // AC1, UX-DR-20: la consecuencia de la reparación se NOMBRA junto a la primaria,
+        // sin modal: el jugador sabe que la descarga no se repite.
+        var consequence = _viewModel.RepairConsequenceText;
+
+        _consequence.Text = consequence ?? string.Empty;
+
+        _consequence.IsVisible = consequence is not null;
 
         // La primaria y la secundaria se pintan SIEMPRE habilitadas: son seams, y su
         // ejecución vive en otras historias (AC1, AC2).

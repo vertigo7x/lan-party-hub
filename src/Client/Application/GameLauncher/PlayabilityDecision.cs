@@ -58,6 +58,27 @@ public sealed record PlayabilityDecision
     };
 
     /// <summary>
+    /// The REPAIR of the installation is IN PROGRESS, así que la acción «Jugar» sigue
+    /// BLOQUEADA con su motivo VISIBLE hasta que la instalación se valida (AC2,
+    /// UX-DR-17, UX-DR-18).
+    ///
+    /// <para>
+    /// La reparación en curso es un estado con su PROPIA entrada del catálogo de errores,
+    /// así que el motivo visible NO se inventa y NO es el de la instalación incompleta
+    /// (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    /// <returns>The decision of the repair in progress.</returns>
+    public static PlayabilityDecision RepairInProgress() => new()
+    {
+        IsBlocked = true,
+        ReasonCode = ErrorCatalog.InstallationRepairInProgressCode,
+        ReasonText = ErrorCatalog.Resolve(ErrorCatalog.InstallationRepairInProgressCode).Message,
+        PrimaryAction = PlayabilityAction.Repair,
+        SecondaryAction = null,
+    };
+
+    /// <summary>
     /// Whether the action «Jugar» is BLOCKED (AC1).
     /// </summary>
     public bool IsBlocked { get; init; }

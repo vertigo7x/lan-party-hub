@@ -72,6 +72,51 @@ public sealed class PlayabilityProjection
 
         return projected;
     }
+
+    /// <summary>
+    /// Finds the installation that the client registered for ONE videogame, con su
+    /// decisión sobre la jugabilidad (AC1, AC2, AC8).
+    ///
+    /// <para>
+    /// La lectura es LOCAL: la reparación necesita la VERSIÓN INSTALADA para resolver el
+    /// paquete que repara, y no va al servidor por ella (AD-5, AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The installation of the videogame, or <c>null</c> when the client has none.
+    /// </returns>
+    public async Task<InstalledGamePlayability?> FindInstallationAsync(
+        string gameId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+
+        var installations = await _stateStore
+            .LoadInstallationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var installation in installations)
+        {
+            if (!string.Equals(installation.GameId, gameId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var inspection = await _inspector
+                .InspectAsync(installation.GameId, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new InstalledGamePlayability(
+                installation.GameId,
+                installation.InstalledVersion,
+                installation.ValidationState,
+                PlayabilityResolver.Resolve(inspection?.Verdict));
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

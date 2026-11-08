@@ -154,15 +154,15 @@ public sealed class GameDetailViewModel
     /// installation.
     ///
     /// <para>
-    /// The word of the line es el de la tabla de microcopy
-    /// (<see cref="InstallationState.Installed"/>) y NUNCA uno escrito en la vista
-    /// (AC4, AR-8).
+    /// La insignia dice «Ya instalado · v1.2»: el texto sale de la tabla de microcopia
+    /// <see cref="StateDisplayMap"/> y NUNCA uno escrito en la vista, y la versión se
+    /// muestra en su forma EXACTA (AC3, UX-DR-6, AR-8).
     /// </para>
     /// </summary>
     public string? InstalledVersionText =>
         InstalledVersion is null
             ? null
-            : $"{StateDisplayMap.GetText(InstallationState.Installed)}: {InstalledVersion}";
+            : $"{StateDisplayMap.AlreadyInstalledText}{StateDisplayMap.InstalledVersionSeparator}{InstalledVersion}";
 
     /// <summary>
     /// Text of the requirements of the game, ready to show (AC2).

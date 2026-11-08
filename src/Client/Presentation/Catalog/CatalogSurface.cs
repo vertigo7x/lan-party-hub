@@ -221,13 +221,31 @@ public sealed class CatalogSurface : UserControl
         _viewModel.ApplyInstallations(installations);
 
     /// <summary>
-    /// Replaces the decision about the playability of every installation, which the ficha
+    /// Replaces the decision about the playability of EVERY installation, which the ficha
     /// paints como el motivo VISIBLE del bloqueo de «Jugar» (AC1, AC2, AC3).
     /// </summary>
     /// <param name="decisions">Decisions keyed by the identifier of the videogame.</param>
     public void ApplyDecisions(IReadOnlyDictionary<string, PlayabilityDecision> decisions)
     {
         _viewModel.ApplyDecisions(decisions);
+
+        RenderDetail(_viewModel.BuildGameDetail());
+    }
+
+    /// <summary>
+    /// Replaces the decision about the playability of ONE videogame, sin tocar las demás
+    /// (AC2, UX-DR-17).
+    ///
+    /// <para>
+    /// La reparación en curso cambia SÓLO la decisión del juego que se repara, así que
+    /// las demás instalaciones conservan la suya (AC2).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="decision">The new decision about the playability of the videogame.</param>
+    public void ApplyDecision(string gameId, PlayabilityDecision decision)
+    {
+        _viewModel.ApplyDecision(gameId, decision);
 
         RenderDetail(_viewModel.BuildGameDetail());
     }

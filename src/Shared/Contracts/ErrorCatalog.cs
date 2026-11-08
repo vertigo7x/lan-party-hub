@@ -357,6 +357,19 @@ public static class ErrorCatalog
     /// </summary>
     public const string InstallationPackageMismatchCode = "INSTALLATION_PACKAGE_MISMATCH";
 
+    /// <summary>
+    /// The REPAIR of an invalid installation is IN PROGRESS, so the action «Jugar» stays
+    /// BLOCKED with the reason VISIBLE next to its label (FR-8, UX-DR-17, UX-DR-18).
+    ///
+    /// <para>
+    /// Es un código DISTINTO del de la instalación INCOMPLETA y del del ejecutable
+    /// ausente: una reparación en curso, una instalación a medias y un binario que no
+    /// está son TRES diagnósticos distintos, así que la métrica de errores por código no
+    /// los mezcla (AD-15, AD-25).
+    /// </para>
+    /// </summary>
+    public const string InstallationRepairInProgressCode = "INSTALLATION_REPAIR_IN_PROGRESS";
+
     private static readonly ApiError[] CatalogEntries =
     [
         new(
@@ -634,6 +647,11 @@ public static class ErrorCatalog
             "No se puede jugar: el paquete no coincide con la validación",
             "El paquete que respalda la instalación no conserva el hash con el que se validó contra el ancla de confianza, así que el cliente no ejecuta ningún binario de esa instalación.",
             "Repara la instalación o vuelve a descargar el juego: no se ha ejecutado ningún proceso."),
+        new(
+            InstallationRepairInProgressCode,
+            "No se puede jugar: la reparación está en curso",
+            "La instalación se está reparando desde el paquete ya validado, así que el cliente no ejecuta ningún binario de esa instalación.",
+            "Espera a que la reparación termine: la descarga no se repite."),
         new(
             UnknownErrorCode,
             "Se produjo un error no identificado",

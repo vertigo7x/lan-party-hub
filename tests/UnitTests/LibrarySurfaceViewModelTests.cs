@@ -75,7 +75,7 @@ public sealed class LibrarySurfaceViewModelTests
         Assert.Equal(GameId, entry.GameId);
         Assert.Equal("1.0.0", entry.InstalledVersion);
         Assert.Equal(StateDisplayMap.GetText(InstallationState.Installed), entry.ValidationStateText);
-        Assert.Equal("Instalado: 1.0.0", entry.InstalledVersionText);
+        Assert.Equal("Instalado · 1.0.0", entry.InstalledVersionText);
     }
 
     [Fact]
