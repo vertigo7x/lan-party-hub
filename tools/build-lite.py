@@ -90,6 +90,9 @@ CONTEXT_MIN_LENGTH = 300
 CONTEXT_PROMPT_MAX_CHARS = 24000
 EPIC_CONTEXT_MAX_CHARS = 12000
 CONTEXT_PLAN_DIGEST_PREFIX = "<!-- build-lite-plan-sha256: "
+PLAN_SOURCE_MAX_CHARS = 18000
+PLAN_ARTIFACT_DEADLINE_SECONDS = 90
+REVIEW_PACKET_MAX_CHARS = 140000
 
 # ---------------------------------------------------------------------------
 # The structured state of a phase
@@ -333,6 +336,7 @@ class PlanMetadata:
     writes: tuple[str, ...] = ()
     shared_surfaces: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
+    schema_changes: bool = False
 
     def footprint(self) -> frozenset[str]:
         """The paths and surfaces this story touches."""
@@ -389,12 +393,16 @@ def extract_plan_metadata(plan: Path) -> tuple[PlanMetadata | None, str]:
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 return None, f"the plan metadata key '{key}' is not a list of strings"
             parsed[key] = tuple(item.strip() for item in value if item.strip())
+        schema_changes = data.get("schema_changes", False)
+        if not isinstance(schema_changes, bool):
+            return None, "the plan metadata key 'schema_changes' must be a boolean"
         return (
             PlanMetadata(
                 reads=parsed["reads"],
                 writes=parsed["writes"],
                 shared_surfaces=parsed["shared_surfaces"],
                 depends_on=parsed["depends_on"],
+                schema_changes=schema_changes,
             ),
             "",
         )
@@ -463,7 +471,11 @@ def is_complete_plan(plan: Path) -> bool:
         content = plan.read_text(encoding="utf-8")
     except OSError:
         return False
-    return len(content.strip()) >= 300 and all(section in content for section in ("# Story", "## Alcance", "## Ficheros"))
+    return (
+        len(content.strip()) >= 300
+        and len(content.split()) <= 500
+        and all(section in content for section in ("# Story", "## Alcance", "## Ficheros"))
+    )
 
 
 def changed_paths(base: str, cwd: Path | None = None) -> list[str]:
@@ -520,6 +532,7 @@ def run_phase(
     progress: "ImplementationProgress | None" = None,
     progress_window_minutes: int = 0,
     poll_seconds: float = PHASE_POLL_SECONDS,
+    artifact_path: Path | None = None,
 ) -> PhaseOutcome:
     """Run a bounded provider phase; a retry is technical only, never a new loop.
 
@@ -538,6 +551,7 @@ def run_phase(
             progress=progress,
             progress_window=progress_window_minutes * 60,
             poll_seconds=poll_seconds,
+            artifact_path=artifact_path,
         )
         state = state_for_exit_code(code)
         if journal is not None:
@@ -575,6 +589,7 @@ def watch_process(
     progress: "ImplementationProgress | None" = None,
     progress_window: float = 0.0,
     poll_seconds: float = PHASE_POLL_SECONDS,
+    artifact_path: Path | None = None,
 ) -> tuple[int, float, list[dict]]:
     """Run a command and stop it when it stops making progress.
 
@@ -605,6 +620,21 @@ def watch_process(
             except subprocess.TimeoutExpired:
                 pass
             if timeout is not None and time.time() - started > timeout:
+                legacy._kill_process_tree(process)
+                wait_quietly(process)
+                code = EXIT_TIMEOUT
+                break
+            if artifact_path is not None and is_complete_plan(artifact_path):
+                metadata, _ = extract_plan_metadata(artifact_path)
+                if metadata is not None:
+                    log("plan artifact complete; ending the planner session")
+                    legacy._kill_process_tree(process)
+                    wait_quietly(process)
+                    code = 0
+                    break
+            if (artifact_path is not None and time.time() - started > PLAN_ARTIFACT_DEADLINE_SECONDS
+                    and not is_complete_plan(artifact_path)):
+                log(f"plan did not produce a complete artifact within {PLAN_ARTIFACT_DEADLINE_SECONDS} seconds")
                 legacy._kill_process_tree(process)
                 wait_quietly(process)
                 code = EXIT_TIMEOUT
@@ -804,17 +834,27 @@ class ImplementationProgress:
 
 
 def plan_prompt(story, plan: Path) -> str:
+    section = extract_story_section(story)
+    epic_path = legacy.ARTIFACTS_DIR / f"epic-{story.epic}-context.md"
+    epic_context = epic_path.read_text(encoding="utf-8") if epic_path.exists() else "(no existe contexto compilado)"
+    sources = f"Historia:\n{section}\n\nContexto de épica:\n{epic_context}"
+    if len(sources) > PLAN_SOURCE_MAX_CHARS:
+        raise legacy.DriverError(f"story {story.short_id} planning sources exceed the bounded prompt; split or condense the epic context")
     return f"""Planifica exclusivamente la Story {story.short_id}: {story.title}.
-Lee su sección en {relative(legacy.EPICS_FILE)} y el contexto compilado de la épica si existe.
-Escribe un plan breve en {relative(plan)} con: alcance, ficheros concretos, tareas ordenadas,
-pruebas, y riesgos de contrato/persistencia/red/instalación/seguridad. No implementes código,
-no leas el backlog entero y no solicites aprobación. El plan debe caber en 500 palabras.
+La evidencia que necesitas ya está copiada debajo. Tu PRIMERA acción debe escribir un plan
+completo en {relative(plan)} en menos de {PLAN_ARTIFACT_DEADLINE_SECONDS} segundos.
+Incluye alcance, ficheros concretos, tareas ordenadas, pruebas y riesgos. Máximo 500 palabras.
+No explores el repositorio, no leas el backlog, no lances subagentes, no implementes código,
+no solicites aprobación y no amplíes el plan después de escribirlo. Si la evidencia no permite
+concretar una ruta, declara el bloqueo en el plan: no adivines ni explores.
 
 El plan tiene que incluir un bloque ```json con las claves `reads`, `writes`, `shared_surfaces`
 y `depends_on`: son las rutas que la historia lee, las que escribe, las superficies compartidas
 que toca (contrato, persistencia, red, instalación, seguridad o firma) y las historias de las que
-depende. Sin ese bloque la historia se ejecuta sola, así que decláralo aunque la superficie sea
-interna y vacía."""
+depende. Declara además `schema_changes` (booleano): true si cambia el esquema persistido.
+Sin el bloque la historia se ejecuta sola.
+
+{sources}"""
 
 
 def implementation_prompt(story, plan: Path, context: Path) -> str:
@@ -1145,7 +1185,10 @@ class VerificationFailure:
 
 def repair_prompt(story, failures: Sequence[VerificationFailure]) -> str:
     evidence = "\n\n".join(
-        f"### {failure.label}\nComando fallido: `{failure.command}`\n{failure.evidence}"
+        f"### {failure.label}\n"
+        + ("Puerta interna: el driver la volverá a comprobar.\n" if failure.label == "migration contract"
+           else f"Comando fallido: `{failure.command}`\n")
+        + failure.evidence
         for failure in failures
     )
     targeted = [failure for failure in failures if failure.target_test]
@@ -1154,7 +1197,9 @@ def repair_prompt(story, failures: Sequence[VerificationFailure]) -> str:
         + "; ".join(f"`{failure.target_command}`" for failure in targeted)
         + ". No hagas exploración abierta ni ejecutes la batería completa: el driver la ejecuta después."
         if targeted
-        else "Después del cambio, ejecuta el comando fallido pertinente y deja evidencia verde. No ejecutes la batería completa salvo que ese mismo comando sea la única comprobación demostrable: el driver la ejecuta después."
+        else "Después del cambio, ejecuta cada comando fallido real y deja evidencia verde. "
+             "Para la puerta interna de migraciones, añade la migración versionada; el driver la comprueba. "
+             "No ejecutes la batería completa: el driver la ejecuta después."
     )
     return f"""Repara exclusivamente el fallo confirmado de la Story {story.short_id}.
 Evidencia reproducible:
@@ -1176,16 +1221,36 @@ modifiques alcance ajeno."""
 def review_prompt(story, diff_file: Path, risk: Risk) -> str:
     reasons = ", ".join(risk.reasons)
     return f"""Revisa el diff de la Story {story.short_id} solo por estos riesgos: {reasons}.
-Lee {relative(diff_file)} y los hunks necesarios. Responde exactamente `OK` si no hay un defecto
-S0/S1 confirmado. Si lo hay, responde una sola línea `BLOCKING: <evidencia verificable y arreglo
+Lee {relative(diff_file)}: enumera todos los archivos y contiene solo los hunks sensibles.
+No explores el repositorio ni ejecutes pruebas; para confirmar un consumidor lee como máximo tres
+archivos concretos. Responde exactamente `OK` si no hay un defecto S0/S1 confirmado.
+Si lo hay, responde una sola línea `BLOCKING: <evidencia verificable y arreglo
 local>`; no inventes hallazgos, no propongas mejoras, no clasifiques hipótesis, no modifiques
 ficheros ni lances subagentes."""
 
 
-def write_diff(base: str, output: Path, cwd: Path | None = None) -> None:
+def write_review_packet(base: str, paths: Sequence[str], output: Path, cwd: Path | None = None) -> None:
+    """Bound the review to sensitive changes without hiding the other paths."""
+    sensitive = [
+        path for path in paths if any(marker.lower() in path.lower() for marker, _ in SENSITIVE_PATHS)
+        or path.startswith("src/Client/Infrastructure/Networking/")
+        or path.startswith(("src/Server/Application/", "src/Client/Application/",
+                            "src/Server/Domain/", "src/Client/Domain/"))
+    ]
+    if not sensitive:
+        raise legacy.DriverError("review requested without a sensitive changed path")
+    result = legacy.git("diff", "--unified=3", "--no-ext-diff", f"{base}..HEAD", "--", *sensitive,
+                        check=False, cwd=cwd)
+    if not result.ok:
+        raise legacy.DriverError("cannot generate the sensitive review packet")
+    packet = "Changed paths (including changes not shown below):\n" + "\n".join(paths)
+    packet += "\n\nSensitive changed hunks:\n" + result.stdout
+    if len(packet) > REVIEW_PACKET_MAX_CHARS:
+        raise legacy.DriverError(
+            f"sensitive review packet exceeds {REVIEW_PACKET_MAX_CHARS} characters; split the story or review manually"
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
-    result = legacy.git("diff", "--binary", "--no-ext-diff", f"{base}..HEAD", check=False, cwd=cwd)
-    output.write_text(result.stdout, encoding="utf-8")
+    output.write_text(packet, encoding="utf-8")
 
 
 def merged_commit_from_pr(payload: str) -> str:
@@ -1213,18 +1278,57 @@ def blocking_review_line(transcript: str) -> str:
 
 def review_result(log_path: Path) -> str:
     if not log_path.exists():
-        return ""
+        raise legacy.DriverError("review produced no transcript")
     session, transcript = legacy.parse_skill_output(log_path)
     del session
-    return blocking_review_line(transcript)
+    blocking = blocking_review_line(transcript)
+    if blocking:
+        return blocking
+    if transcript.strip() == "OK":
+        return ""
+    raise legacy.DriverError("review produced no explicit OK or BLOCKING verdict")
 
 
 def verification_commands() -> tuple:
     return tuple(command for command in legacy.VERIFICATION_COMMANDS if command.label != "build-loop self test")
 
 
+def migration_gaps(paths: Sequence[str], metadata: PlanMetadata | None) -> list[str]:
+    """Fail closed on entity/schema changes without a versioned migration."""
+    gaps = []
+    for owner in ("Server", "Client"):
+        prefix = f"src/{owner}/Infrastructure/Persistence/"
+        changed_entity = any(path.startswith(prefix + "Entities/") for path in paths)
+        changed_migration = any(
+            path.startswith(prefix + "Migrations/") and path.endswith(".cs")
+            and not path.endswith(".Designer.cs") and "ModelSnapshot" not in path
+            for path in paths
+        )
+        if changed_entity and not changed_migration:
+            gaps.append(f"{owner}: persistence entity changed without a versioned migration")
+    if metadata is not None and metadata.schema_changes and not any(
+        "/Migrations/" in path and path.endswith(".cs")
+        and not path.endswith(".Designer.cs") and "ModelSnapshot" not in path
+        for path in paths
+    ):
+        gaps.append("the plan declares schema changes but the story has no versioned migration")
+    return gaps
+
+
 def run_verifications(log_dir: Path, cwd: Path | None = None) -> list[tuple]:
     results = []
+    base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=cwd).stdout.strip()
+    paths = changed_paths(base, cwd=cwd)
+    # A missing migration is not visible to the compiler or an unrelated test.
+    # Repair and post-rebase logs are nested below the story's log directory.
+    story_label = log_dir.relative_to(LOG_ROOT).parts[0]
+    metadata, _ = extract_plan_metadata(PLAN_ROOT / f"{story_label}.md")
+    gaps = migration_gaps(paths, metadata)
+    if gaps:
+        results.append(("migration contract", legacy.CommandResult(
+            argv=("build-lite", "migration-contract"), code=1, stdout="; ".join(gaps),
+        )))
+        return results
     own = legacy.run_command(
         ("uv", "run", "tools/build-lite.py", "--self-test"),
         log_path=log_dir / "verify-build-lite.log",
@@ -1239,6 +1343,20 @@ def run_verifications(log_dir: Path, cwd: Path | None = None) -> list[tuple]:
             cwd=cwd or REPO_ROOT,
         )
         results.append((command.label, result))
+        if command.label == "dotnet build" and not result.ok:
+            return results
+        if command.label == "dotnet build" and any(
+            path in ("src/Server/Host/CatalogHub.cs", "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs")
+            for path in paths
+        ):
+            hub_check = legacy.run_command(
+                ("dotnet", "test", "tests/UnitTests/LANPartyHub.UnitTests.csproj", "--no-restore",
+                 "--filter", "FullyQualifiedName~ClientStateHubMethodNameTests"),
+                log_path=log_dir / "verify-hub-contract.log", cwd=cwd or REPO_ROOT,
+            )
+            results.append(("hub contract test", hub_check))
+            if not hub_check.ok:
+                return results
     return results
 
 
@@ -1369,6 +1487,12 @@ def verify_or_repair(
         journal=journal,
     )
     for failure in failures:
+        if failure.label == "migration contract":
+            base = legacy.git("rev-parse", f"origin/{BASE_BRANCH}", cwd=cwd).stdout.strip()
+            metadata, _ = extract_plan_metadata(PLAN_ROOT / f"{story.label}.md")
+            if migration_gaps(changed_paths(base, cwd=cwd), metadata):
+                raise legacy.DriverError("targeted recovery did not add the required versioned migration")
+            continue
         if not recovery_check_passed(outcome.log or Path(), failure):
             raise legacy.DriverError(
                 f"targeted recovery did not demonstrate a passing check for {failure.label}"
@@ -1553,13 +1677,14 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
             raise legacy.DriverError("the worker changed files outside its declared plan footprint")
         risk = classify_risk(paths)
         diff_file = log_dir / "review.diff"
-        write_diff(base, diff_file, cwd=tree.path)
+        write_review_packet(base, paths, diff_file, cwd=tree.path)
         worker_diff_file = tree.path / relative(diff_file)
         worker_diff_file.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(diff_file, worker_diff_file)
         if risk.required:
             outcome = run_phase(
-                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10,
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=5,
+                retries=1,
                 cwd=tree.path, journal=journal,
             )
             blocking = review_result(outcome.log or Path())
@@ -1570,7 +1695,8 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=15,
+                    retries=1,
                     cwd=tree.path, journal=journal,
                 )
                 commit_story(story, cwd=tree.path)
@@ -1862,7 +1988,7 @@ def process_story(story, args: argparse.Namespace) -> None:
         try:
             run_phase(
                 "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
-                journal=journal,
+                journal=journal, artifact_path=plan,
             )
         except legacy.DriverError:
             if not is_complete_plan(plan):
@@ -1898,10 +2024,11 @@ def process_story(story, args: argparse.Namespace) -> None:
             raise legacy.DriverError("Build Lite produced no story change")
         risk = classify_risk(paths)
         diff_file = log_dir / "review.diff"
-        write_diff(base, diff_file)
+        write_review_packet(base, paths, diff_file)
         if risk.required:
             outcome = run_phase(
-                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=10,
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=5,
+                retries=1,
                 journal=journal,
             )
             blocking = review_result(outcome.log or Path())
@@ -1912,7 +2039,8 @@ def process_story(story, args: argparse.Namespace) -> None:
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=30,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=15,
+                    retries=1,
                     journal=journal,
                 )
                 commit_story(story)
@@ -1999,7 +2127,7 @@ def plan_story(story) -> tuple[PlanMetadata | None, str]:
         try:
             run_phase(
                 "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
-                journal=journal,
+                journal=journal, artifact_path=plan,
             )
         except legacy.DriverError:
             if not is_complete_plan(plan):
@@ -2178,11 +2306,33 @@ def self_test() -> int:
         failures.append("a merged squash commit was not parsed")
     if merged_commit_from_pr('{"state":"OPEN","mergeCommit":{"oid":"abc"}}'):
         failures.append("an open pull request was parsed as merged")
+    if IMPLEMENT_MODEL != "minimax-coding-plan/MiniMax-M3":
+        failures.append("the final implementation/repair model must remain MiniMax M3")
+    if migration_gaps(["src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs"], None) != [
+        "Server: persistence entity changed without a versioned migration"
+    ]:
+        failures.append("a changed entity without a migration was accepted")
+    if migration_gaps([
+        "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
+        "src/Server/Infrastructure/Persistence/Migrations/20261109_ClientInstallationView.cs",
+    ], PlanMetadata(schema_changes=True)):
+        failures.append("a versioned schema migration was rejected")
+    if not migration_gaps([
+        "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
+        "src/Server/Infrastructure/Persistence/Migrations/20261109_ClientInstallationView.Designer.cs",
+    ], PlanMetadata(schema_changes=True)):
+        failures.append("a migration designer was mistaken for the versioned migration")
+    if not migration_gaps(["src/Server/Infrastructure/Persistence/CatalogDbContext.cs"],
+                          PlanMetadata(schema_changes=True)):
+        failures.append("a declared schema change without a migration was accepted")
     self_test_plan = PLAN_ROOT / "self-test-plan.md"
     self_test_plan.parent.mkdir(parents=True, exist_ok=True)
     self_test_plan.write_text("# Story 0.0\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
     if not is_complete_plan(self_test_plan):
         failures.append("a complete plan was rejected")
+    self_test_plan.write_text("# Story 0.0\n## Alcance\n" + "palabra " * 501 + "\n## Ficheros\n", encoding="utf-8")
+    if is_complete_plan(self_test_plan):
+        failures.append("an oversized plan was accepted")
     self_test_plan.unlink(missing_ok=True)
     if implementation_paths([".build-lite/plans/3-1.md"]):
         failures.append("Build Lite bookkeeping was parsed as implementation work")
@@ -2190,6 +2340,8 @@ def self_test() -> int:
         failures.append("preserved implementation work was not detected")
 
     failures.extend(self_test_scheduler())
+    failures.extend(self_test_plan_limits())
+    failures.extend(self_test_review_packet())
     failures.extend(self_test_context())
     failures.extend(self_test_phases())
     failures.extend(self_test_targeted_recovery())
@@ -2200,6 +2352,79 @@ def self_test() -> int:
         return 1
     print("the build-lite self test passed")
     return 0
+
+
+def self_test_plan_limits() -> list[str]:
+    """A completed plan ends the worker early; silence fails before five minutes."""
+    failures: list[str] = []
+    plan = PLAN_ROOT / "self-test-artifact-deadline.md"
+    log_path = LOG_ROOT / "self-test-artifact-deadline.jsonl"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.unlink(missing_ok=True)
+    body = (
+        "# Story 0.0\n\n## Alcance\n" + "x" * 300 + "\n\n## Ficheros\n"
+        + '```json\n{"reads":[],"writes":[],"shared_surfaces":[],"depends_on":[]}\n```\n'
+    )
+    try:
+        script = "import pathlib,time; pathlib.Path(" + repr(str(plan)) + ").write_text(" + repr(body) + ", encoding='utf-8'); time.sleep(10)"
+        code, seconds, _ = watch_process(
+            (sys.executable, "-c", script), log_path, timeout=5, cwd=REPO_ROOT,
+            poll_seconds=0.1, artifact_path=plan,
+        )
+        if code != 0 or seconds >= 5:
+            failures.append("a complete plan did not end its provider phase early")
+        plan.unlink(missing_ok=True)
+        original = globals()["PLAN_ARTIFACT_DEADLINE_SECONDS"]
+        globals()["PLAN_ARTIFACT_DEADLINE_SECONDS"] = 0.2
+        try:
+            code, seconds, _ = watch_process(
+                (sys.executable, "-c", "import time; time.sleep(10)"), log_path,
+                timeout=5, cwd=REPO_ROOT, poll_seconds=0.1, artifact_path=plan,
+            )
+            if code != EXIT_TIMEOUT or seconds >= 5:
+                failures.append("a planner without an artifact was not stopped early")
+        finally:
+            globals()["PLAN_ARTIFACT_DEADLINE_SECONDS"] = original
+    finally:
+        plan.unlink(missing_ok=True)
+        log_path.unlink(missing_ok=True)
+    return failures
+
+
+def self_test_review_packet() -> list[str]:
+    """Review only sensitive hunks, name omitted files, and fail closed on size."""
+    failures: list[str] = []
+    packet = LOG_ROOT / "self-test-review-packet.diff"
+    paths = ["src/Server/Host/CatalogHub.cs", "src/Server/Presentation/Clients/ClientsWindow.cs"]
+    original_git = legacy.git
+    original_limit = REVIEW_PACKET_MAX_CHARS
+
+    def fake_git(*args, **kwargs):
+        del kwargs
+        if paths[0] not in args or paths[1] in args:
+            raise AssertionError("review packet requested the wrong changed paths")
+        return legacy.CommandResult(argv=args, code=0, stdout="diff --git a/CatalogHub.cs b/CatalogHub.cs\n+fixed\n")
+
+    legacy.git = fake_git
+    try:
+        write_review_packet("baseline", paths, packet)
+        contents = packet.read_text(encoding="utf-8")
+        if paths[1] not in contents or "+fixed" not in contents:
+            failures.append("the review packet hid a changed path or a sensitive hunk")
+        globals()["REVIEW_PACKET_MAX_CHARS"] = 10
+        try:
+            try:
+                write_review_packet("baseline", paths, packet)
+            except legacy.DriverError:
+                pass
+            else:
+                failures.append("an oversized sensitive review packet was accepted")
+        finally:
+            globals()["REVIEW_PACKET_MAX_CHARS"] = original_limit
+    finally:
+        legacy.git = original_git
+        packet.unlink(missing_ok=True)
+    return failures
 
 
 def self_test_targeted_recovery() -> list[str]:
