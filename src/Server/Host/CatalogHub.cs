@@ -30,6 +30,8 @@ namespace LANPartyHub.Server.Host;
 /// </summary>
 public sealed class CatalogHub : Hub
 {
+    private readonly ReportClientState _reportClientState;
+
     /// <summary>Route of the hub of the state of the client.</summary>
     public const string Route = "/hubs/client-state";
 
@@ -42,6 +44,15 @@ public sealed class CatalogHub : Hub
     /// Name of the method that recibe el estado que declara el cliente (AD-18, AD-29).
     /// </summary>
     public const string ClientStateChangedMethodName = nameof(ClientStateChanged);
+
+    /// <summary>Creates the hub of the state of the client.</summary>
+    /// <param name="reportClientState">Use case that persists the state of the client.</param>
+    public CatalogHub(ReportClientState reportClientState)
+    {
+        ArgumentNullException.ThrowIfNull(reportClientState);
+
+        _reportClientState = reportClientState;
+    }
 
     /// <summary>
     /// Receives the state that the client declares (AD-18, AD-22, AD-29).
@@ -56,18 +67,20 @@ public sealed class CatalogHub : Hub
     /// es el del propio cliente que publica, y el servidor no acepta una publicación
     /// que nombre a otro (AD-29).
     /// </para>
+    /// <para>
+    /// El nombre del método es EXACTAMENTE el que invoca el cliente
+    /// (<see cref="ClientStateChangedMethodName"/>): SignalR registra el método con su
+    /// nombre de .NET y NO recorta el sufijo <c>Async</c>, así que un nombre distinto
+    /// hace que el servidor responda «Method does not exist» y la publicación se pierde.
+    /// </para>
     /// </summary>
     /// <param name="state">State that the client declares.</param>
-    /// <param name="reportClientState">Use case that persists the state of the client.</param>
     /// <returns>A task that completes when the state has been persisted.</returns>
-    public async Task ReportClientStateAsync(
-        ClientStateChanged state,
-        ReportClientState reportClientState)
+    public async Task ClientStateChanged(ClientStateChanged state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(reportClientState);
 
-        await reportClientState
+        await _reportClientState
             .ExecuteAsync(state, Context.ConnectionAborted)
             .ConfigureAwait(false);
     }
