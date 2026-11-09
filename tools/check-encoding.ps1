@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Verifica que los ficheros Markdown del repositorio no contengan caracteres
+    Verifica que los ficheros Markdown y TOML del repositorio no contengan caracteres
     fuera del juego esperado: codepoints CJK (cirílico/coreano/japonés/chino) ni
     el caracter de reemplazo U+FFFD.
 
@@ -54,7 +54,8 @@ foreach ($target in $Path) {
     if (-not (Test-Path -LiteralPath $target)) { continue }
     $item = Get-Item -LiteralPath $target
     if ($item.PSIsContainer) {
-        $files += Get-ChildItem -LiteralPath $target -Recurse -File -Filter '*.md'
+        $files += Get-ChildItem -LiteralPath $target -Recurse -File |
+            Where-Object { $_.Extension -in @('.md', '.toml') }
     }
     else {
         $files += $item
@@ -86,7 +87,7 @@ foreach ($file in $files) {
 }
 
 if (-not $Quiet) {
-    Write-Host "Ficheros Markdown analizados: $($files.Count)"
+    Write-Host "Ficheros Markdown y TOML analizados: $($files.Count)"
     if ($offenders.Count -eq 0) {
         Write-Host 'OK: sin codepoints CJK ni U+FFFD.' -ForegroundColor Green
     }
