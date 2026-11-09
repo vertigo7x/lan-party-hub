@@ -159,6 +159,8 @@ MAX_PARALLEL_WORKERS = 4
 SENSITIVE_SURFACES: tuple[str, ...] = (
     "contract",
     "contracts",
+    "contrato",
+    "contratos",
     "shared_contract",
     "shared-contracts",
     "persistence",
@@ -393,7 +395,9 @@ def extract_plan_metadata(plan: Path) -> tuple[PlanMetadata | None, str]:
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 return None, f"the plan metadata key '{key}' is not a list of strings"
             parsed[key] = tuple(item.strip() for item in value if item.strip())
-        schema_changes = data.get("schema_changes", False)
+        if "schema_changes" not in data:
+            return None, "the plan metadata is missing the key: schema_changes"
+        schema_changes = data["schema_changes"]
         if not isinstance(schema_changes, bool):
             return None, "the plan metadata key 'schema_changes' must be a boolean"
         return (
@@ -467,15 +471,53 @@ def is_context_path(path: str) -> bool:
 
 def is_complete_plan(plan: Path) -> bool:
     """A planner may finish its file before its CLI session reaches the timeout."""
+    return not plan_errors(plan)
+
+
+def plan_errors(plan: Path) -> list[str]:
+    """Explain why a plan cannot safely guide a worker or the scheduler."""
     try:
         content = plan.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return (
-        len(content.strip()) >= 300
-        and len(content.split()) <= 500
-        and all(section in content for section in ("# Story", "## Alcance", "## Ficheros"))
-    )
+    except OSError as error:
+        return [f"no se pudo leer {relative(plan)}: {error}"]
+    errors = []
+    if len(content.strip()) < 300:
+        errors.append("el plan tiene menos de 300 caracteres")
+    words = len(content.split())
+    if words > 500:
+        errors.append(f"el plan tiene {words} palabras (máximo 500)")
+    for heading in ("# Story", "## Alcance", "## Ficheros"):
+        if not re.search(rf"^{re.escape(heading)}(?:\s|$)", content, re.MULTILINE):
+            errors.append(f"falta el encabezado {heading}")
+    match = re.fullmatch(r"(\d+)-(\d+)", plan.stem)
+    if match and not re.search(rf"^# Story {match[1]}\.{match[2]}(?:\s|$)", content, re.MULTILINE):
+        errors.append(f"el encabezado debe identificar la Story {match[1]}.{match[2]}")
+    metadata, issue = extract_plan_metadata(plan)
+    if issue:
+        errors.append(issue)
+    if metadata:
+        for key in ("reads", "writes"):
+            for path in getattr(metadata, key):
+                normalized = path.replace("\\", "/")
+                candidate = REPO_ROOT / normalized
+                if (not normalized.startswith(("src/", "tests/", "tools/", "docs/", "_bmad-output/"))
+                        or ":" in normalized or any(part in (".", "..") for part in normalized.split("/"))
+                        or not candidate.parent.is_dir()
+                        or (key == "reads" and not candidate.exists())):
+                    errors.append(f"{key}: {path!r} no es una ruta concreta válida del repositorio")
+    return errors
+
+
+def require_valid_plan(plan: Path, log_dir: Path, journal: PhaseJournal) -> None:
+    errors = plan_errors(plan)
+    if not errors:
+        return
+    evidence = log_dir / "rejected-plan.md"
+    if plan.is_file():
+        evidence.write_bytes(plan.read_bytes())
+    message = f"plan {relative(plan)} rechazado: " + "; ".join(errors)
+    journal.record("plan-validation", PHASE_TOOL_FAILURE, evidence=relative(evidence), error=message)
+    raise legacy.DriverError(message)
 
 
 def changed_paths(base: str, cwd: Path | None = None) -> list[str]:
@@ -840,10 +882,36 @@ def plan_prompt(story, plan: Path) -> str:
     sources = f"Historia:\n{section}\n\nContexto de épica:\n{epic_context}"
     if len(sources) > PLAN_SOURCE_MAX_CHARS:
         raise legacy.DriverError(f"story {story.short_id} planning sources exceed the bounded prompt; split or condense the epic context")
+    # The 9.2 plan failed because the story text identifies roles but not filenames.
+    # Supply existing candidates without giving the planner permission to invent paths.
+    candidates = (
+        "src/Shared/Contracts/ClientStateChanged.cs",
+        "src/Shared/Contracts/DownloadProgressUpdated.cs",
+        "src/Shared/Contracts/InstallationProgressUpdated.cs",
+        "src/Shared/Contracts/StateDisplayMap.cs",
+        "src/Server/Host/CatalogHub.cs",
+        "src/Server/Application/Clients/ReportClientState.cs",
+        "src/Server/Infrastructure/Persistence/CatalogDbContext.cs",
+        "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
+        "src/Server/Infrastructure/Persistence/Migrations/CatalogDbContextModelSnapshot.cs",
+        "src/Client/Application/ClientInstallation.cs",
+        "src/Client/Application/Ports/IClientStatePublisher.cs",
+        "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
+        "src/Client/Infrastructure/Persistence/ClientStateDbContext.cs",
+        "tests/IntegrationTests/ClientStateHubTests.cs",
+        "tests/IntegrationTests/InstallationPersistenceTests.cs",
+        "tests/UnitTests/ClientsTableTests.cs",
+    ) if story.short_id == "9.2" else ()
+    available = [path for path in candidates if (REPO_ROOT / path).is_file()]
+    candidate_text = "\n".join(f"- {path}" for path in available) or "(sin rutas precargadas)"
     return f"""Planifica exclusivamente la Story {story.short_id}: {story.title}.
 La evidencia que necesitas ya está copiada debajo. Tu PRIMERA acción debe escribir un plan
 completo en {relative(plan)} en menos de {PLAN_ARTIFACT_DEADLINE_SECONDS} segundos.
-Incluye alcance, ficheros concretos, tareas ordenadas, pruebas y riesgos. Máximo 500 palabras.
+ Escribe literalmente `# Story {story.short_id}`, `## Alcance`, `## Ficheros` al comienzo
+ de sus secciones. Incluye tareas ordenadas, pruebas y riesgos. Máximo 500 palabras,
+ incluido el JSON. Usa exclusivamente rutas concretas relativas al repositorio en
+ `reads` y `writes` (no `Server: ...`, `Shared: ...` ni roles). `reads` debe existir;
+ `writes` puede ser un fichero nuevo dentro de un directorio existente.
 No explores el repositorio, no leas el backlog, no lances subagentes, no implementes código,
 no solicites aprobación y no amplíes el plan después de escribirlo. Si la evidencia no permite
 concretar una ruta, declara el bloqueo en el plan: no adivines ni explores.
@@ -852,9 +920,16 @@ El plan tiene que incluir un bloque ```json con las claves `reads`, `writes`, `s
 y `depends_on`: son las rutas que la historia lee, las que escribe, las superficies compartidas
 que toca (contrato, persistencia, red, instalación, seguridad o firma) y las historias de las que
 depende. Declara además `schema_changes` (booleano): true si cambia el esquema persistido.
-Sin el bloque la historia se ejecuta sola.
+ Ejemplo de forma (sustituye las rutas por las adecuadas):
+ ```json
+ {{"reads":["src/Shared/Contracts/StateDisplayMap.cs"],"writes":["src/Server/Host/CatalogHub.cs"],"shared_surfaces":["contrato","persistencia"],"depends_on":["9.1"],"schema_changes":true}}
+ ```
+ El bloque es obligatorio y se valida antes de implementar; un esquema nuevo requiere migración.
 
-{sources}"""
+ Rutas candidatas existentes para esta historia (no es una lista de cambios obligatorios):
+ {candidate_text}
+
+ {sources}"""
 
 
 def implementation_prompt(story, plan: Path, context: Path) -> str:
@@ -1994,8 +2069,7 @@ def process_story(story, args: argparse.Namespace) -> None:
             if not is_complete_plan(plan):
                 raise
             log("planner timed out after writing a complete plan; continuing without a second attempt")
-    if not is_complete_plan(plan):
-        raise legacy.DriverError(f"planner did not create {relative(plan)}")
+    require_valid_plan(plan, log_dir, journal)
 
     try:
         preserved_work = implementation_paths(changed_paths(base))
@@ -2133,8 +2207,7 @@ def plan_story(story) -> tuple[PlanMetadata | None, str]:
             if not is_complete_plan(plan):
                 raise
             log("planner timed out after writing a complete plan; continuing without a second attempt")
-    if not is_complete_plan(plan):
-        raise legacy.DriverError(f"planner did not create {relative(plan)}")
+    require_valid_plan(plan, log_dir, journal)
     return extract_plan_metadata(plan)
 
 
@@ -2327,12 +2400,50 @@ def self_test() -> int:
         failures.append("a declared schema change without a migration was accepted")
     self_test_plan = PLAN_ROOT / "self-test-plan.md"
     self_test_plan.parent.mkdir(parents=True, exist_ok=True)
-    self_test_plan.write_text("# Story 0.0\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n", encoding="utf-8")
+    self_test_plan.write_text(
+        "# Story 0.0\n\n## Alcance\n\n" + "x" * 300 + "\n\n## Ficheros\n"
+        + '```json\n{"reads":["tools/build-lite.py"],"writes":["tools/build-lite.py"],'
+        + '"shared_surfaces":[],"depends_on":[],"schema_changes":false}\n```\n', encoding="utf-8",
+    )
     if not is_complete_plan(self_test_plan):
         failures.append("a complete plan was rejected")
     self_test_plan.write_text("# Story 0.0\n## Alcance\n" + "palabra " * 501 + "\n## Ficheros\n", encoding="utf-8")
     if is_complete_plan(self_test_plan):
         failures.append("an oversized plan was accepted")
+    self_test_plan.write_text(
+        "# Plan Story 9.2\n\n## Alcance\n" + "palabra " * 501 + "\n## Ficheros\n"
+        + '```json\n{"reads":["Shared: StateDisplayMap"],'
+        + '"writes":["Server: DbContext + migracion"],"shared_surfaces":[],"depends_on":[],'
+        + '"schema_changes":true}\n```\n', encoding="utf-8",
+    )
+    reasons = plan_errors(self_test_plan)
+    if not any("palabras" in reason for reason in reasons) or not any("# Story" in reason for reason in reasons):
+        failures.append("the rejected 9.2 plan did not explain its length and heading")
+    if not any("reads:" in reason for reason in reasons) or not any("writes:" in reason for reason in reasons):
+        failures.append("role-based metadata was accepted as concrete paths")
+    story_plan = PLAN_ROOT / "self-test-story" / "9-2.md"
+    story_plan.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        story_plan.write_text(
+            '# Story 8.1\n## Alcance\n' + 'x' * 300 + '\n## Ficheros\n'
+            + '```json\n{"reads":["tools/build-lite.py"],"writes":["tools/build-lite.py"],'
+            + '"shared_surfaces":["contrato"],"depends_on":[],"schema_changes":false}\n```',
+            encoding="utf-8",
+        )
+        if is_complete_plan(story_plan):
+            failures.append("a plan for a different story was accepted")
+        if not PlanMetadata(shared_surfaces=("contrato",)).sensitive_surfaces():
+            failures.append("the Spanish contract surface is not considered sensitive")
+    finally:
+        story_plan.unlink(missing_ok=True)
+        story_plan.parent.rmdir()
+    try:
+        candidate_story = legacy.story_by_id(9, 2, legacy.read_sprint_status())
+        prompt = plan_prompt(candidate_story, story_plan)
+        if "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs" not in prompt:
+            failures.append("the 9.2 planning prompt has no concrete path candidates")
+    except legacy.DriverError as error:
+        failures.append(f"the 9.2 prompt cannot be produced: {error}")
     self_test_plan.unlink(missing_ok=True)
     if implementation_paths([".build-lite/plans/3-1.md"]):
         failures.append("Build Lite bookkeeping was parsed as implementation work")
@@ -2363,7 +2474,8 @@ def self_test_plan_limits() -> list[str]:
     plan.unlink(missing_ok=True)
     body = (
         "# Story 0.0\n\n## Alcance\n" + "x" * 300 + "\n\n## Ficheros\n"
-        + '```json\n{"reads":[],"writes":[],"shared_surfaces":[],"depends_on":[]}\n```\n'
+        + '```json\n{"reads":["tools/build-lite.py"],"writes":["tools/build-lite.py"],'
+        + '"shared_surfaces":[],"depends_on":[],"schema_changes":false}\n```\n'
     )
     try:
         script = "import pathlib,time; pathlib.Path(" + repr(str(plan)) + ").write_text(" + repr(body) + ", encoding='utf-8'); time.sleep(10)"
@@ -2772,7 +2884,7 @@ def self_test_scheduler() -> list[str]:
     # A metadata block with a value that is not a list of strings is invalid.
     metadata, _ = metadata_of(
         '```json\n{"reads": [], "writes": "src/Server/Program.cs", '
-        '"shared_surfaces": [], "depends_on": []}\n```\n'
+        '"shared_surfaces": [], "depends_on": [], "schema_changes": false}\n```\n'
     )
     if metadata is not None:
         failures.append("a metadata block with a scalar value was accepted")
@@ -2780,7 +2892,7 @@ def self_test_scheduler() -> list[str]:
     # A valid metadata block is read.
     metadata, reason = metadata_of(
         '```json\n{"reads": ["src/Shared/Contracts/"], "writes": ["src/Server/Program.cs"], '
-        '"shared_surfaces": [], "depends_on": []}\n```\n'
+        '"shared_surfaces": [], "depends_on": [], "schema_changes": false}\n```\n'
     )
     if metadata is None:
         failures.append("a valid metadata block was rejected")
@@ -2793,7 +2905,7 @@ def self_test_scheduler() -> list[str]:
     # A sensitive surface runs alone.
     metadata, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/Program.cs"], '
-        '"shared_surfaces": ["persistence"], "depends_on": []}\n```\n'
+        '"shared_surfaces": ["persistence"], "depends_on": [], "schema_changes": false}\n```\n'
     )
     if metadata is None:
         failures.append("a metadata block with a sensitive surface was rejected")
@@ -2823,7 +2935,7 @@ def self_test_scheduler() -> list[str]:
     # A pending dependency runs alone.
     metadata, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/Program.cs"], '
-        '"shared_surfaces": [], "depends_on": ["5.2"]}\n```\n'
+        '"shared_surfaces": [], "depends_on": ["5.2"], "schema_changes": false}\n```\n'
     )
     if metadata is None:
         failures.append("a metadata block with a dependency was rejected")
@@ -2844,11 +2956,11 @@ def self_test_scheduler() -> list[str]:
     # Two stories that write the same path never run at the same time.
     left, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/Application/Catalog/"], '
-        '"shared_surfaces": [], "depends_on": []}\n```\n', "left.md"
+        '"shared_surfaces": [], "depends_on": [], "schema_changes": false}\n```\n', "left.md"
     )
     right, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/Application/Catalog/Index.cs"], '
-        '"shared_surfaces": [], "depends_on": []}\n```\n', "right.md"
+        '"shared_surfaces": [], "depends_on": [], "schema_changes": false}\n```\n', "right.md"
     )
     if left is None or right is None:
         failures.append("the intersection fixture could not be built")
@@ -2864,11 +2976,11 @@ def self_test_scheduler() -> list[str]:
     # Two stories that declare the same surface never run at the same time.
     left, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/A.cs"], '
-        '"shared_surfaces": ["catalog"], "depends_on": []}\n```\n', "surface-left.md"
+        '"shared_surfaces": ["catalog"], "depends_on": [], "schema_changes": false}\n```\n', "surface-left.md"
     )
     right, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Client/B.cs"], '
-        '"shared_surfaces": ["catalog"], "depends_on": []}\n```\n', "surface-right.md"
+        '"shared_surfaces": ["catalog"], "depends_on": [], "schema_changes": false}\n```\n', "surface-right.md"
     )
     if left is None or right is None:
         failures.append("the surface fixture could not be built")
@@ -2881,7 +2993,7 @@ def self_test_scheduler() -> list[str]:
     slots = [Slot(story=object(), tree=object()) for _ in range(MAX_PARALLEL_WORKERS)]
     metadata, _ = metadata_of(
         '```json\n{"reads": [], "writes": ["src/Server/C.cs"], '
-        '"shared_surfaces": [], "depends_on": []}\n```\n', "window.md"
+        '"shared_surfaces": [], "depends_on": [], "schema_changes": false}\n```\n', "window.md"
     )
     if metadata is None:
         failures.append("the window fixture could not be built")
