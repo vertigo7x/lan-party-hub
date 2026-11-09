@@ -121,6 +121,11 @@ VERIFICATION_COMMANDS: tuple[VerificationCommand, ...] = (
         "powershell -NoProfile -File tools/check-encoding.ps1",
     ),
     VerificationCommand(
+        "check-bmad-build-auto-customization",
+        ("powershell", "-NoProfile", "-File", "tools/check-bmad-build-auto-customization.ps1"),
+        "powershell -NoProfile -File tools/check-bmad-build-auto-customization.ps1",
+    ),
+    VerificationCommand(
         "check-epics",
         ("powershell", "-NoProfile", "-File", "tools/check-epics.ps1"),
         "powershell -NoProfile -File tools/check-epics.ps1",

@@ -29,7 +29,7 @@ Cada historia puede usar estas fases, y ninguna se convierte en un bucle:
 1. **Plan:** un agente rápido escribe `.build-lite/plans/<epica>-<historia>.md` con alcance, ficheros, pruebas y riesgos. Se limita a 500 palabras.
 2. **Contexto:** un agente rápido escribe `.build-lite/contexts/<epica>-<historia>.md` con la evidencia acotada de la historia: requisitos y AC, decisiones aplicables, APIs o patrones a reutilizar, archivos y pruebas relevantes, comandos y exclusiones. Se limita a 700 palabras.
 3. **Implementación:** MiniMax implementa ese plan, ese contexto y sus pruebas. No vuelve a leer el backlog ni a planificar.
-4. **Verificación determinista:** `build-lite --self-test`, `dotnet build`, `dotnet test`, `check-encoding.ps1` y `check-epics.ps1`.
+4. **Verificación determinista:** `build-lite --self-test`, `dotnet build`, `dotnet test`, `check-encoding.ps1`, `check-bmad-build-auto-customization.ps1` y `check-epics.ps1`.
 5. **Reparación:** como máximo una, dirigida por un fallo de verificación o por un hallazgo bloqueante. Ante una prueba fallida identificable, el driver entrega su comando, la cola del log y el nombre de la prueba al reparador; este debe demostrar una prueba filtrada y verde para esa prueba o su clase antes de que el driver acepte la recuperación. Para otro fallo entrega el comando y su evidencia y exige una ejecución verde de ese comando, sin inventar una prueba. Si no hay comprobación demostrable o vuelve a fallar, el driver se detiene.
 6. **Revisión focalizada:** solo existe para cambios de contratos compartidos, persistencia, red, instalación, seguridad o firma de paquetes. Usa un único revisor rápido y solo puede informar un S0/S1 con evidencia concreta.
 
