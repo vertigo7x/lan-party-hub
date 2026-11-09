@@ -431,6 +431,27 @@ public sealed class ConnectionSurfaceViewModel
 
 
     /// <summary>
+    /// Applies the error of a registration that the server rejected to the surface
+    /// (AD-30, AD-32).
+    ///
+    /// <para>
+    /// El rechazo por nombre mal formado deja al cliente SIN REGISTRAR y sin poder
+    /// operar, así que la superficie lo presenta con su mensaje, su causa y su
+    /// siguiente paso TAL CUAL, sin inventar texto fuera de la tabla de microcopia
+    /// (AD-30, AD-25).
+    /// </para>
+    /// </summary>
+    /// <param name="error">Error of the catalog that explains the rejection.</param>
+    public void ApplyRegistrationError(ApiError error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+
+        LastError = error;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
     /// Applies the result of the manual connection to the surface (AC1, AC3).
     ///
     /// <para>

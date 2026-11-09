@@ -48,6 +48,12 @@ public sealed class CatalogWindow : Window
     private readonly TextBlock _status;
 
     /// <summary>
+    /// Raised when the organizer asks for the section of the clients of the event
+    /// (AD-29).
+    /// </summary>
+    public event EventHandler? ClientsRequested;
+
+    /// <summary>
     /// Creates the window of the section of the catalog.
     /// </summary>
     /// <param name="viewModel">View model of the section.</param>
@@ -95,6 +101,17 @@ public sealed class CatalogWindow : Window
 
         trustAnchorEntry.Click += async (_, _) => await OpenTrustAnchorAsync().ConfigureAwait(true);
 
+        // AD-29: la sección de clientes es la vista de organización de los equipos de la
+        // LAN, y la alcanza el organizador desde la navegación.
+        var clientsEntry = new Button
+        {
+            Content = "Clientes",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+
+        clientsEntry.Click += (_, _) => ClientsRequested?.Invoke(this, EventArgs.Empty);
+
         var navigation = new StackPanel
         {
             Margin = new Thickness(12),
@@ -109,7 +126,7 @@ public sealed class CatalogWindow : Window
                     FontWeight = FontWeight.SemiBold,
                 },
                 new TextBlock { Text = "Catálogo" },
-                new TextBlock { Text = "Clientes" },
+                clientsEntry,
                 new TextBlock { Text = "Paquetes" },
                 trustAnchorEntry,
             },

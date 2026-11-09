@@ -1,0 +1,54 @@
+# Epic 9 Context: El organizador ve el estado de cada equipo sin preguntar
+
+<!-- Generated from planning artifacts. Regenerate with compile-epic-context if planning docs change. -->
+
+## Goal
+
+Convertir el servidor en una consola de operaciones: el organizador consulta en una sola vista el estado de cada equipo conectado —identificador, nombre, conexión, juegos y versiones instalados, descargas activas, progreso de instalaciones y errores registrados— y diagnostica una incidencia sin rondas de preguntas por el pasillo. Es la superficie que hace posible que un fallo se comunique con causa y siguiente paso en lugar de con mensajes sueltos.
+
+## Stories
+
+- Story 9.1: Tabla densa de clientes conectados
+- Story 9.2: Proyección de instalaciones y de operaciones en curso
+- Story 9.3: Errores registrados, con causa y siguiente paso
+- Story 9.4: Diagnóstico correlacionado en el cliente
+
+## Requirements & Constraints
+
+- **Contenido del panel.** Equipos conectados, identificador y nombre, estado de conexión, juegos y versiones instalados, descargas activas, progreso de instalaciones y errores registrados. La vista de estado y de errores es la **única** vía de consulta: no exige peticiones adicionales por equipo.
+- **El nombre del equipo es una etiqueta, no una credencial.** El cliente propone su nombre y el servidor lo valida y lo hace único en el registro. No hay contraseña, token, sesión ni rol; el nombre no autentica nada. El único gating del protocolo es la compatibilidad de versión.
+- **Forma del nombre.** No vacío tras recortar; entre 1 y 64 **puntos de código Unicode** (`System.Text.Rune`), nunca bytes ni UTF-16; sin caracteres de control; sin espacios iniciales, finales ni consecutivos; caracteres admitidos: letras, dígitos, `.`, `-`, `_` y espacio interior simple. La unicidad se compara por forma canónica: NFKC → eliminación de marcas diacríticas → minúsculas Unicode invariantes, en ese orden.
+- **Colisión no es error.** El registro **tiene éxito**: el servidor asigna un nombre efectivo único derivado, lo persiste y lo notifica. El `clientId` de nadie cambia, no se fusionan filas y no se reasigna la fila de otro cliente.
+- **Derivación determinista.** `stem` recortado + `"-"` + los 32 dígitos hexadecimales en minúsculas de la forma canónica del `clientId` (`Guid.ToString("N")`). El sufijo tiene 33 puntos de código fijos, luego el `stem` se recorta a ≤ 31, siempre en un límite de punto de código (un emoji nunca se parte); si el recorte lo vaciara, se usa el `stem` de reserva `equipo`. Sin búsqueda de nombres libres ni contadores: la unicidad está garantizada por construcción y el nombre derivado siempre es admisible.
+- **Rechazo por nombre mal formado.** Respuesta con la forma única `ApiError`, `code` propio y distinto del de «firma inválida» y del de «fingerprint de ancla no coincide», con `cause` y `nextStep` obligatorios. El cliente queda sin registrar y no opera. Los tres campos se muestran tal cual, sin texto inventado fuera de la tabla de microcopia.
+- **Reconexión y renombrado.** Un cliente que se registra de nuevo con su `clientId` y su nombre efectivo conserva fila y nombre: el servidor actualiza `connectionState`, `lastSeenAt` y `clientVersion` y no vuelve a derivar, de modo que un cliente reconectado nunca colisiona consigo mismo. Si el usuario renombra su equipo, propone el nombre nuevo en su siguiente registro y el servidor aplica la misma regla. El `clientId` no cambia nunca.
+- **Proyección.** El servidor proyecta `installedGames[]` (`gameId`, `installedVersion`, `validationState`) y `activeOperations[]` (`operationId`, `operationType`, `state`) con la forma exacta del contrato, y muestra descarga activa y progreso de instalación con el valor real.
+- **Retirada del catálogo.** «Paquete retirado del catálogo» es un resultado **distinto del fallo**: no produce `ApiError`, no se persiste como `ClientError` y no entra en el catálogo de errores; se presenta con la microcopia de la tabla de estados. La retirada tampoco borra la proyección de instalación: la vista refleja lo que el cliente tiene realmente instalado.
+- **Errores registrados.** Cada error se persiste con `errorId`, `clientId`, `operationId`, `code`, `message`, `cause`, `nextStep` y `occurredAt`, usando el único tipo `ApiError` del sistema. Un cliente incompatible aparece en la tabla con su versión y su diagnóstico e indica que **no opera**.
+- **Diagnóstico correlacionado.** El registro del cliente lista los errores ya persistidos de su equipo, con `code` estable, mensaje, causa y siguiente paso, y cada error queda asociado a cliente, descarga, instalación o lanzamiento. Logs de cliente y servidor comparten `operationId` y `clientId`, de modo que el error del servidor y su equivalente en el cliente se pueden unir. El registro **presenta** errores, no los produce.
+- **Diagnosticabilidad.** El rechazo por nombre inválido y la colisión se registran en logging JSON con `clientId` y `operationId` de correlación y con `code` distintos entre sí.
+- **Pruebas.** Nivel declarado para las cuatro historias: **integración**, contra el servidor o el cliente en ejecución, con persistencia real y clientes que reportan estado.
+
+## Technical Decisions
+
+- **La vista de clientes es REST, no un evento.** `GET /api/v1/clients` devuelve `ClientRegistrationView[]` con forma exacta (`clientId`, `machineName`, `clientVersion`, `protocolVersion`, `connectionState`, `lastSeenAt`). El evento `ClientsSnapshotChanged` **no existe** en el contrato. La tabla se refresca por REST cuando la UI lo pide y cuando el servidor detecta un cambio de conexión o de versión.
+- **Contrato único de registro.** `POST /api/v1/clients` es el **único** punto de entrada del cliente al servidor: alta, reconexión y renombrado ocurren en esa misma operación; no hay endpoints adicionales de registro, renombrado ni administración de nombres. Cuerpo `{ clientId, machineName, clientVersion, protocolVersion }`, **sin `schemaVersion`** (única mutación exenta); las versiones del cuerpo son los mismos valores que las cabeceras de versión, no una segunda fuente de verdad. Respuesta `{ clientId, machineName, connectionState, lastSeenAt, renamed }`, con `machineName` siempre el **nombre efectivo** y `renamed` `true` solo si hubo colisión y el nombre devuelto difiere del propuesto. Estados: `200 OK` en éxito, `422 Unprocessable Content` por nombre mal formado, `426 Upgrade Required` por versión incompatible, comprobado **antes** de validar el nombre.
+- **Contratos en `Shared`, sin lógica.** `Shared` contiene DTOs, enumeraciones y eventos, y no referencia ningún otro proyecto. Tipos de esta épica: `ClientRegistrationView`, `ApiError` (único tipo de error del sistema), `ErrorCatalog`, `StateDisplayMap` (microcopia de estados y resultados), `OperationOutcome`, `DownloadState`, `InstallationState`, y los eventos SignalR `ClientStateChanged`, `DownloadProgressUpdated`, `InstallationProgressUpdated` y `ClientErrorReported`. Un concepto, un tipo, un lugar.
+- **Propietario de cada entidad.** `ClientRegistration` (clave: `clientId`; `machineName` con unicidad por forma canónica), `ClientInstallationView` (proyección de solo lectura) y `ClientError` son del **servidor** (`catalog.sqlite`). `ClientInstallation`, `DownloadOperation`, `DownloadProgress` y `ClientIdentity` son del **cliente** (`state.sqlite`). La proyección no comparte nombre con la entidad de origen: `ClientInstallationView.validationStateText` es una **cadena de presentación** copiada de la tabla de microcopia, nunca el enum de estado.
+- **El servidor no es dueño del estado del cliente.** No persiste el `InstallationState` ni el `DownloadState` de otro cliente, y **la `installPath` nunca sale del cliente**: la vista muestra versión instalada y existencia de la instalación, no su ruta.
+- **Identidad.** `clientId` es un UUID v7 opaco que el cliente emite una vez y persiste; sobrevive a reinicios, no se regenera y el servidor nunca lo reasigna. Un `clientId` desconocido se trata como cliente nuevo.
+- **SignalR solo para push del cliente al servidor.** Ningún evento servidor → cliente transporta datos de otros clientes; el cliente no consulta el estado de otro cliente por polling.
+- **Convenciones.** Logging JSON con correlación por `operationId` y `clientId`; los errores visibles salen del catálogo compartido y siempre llevan `cause` y `nextStep` obligatorios. Un SQLite por rol; el servidor no consulta la tabla de otro módulo. Documentación y microcopia en español; identificadores y contratos en inglés.
+
+## UX & Interaction Patterns
+
+- **Tabla densa, no tarjetas.** El panel de clientes es tabla porque comparar equipos requiere alineación. Fila de 40 px; celdas de dato en tipografía `body-strong` y unidades en `meta`; fondo `surface-raised` y separador inferior de 1 px `border-hairline`. Columnas: identificador, nombre del equipo, estado de conexión, juegos y versiones instalados, descargas activas, progreso de instalaciones y errores registrados. Orden estable por nombre de equipo y fila seleccionable para abrir su detalle.
+- **Fila y detalle.** La fila de un cliente desconectado se pinta en `{colors.state-danger}` y su error asociado se muestra en el detalle de la fila, junto con la descarga activa y su progreso real.
+- **Aviso de error.** El `toast-error` contiene causa, acción intentada y siguiente paso, sin iconografía: el texto es el aviso. No sustituye a la persistencia del error en el registro.
+- **Registro de diagnóstico del cliente.** Vive en «Configuración y diagnóstico» (`Ctrl+,`) y lista los errores persistidos del equipo con `code` estable, mensaje, causa y siguiente paso. El visor tiene variante clara con los tokens `-light`; el modo oscuro es el predeterminado. Cada error tiene un nombre estable en texto para que el jugador pueda comunicarlo al organizador.
+
+## Cross-Story Dependencies
+
+- **Dentro de la épica.** 9.2 depende de 9.1 (registro ya persistido) y de las reglas de certificación que originan la `validationStateText` proyectada. 9.3 depende de 9.1 (cada error se asocia a un cliente registrado) y de la forma única `ApiError`/`ErrorCatalog`. 9.4 depende de 9.3 (forma del error persistido) y del logging correlacionado.
+- **Con otras épicas.** Epic 1 aporta los contratos de `Shared` (`ClientRegistrationView`, `ApiError`, `ErrorCatalog`) y el logging estructurado con `operationId` y `clientId`. Epic 4 aporta los clientes ya registrados y compatibles con su diagnóstico de versión. Epic 7 aporta las reglas de certificación que originan el estado de validación proyectado.
+- **Con el resto del sistema.** La vista por REST, la validación y unicidad del nombre, la derivación determinista, el contrato del registro y la separación entre resultado de operación y error son decisiones transversales que esta épica materializa sin ampliar la superficie del MVP.

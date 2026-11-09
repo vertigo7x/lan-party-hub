@@ -31,7 +31,7 @@ namespace LANPartyHub.Client.Infrastructure.Networking;
 /// (AD-11).
 /// </para>
 /// </summary>
-public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IAsyncDisposable
+public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IClientStatePublisher, IAsyncDisposable
 {
     /// <summary>Route of the hub of the state of the client.</summary>
     public const string Route = "/hubs/client-state";
@@ -41,6 +41,11 @@ public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IAsyncD
     /// (AD-22, AR-3).
     /// </summary>
     public const string DownloadProgressUpdatedMethodName = nameof(DownloadProgressUpdated);
+
+    /// <summary>
+    /// Name of the method of the hub that receives the state of the client (AD-18, AD-29).
+    /// </summary>
+    public const string ClientStateChangedMethodName = nameof(ClientStateChanged);
 
     private readonly HubConnection _connection;
     private readonly ILogger<ClientStateHubPublisher> _logger;
@@ -106,6 +111,47 @@ public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IAsyncD
                 exception,
                 "No se pudo publicar el progreso de la operación {OperationId}: el servidor no aceptó la publicación.",
                 progress.OperationId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task PublishAsync(ClientStateChanged state, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        try
+        {
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+            if (_connection.State != HubConnectionState.Connected)
+            {
+                // AD-29: el servidor no está, así que el estado no llega. El cliente
+                // sigue operando: la publicación del estado NO es lo que habilita al
+                // equipo (AD-1).
+                _logger.LogWarning(
+                    "No se pudo publicar el estado del cliente {ClientId}: el hub del estado del cliente no está conectado.",
+                    state.ClientId);
+
+                return;
+            }
+
+            await _connection
+                .InvokeAsync(ClientStateChangedMethodName, state, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // AD-29: la publicación del estado TOLERA la ausencia del método en el
+            // servidor, y la REGISTRA: el estado es un complemento del cliente y no su
+            // motivo de vida (AD-1).
+            _logger.LogWarning(
+                exception,
+                "No se pudo publicar el estado del cliente {ClientId}: el servidor no aceptó la publicación.",
+                state.ClientId);
         }
     }
 

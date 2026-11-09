@@ -52,12 +52,39 @@ public sealed class HubEventContractTests
         // AD-5, AD-29: el hub NO tiene métodos de servidor → cliente. La transición del
         // `connectionState` de un `ClientRegistration` es un evento INTERNO del servidor, y
         // el cliente NUNCA recibe un evento de hub por ella (AC6, AD-29).
-        var hubMethods = typeof(CatalogHub)
+        //
+        // AD-18, AD-29: el hub SÍ declara el método que recibe el estado que declara el
+        // PROPIO cliente, porque esa es la dirección sancionada para el
+        // `connectionState`. El método va de cliente a servidor, así que no publica
+        // ningún evento de servidor → cliente, y el `ClientsSnapshotChanged` sigue sin
+        // existir (AD-29).
+        var serverToClientMethods = typeof(CatalogHub)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(method => !method.IsSpecialName)
+            .Where(method => !typeof(ClientStateChanged).IsAssignableFrom(
+                method.GetParameters().FirstOrDefault()?.ParameterType))
             .ToArray();
 
-        Assert.Empty(hubMethods);
+        Assert.Empty(serverToClientMethods);
+    }
+
+    [Fact]
+    public void The_hub_receives_the_state_that_the_client_declares()
+    {
+        // AD-18, AD-29: el método del hub que recibe el estado del cliente va de
+        // CLIENTE → SERVIDOR, y el payload es el CONTRATO EXACTO del estado (AD-18).
+        var method = typeof(CatalogHub)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(candidate => candidate.GetParameters().FirstOrDefault()?.ParameterType
+                == typeof(ClientStateChanged));
+
+        Assert.Equal(
+            typeof(ClientStateChanged),
+            method.GetParameters().First().ParameterType);
+
+        Assert.Equal(
+            CatalogHub.ClientStateChangedMethodName,
+            nameof(ClientStateChanged));
     }
 
     [Fact]
