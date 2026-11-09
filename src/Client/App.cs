@@ -18,6 +18,7 @@ using LANPartyHub.Client.Presentation.Install;
 using LANPartyHub.Client.Presentation.Library;
 using LANPartyHub.Client.Presentation.Status;
 using LANPartyHub.Shared.Contracts;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LANPartyHub.Client;
@@ -36,6 +37,7 @@ public sealed class App : Avalonia.Application
     private readonly string? _startupError;
     private readonly CatalogSyncComposition? _catalogSync;
     private readonly ConnectionComposition? _connection;
+    private readonly ClientRegistrationComposition? _registration;
     private readonly DownloadComposition? _downloads;
     private readonly IUiThread _uiThread;
     private ConnectionSurfaceViewModel? _connectionViewModel;
@@ -75,6 +77,10 @@ public sealed class App : Avalonia.Application
     /// Composition of the launcher of the videogames, or <c>null</c> when the client was
     /// not able to open it.
     /// </param>
+    /// <param name="registration">
+    /// Composition of the registration of the team against the event server, or
+    /// <c>null</c> when the client was not able to open it (AD-30, AD-32).
+    /// </param>
     public App(
         ClientSettings? settings,
         string? startupError,
@@ -83,7 +89,8 @@ public sealed class App : Avalonia.Application
         IUiThread? uiThread = null,
         DownloadComposition? downloads = null,
         InstallationComposition? installations = null,
-        GameLauncherComposition? gameLauncher = null)
+        GameLauncherComposition? gameLauncher = null,
+        ClientRegistrationComposition? registration = null)
     {
         _settings = settings;
         _startupError = startupError;
@@ -92,6 +99,7 @@ public sealed class App : Avalonia.Application
         _downloads = downloads;
         _installations = installations;
         _gameLauncher = gameLauncher;
+        _registration = registration;
 
         // El hilo de la interfaz encola las notificaciones que llegan desde el grupo de
         // hilos: el supervisor de la disponibilidad y la reconexión publican desde ahí, y
@@ -638,10 +646,26 @@ public sealed class App : Avalonia.Application
                 {
                     banner.Enable();
 
+                    // AD-30, AD-32: cuando el servidor vuelve a estar disponible, el
+                    // cliente se REGISTRA otra vez, y la misma operación cubre la
+                    // reconexión: el servidor conserva la fila y el nombre efectivo del
+                    // equipo, así que un cliente reconectado nunca colisiona consigo
+                    // mismo.
+                    _ = RegisterWithEventServerAsync(
+                        _connectionViewModel?.ConnectionState ?? ConnectionState.Disconnected,
+                        CancellationToken.None);
+
                     return;
                 }
 
                 banner.DisableWithReason(CatalogSyncBanner.ServerUnavailableReasonText);
+
+                // AD-29, FR-10: el servidor deja de estar disponible, así que el
+                // cliente DECLARA su desconexión y el servidor la persiste: la tabla
+                // de clientes del organizador refleja que ese equipo ya no está.
+                _ = _registration?.PublishStateAsync(
+                    ConnectionState.Disconnected,
+                    CancellationToken.None);
             });
         };
 
@@ -1017,10 +1041,66 @@ public sealed class App : Avalonia.Application
                 .ConfigureAwait(true);
 
             _connectionViewModel?.ApplyConnection(attempt);
+
+            // AD-30, AD-32: cuando la conexión pasa, el cliente se REGISTRA ante el
+            // servidor, y la misma operación cubre el alta y la reconexión: el
+            // servidor conserva la fila y el nombre efectivo del equipo.
+            if (attempt.IsConnected)
+            {
+                await RegisterWithEventServerAsync(attempt.State, cancellationToken).ConfigureAwait(true);
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // La conexión no puede impedir que el jugador vuelva a intentarlo (AC3).
+        }
+    }
+
+    /// <summary>
+    /// Registers the team against the event server, so the organizer sees it in the
+    /// table of the clients (AD-30, AD-32).
+    ///
+    /// <para>
+    /// Un fallo del registro NO impide que el jugador siga usando el cliente: el
+    /// catálogo y las instalaciones no dependen del registro (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="connectionState">Connection state that the client declares.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the registration has been attempted.</returns>
+    private async Task RegisterWithEventServerAsync(
+        ConnectionState connectionState,
+        CancellationToken cancellationToken)
+    {
+        if (_registration is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _registration
+                .RegisterAsync(connectionState, cancellationToken)
+                .ConfigureAwait(true);
+
+            // AD-30, AD-32: el rechazo del servidor se PRESENTA al jugador con su
+            // mensaje, su causa y su siguiente paso, tal cual.
+            if (result.Rejection is not null)
+            {
+                _connectionViewModel?.ApplyRegistrationError(result.Rejection);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // El registro es un complemento del cliente y no su motivo de vida: el
+            // jugador sigue jugando (AD-1).
+            _registration.Logger.LogWarning(
+                exception,
+                "No se pudo registrar el equipo ante el servidor: el cliente sigue operando sin estar registrado.");
         }
     }
 

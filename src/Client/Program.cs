@@ -5,6 +5,7 @@ using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
 using LANPartyHub.Client.Infrastructure.Filesystem;
 using LANPartyHub.Client.Infrastructure.Logging;
+using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Install;
@@ -41,6 +42,7 @@ public static class Program
         IClientCorrelationScope? correlationScope = null;
         CatalogSyncComposition? catalogSync = null;
         ConnectionComposition? connection = null;
+        ClientRegistrationComposition? registration = null;
         TransferComposition? transfer = null;
         DownloadComposition? downloads = null;
         InstallationComposition? installations = null;
@@ -86,6 +88,15 @@ public static class Program
             // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
             catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory, connection);
 
+            // AD-30, AD-32: la composición del REGISTRO del equipo. El cliente se
+            // registra ante el servidor cuando se conecta y cuando el servidor vuelve
+            // a estar disponible, y la MISMA operación cubre el alta, la reconexión y
+            // el renombrado (AD-32).
+            //
+            // Un fallo al abrirla NO impide que el cliente arrancar: el registro es un
+            // complemento del cliente y no su motivo de vida (AD-1).
+            registration = OpenRegistration(startup, correlationScope, loggerFactory);
+
             // AD-4, AD-28: la transferencia de bytes entra por el puerto
             // `ITransferEngine` y el puerto se entrega con UNA sola implementación,
             // `HttpRangeTransferEngine`. La composición NO expone ningún selector: en el
@@ -130,7 +141,8 @@ public static class Program
                 connection: connection,
                 downloads: downloads,
                 installations: installations,
-                gameLauncher: gameLauncher)
+                gameLauncher: gameLauncher,
+                registration: registration)
                 .StartWithClassicDesktopLifetime(args);
 
             return 0;
@@ -185,7 +197,8 @@ public static class Program
         ConnectionComposition? connection = null,
         DownloadComposition? downloads = null,
         InstallationComposition? installations = null,
-        GameLauncherComposition? gameLauncher = null) =>
+        GameLauncherComposition? gameLauncher = null,
+        ClientRegistrationComposition? registration = null) =>
         AppBuilder.Configure(() => new App(
             settings,
             startupError,
@@ -193,7 +206,8 @@ public static class Program
             connection,
             downloads: downloads,
             installations: installations,
-            gameLauncher: gameLauncher)).UsePlatformDetect();
+            gameLauncher: gameLauncher,
+            registration: registration)).UsePlatformDetect();
 
     /// <summary>
     /// Runs the startup of the client and returns its outcome.
@@ -427,6 +441,88 @@ public static class Program
                     "No se pudo abrir la sincronización del catálogo: el cliente sigue arrancando sin ella.");
 
             composition?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            composition = null;
+        }
+
+        return composition;
+    }
+
+    /// <summary>
+    /// Opens the composition of the registration of the team against the event server
+    /// (AD-30, AD-32).
+    ///
+    /// <para>
+    /// La composición se abre solo cuando el cliente conoce la dirección del servidor:
+    /// sin servidor no hay registro (AD-3).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrir la composición NO impide que el cliente arrancar: el registro
+    /// es un complemento del cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="baseDirectory">
+    /// Folder of the deployment: it holds the configuration file where the effective name
+    /// of the team is persisted (AD-12, AD-30).
+    /// </param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    private static ClientRegistrationComposition? OpenRegistration(
+        ClientStartupResult startup,
+        IClientCorrelationScope correlationScope,
+        ILoggerFactory loggerFactory,
+        string? baseDirectory = null)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(correlationScope);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (string.IsNullOrWhiteSpace(startup.ServerAddress))
+        {
+            return null;
+        }
+
+        ClientRegistrationComposition? composition = null;
+
+        try
+        {
+            // AD-30, AD-31: el nombre efectivo del equipo vive en el ARCHIVO DE
+            // CONFIGURACIÓN del cliente, porque el esquema de su base de datos es el del
+            // ERD de la espina y no admite una columna más (AD-11, AD-22).
+            var deploymentDirectory = baseDirectory ?? AppContext.BaseDirectory;
+
+            var nameStore = new ClientEffectiveNameStore(
+                Path.Combine(deploymentDirectory, ClientConfiguration.FileName),
+                ClientConfiguration.SectionName,
+                ClientConfiguration.EffectiveMachineNameKey);
+
+            // AD-18, AD-29: el publicador del estado viaja por el hub del servidor, que
+            // es el canal sancionado para el estado que declara el cliente.
+            var statePublisher = new ClientStateHubPublisher(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                loggerFactory.CreateLogger<ClientStateHubPublisher>());
+
+            composition = new ClientRegistrationComposition(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                correlationScope,
+                startup.Identity,
+                nameStore,
+                statePublisher,
+                loggerFactory);
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede registrarse, pero sigue siendo un cliente que
+            // arranca: la ventana se abre y el catálogo sigue disponible (AD-1).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.Registration")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir la composición del registro del equipo: el cliente sigue arrancando sin ella.");
+
+            composition?.Dispose();
 
             composition = null;
         }

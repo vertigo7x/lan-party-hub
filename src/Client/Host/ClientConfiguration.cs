@@ -37,6 +37,19 @@ public sealed class ClientConfiguration
     public const string ThemeKey = "theme";
 
     /// <summary>
+    /// Key of the EFFECTIVE name of the team, inside <see cref="SectionName"/>
+    /// (AD-30, AD-31).
+    ///
+    /// <para>
+    /// El nombre efectivo es el único bajo el que la fila del cliente queda
+    /// registrada, así que el cliente lo persiste y lo propone en sus reconexiones:
+    /// proponer el nombre que colisionó haría que el servidor asignara un nombre
+    /// derivado distinto en cada reconexión (AD-30, AD-31).
+    /// </para>
+    /// </summary>
+    public const string EffectiveMachineNameKey = "effectiveMachineName";
+
+    /// <summary>
     /// Key of the number of downloads that the client runs at the same time, inside
     /// <see cref="SectionName"/> (AD-14).
     /// </summary>

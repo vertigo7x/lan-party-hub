@@ -25,6 +25,19 @@ public static class ErrorCatalog
     public const string MachineNameInvalidCode = "MACHINE_NAME_INVALID";
 
     /// <summary>
+    /// The proposed team name is already used by ANOTHER registered client, so the
+    /// server resolved the collision with a derived unique name (AD-30, AD-31).
+    ///
+    /// <para>
+    /// NO es un error: el registro tiene éxito con el nombre efectivo y el
+    /// indicador de renombrado. El código existe para que el hecho quede
+    /// DIAGNOSTICABLE en el log del servidor y distinguible del rechazo por nombre
+    /// mal formado, que es un error de verdad (AD-15, AD-25, AD-30).
+    /// </para>
+    /// </summary>
+    public const string MachineNameCollisionCode = "MACHINE_NAME_COLLISION";
+
+    /// <summary>
     /// The request of the client does not carry the mandatory identifier of the client
     /// (AD-15, AD-23).
     /// </summary>
@@ -392,6 +405,11 @@ public static class ErrorCatalog
             "El nombre del equipo no es válido",
             "El nombre propuesto no cumple las reglas de forma del servidor.",
             "Elige otro nombre de equipo y vuelve a registrar el cliente."),
+        new(
+            MachineNameCollisionCode,
+            "El nombre del equipo ya lo usa otro equipo",
+            "Otro cliente ya registrado usa ese nombre de equipo, así que el servidor asignó un nombre único derivado.",
+            "Adopta el nombre que el servidor te ha devuelto: es el único con el que tu equipo queda registrado."),
         new(
             ClientIdMissingCode,
             "La petición no lleva el identificador del cliente",

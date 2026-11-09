@@ -1,5 +1,6 @@
 using Avalonia;
 using LANPartyHub.Server.Application.Catalog;
+using LANPartyHub.Server.Application.Clients;
 using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
@@ -231,6 +232,14 @@ public partial class Program
         builder.Services.AddScoped<IDownloadIntentRepository, DownloadIntentRepository>();
         builder.Services.AddScoped<RegisterDownloadIntent>();
 
+        // AD-22, AD-23, AD-29, AD-30: la superficie de los clientes. El registro es la
+        // ÚNICA operación de entrada del cliente al servidor y la vista de organización
+        // se obtiene por REST, nunca por un evento del hub (AD-29, AD-32).
+        builder.Services.AddScoped<IClientRegistrationRepository, ClientRegistrationRepository>();
+        builder.Services.AddScoped<RegisterClient>();
+        builder.Services.AddScoped<ListClients>();
+        builder.Services.AddScoped<ReportClientState>();
+
         // AD-14: el reparto equitativo del enlace es POR CLIENTE, así que el servidor
         // admite un número CONFIGURABLE de respuestas de rango simultáneas por cliente y
         // todas las conexiones de un cliente beben del mismo cubo.
@@ -340,6 +349,10 @@ public partial class Program
         // descarga y la que sirve los bytes del paquete con soporte de Range requests.
         DownloadsEndpoint.Map(app);
         PackageContentEndpoint.Map(app);
+
+        // AD-29, AD-30, AD-32: la superficie del cliente que registra al equipo y la
+        // que publica la vista de organización de los clientes.
+        ClientsEndpoint.Map(app);
 
         // AD-2, AD-8, AD-20: la superficie del cliente que sirve el manifiesto firmado del
         // paquete, que es lo que el cliente valida antes de descargar (AD-8).

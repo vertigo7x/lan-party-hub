@@ -1,10 +1,12 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Server.Application.Catalog;
+using LANPartyHub.Server.Application.Clients;
 using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Presentation.Catalog;
+using LANPartyHub.Server.Presentation.Clients;
 using LANPartyHub.Server.Presentation.Packages;
 using LANPartyHub.Server.Presentation.Trust;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +63,7 @@ public sealed class ServerApp : Avalonia.Application
             var publishPackage = scope.ServiceProvider.GetRequiredService<PublishPackage>();
             var listPackages = scope.ServiceProvider.GetRequiredService<ListPackages>();
             var withdrawGame = scope.ServiceProvider.GetRequiredService<WithdrawGame>();
+            var listClients = scope.ServiceProvider.GetRequiredService<ListClients>();
 
             // AD-27: el ancla de confianza la publica el adaptador que posee la clave del
             // servidor, y la dirección es la que el organizador tiene que escribir en el
@@ -89,6 +92,15 @@ public sealed class ServerApp : Avalonia.Application
                     withdrawGame);
 
                 await packages.ShowDialog(window).ConfigureAwait(true);
+            };
+
+            // AD-29: la sección de clientes es la vista de organización de los equipos
+            // de la LAN, y la alcanza el organizador desde la navegación.
+            window.ClientsRequested += async (_, _) =>
+            {
+                var clients = new ClientsWindow(new ClientsViewModel(), listClients);
+
+                await clients.ShowDialog(window).ConfigureAwait(true);
             };
 
             desktop.ShutdownRequested += (_, _) => scope.Dispose();
