@@ -1300,13 +1300,15 @@ def migration_gaps(paths: Sequence[str], metadata: PlanMetadata | None) -> list[
         prefix = f"src/{owner}/Infrastructure/Persistence/"
         changed_entity = any(path.startswith(prefix + "Entities/") for path in paths)
         changed_migration = any(
-            path.startswith(prefix + "Migrations/") and path.endswith(".cs") and "ModelSnapshot" not in path
+            path.startswith(prefix + "Migrations/") and path.endswith(".cs")
+            and not path.endswith(".Designer.cs") and "ModelSnapshot" not in path
             for path in paths
         )
         if changed_entity and not changed_migration:
             gaps.append(f"{owner}: persistence entity changed without a versioned migration")
     if metadata is not None and metadata.schema_changes and not any(
-        "/Migrations/" in path and path.endswith(".cs") and "ModelSnapshot" not in path
+        "/Migrations/" in path and path.endswith(".cs")
+        and not path.endswith(".Designer.cs") and "ModelSnapshot" not in path
         for path in paths
     ):
         gaps.append("the plan declares schema changes but the story has no versioned migration")
@@ -2315,6 +2317,11 @@ def self_test() -> int:
         "src/Server/Infrastructure/Persistence/Migrations/20261109_ClientInstallationView.cs",
     ], PlanMetadata(schema_changes=True)):
         failures.append("a versioned schema migration was rejected")
+    if not migration_gaps([
+        "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
+        "src/Server/Infrastructure/Persistence/Migrations/20261109_ClientInstallationView.Designer.cs",
+    ], PlanMetadata(schema_changes=True)):
+        failures.append("a migration designer was mistaken for the versioned migration")
     if not migration_gaps(["src/Server/Infrastructure/Persistence/CatalogDbContext.cs"],
                           PlanMetadata(schema_changes=True)):
         failures.append("a declared schema change without a migration was accepted")
