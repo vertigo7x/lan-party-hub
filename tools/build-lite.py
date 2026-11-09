@@ -878,7 +878,13 @@ class ImplementationProgress:
 def plan_prompt(story, plan: Path) -> str:
     section = extract_story_section(story)
     epic_path = legacy.ARTIFACTS_DIR / f"epic-{story.epic}-context.md"
-    epic_context = epic_path.read_text(encoding="utf-8") if epic_path.exists() else "(no existe contexto compilado)"
+    # The full compiled epic repeats the story's AC and exceeds the practical
+    # Windows command-line budget of the installed opencode launcher. The
+    # preparer receives the complete epic later; planning only needs its goal.
+    epic_context = (
+        epic_path.read_text(encoding="utf-8").split("## Stories", 1)[0].strip()
+        if epic_path.exists() else "(no existe contexto compilado)"
+    )
     sources = f"Historia:\n{section}\n\nContexto de épica:\n{epic_context}"
     if len(sources) > PLAN_SOURCE_MAX_CHARS:
         raise legacy.DriverError(f"story {story.short_id} planning sources exceed the bounded prompt; split or condense the epic context")
@@ -2444,6 +2450,9 @@ def self_test() -> int:
             failures.append("the 9.2 planning prompt has no concrete path candidates")
     except legacy.DriverError as error:
         failures.append(f"the 9.2 prompt cannot be produced: {error}")
+    else:
+        if len(prompt) > 8000:
+            failures.append("the 9.2 prompt exceeds the Windows launcher argument budget")
     self_test_plan.unlink(missing_ok=True)
     if implementation_paths([".build-lite/plans/3-1.md"]):
         failures.append("Build Lite bookkeeping was parsed as implementation work")
