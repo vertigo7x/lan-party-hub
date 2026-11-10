@@ -890,24 +890,49 @@ def plan_prompt(story, plan: Path) -> str:
         raise legacy.DriverError(f"story {story.short_id} planning sources exceed the bounded prompt; split or condense the epic context")
     # The 9.2 plan failed because the story text identifies roles but not filenames.
     # Supply existing candidates without giving the planner permission to invent paths.
-    candidates = (
-        "src/Shared/Contracts/ClientStateChanged.cs",
-        "src/Shared/Contracts/DownloadProgressUpdated.cs",
-        "src/Shared/Contracts/InstallationProgressUpdated.cs",
-        "src/Shared/Contracts/StateDisplayMap.cs",
-        "src/Server/Host/CatalogHub.cs",
-        "src/Server/Application/Clients/ReportClientState.cs",
-        "src/Server/Infrastructure/Persistence/CatalogDbContext.cs",
-        "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
-        "src/Server/Infrastructure/Persistence/Migrations/CatalogDbContextModelSnapshot.cs",
-        "src/Client/Application/ClientInstallation.cs",
-        "src/Client/Application/Ports/IClientStatePublisher.cs",
-        "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
-        "src/Client/Infrastructure/Persistence/ClientStateDbContext.cs",
-        "tests/IntegrationTests/ClientStateHubTests.cs",
-        "tests/IntegrationTests/InstallationPersistenceTests.cs",
-        "tests/UnitTests/ClientsTableTests.cs",
-    ) if story.short_id == "9.2" else ()
+    # The 9.3 plan failed the same way: the planner explored the tree instead of
+    # writing the artifact within its budget, so its routes are preloaded too.
+    candidates_by_story = {
+        "9.2": (
+            "src/Shared/Contracts/ClientStateChanged.cs",
+            "src/Shared/Contracts/DownloadProgressUpdated.cs",
+            "src/Shared/Contracts/InstallationProgressUpdated.cs",
+            "src/Shared/Contracts/StateDisplayMap.cs",
+            "src/Server/Host/CatalogHub.cs",
+            "src/Server/Application/Clients/ReportClientState.cs",
+            "src/Server/Infrastructure/Persistence/CatalogDbContext.cs",
+            "src/Server/Infrastructure/Persistence/Entities/ClientInstallationView.cs",
+            "src/Server/Infrastructure/Persistence/Migrations/CatalogDbContextModelSnapshot.cs",
+            "src/Client/Application/ClientInstallation.cs",
+            "src/Client/Application/Ports/IClientStatePublisher.cs",
+            "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
+            "src/Client/Infrastructure/Persistence/ClientStateDbContext.cs",
+            "tests/IntegrationTests/ClientStateHubTests.cs",
+            "tests/IntegrationTests/InstallationPersistenceTests.cs",
+            "tests/UnitTests/ClientsTableTests.cs",
+        ),
+        "9.3": (
+            "src/Shared/Contracts/ClientErrorReported.cs",
+            "src/Shared/Contracts/ApiError.cs",
+            "src/Shared/Contracts/ErrorCatalog.cs",
+            "src/Shared/Contracts/ClientRegistrationView.cs",
+            "src/Server/Host/CatalogHub.cs",
+            "src/Server/Application/Ports/IClientErrorRepository.cs",
+            "src/Server/Application/Clients/ListClients.cs",
+            "src/Server/Infrastructure/Persistence/ClientErrorRepository.cs",
+            "src/Server/Infrastructure/Persistence/Entities/ClientErrorEntity.cs",
+            "src/Server/Presentation/Clients/ClientsViewModel.cs",
+            "src/Server/Presentation/Clients/ClientsWindow.cs",
+            "src/Client/Application/Clients/PublishClientState.cs",
+            "src/Client/Host/ClientRegistrationComposition.cs",
+            "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
+            "src/Client/Presentation/Errors/ErrorToast.cs",
+            "src/Client/Presentation/Errors/ErrorMessageViewModel.cs",
+            "tests/IntegrationTests/ClientProjectionTests.cs",
+            "tests/UnitTests/ClientsTableTests.cs",
+        ),
+    }
+    candidates = candidates_by_story.get(story.short_id, ())
     available = [path for path in candidates if (REPO_ROOT / path).is_file()]
     candidate_text = "\n".join(f"- {path}" for path in available) or "(sin rutas precargadas)"
     return f"""Planifica exclusivamente la Story {story.short_id}: {story.title}.
