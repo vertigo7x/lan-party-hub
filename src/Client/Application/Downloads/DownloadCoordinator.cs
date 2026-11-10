@@ -61,6 +61,7 @@ public sealed class DownloadCoordinator
     private readonly IDownloadProgressReporter? _reporter;
     private readonly IServerVersionProbe? _versionProbe;
     private readonly ValidatePackage? _validation;
+    private IClientStateChangeNotifier? _stateNotifier;
     private readonly ILogger<DownloadCoordinator> _logger;
     private readonly int _maxConcurrentDownloads;
     private readonly int _maxTotalConnections;
@@ -110,6 +111,11 @@ public sealed class DownloadCoordinator
     /// does not check the compatibility before reanudar. La incompatibilidad NO es un
     /// estado: es un diagnÃ³stico (AD-6, AC5).
     /// </param>
+    /// <param name="stateNotifier">
+    /// Port of the aviso de que el estado del cliente cambió, or <c>null</c> when the
+    /// client does not publish it. Sin avisador la descarga SIGUE: la proyección es un
+    /// complemento y no su motivo de vida (AD-1, AD-22).
+    /// </param>
     public DownloadCoordinator(
         ITransferEngine engine,
         IDownloadIntentClient intents,
@@ -120,7 +126,8 @@ public sealed class DownloadCoordinator
         int maxConcurrentDownloads = DefaultMaxConcurrentDownloads,
         int maxTotalConnections = DefaultMaxTotalConnections,
         IDownloadProgressReporter? reporter = null,
-        IServerVersionProbe? versionProbe = null)
+        IServerVersionProbe? versionProbe = null,
+        IClientStateChangeNotifier? stateNotifier = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(intents);
@@ -149,12 +156,36 @@ public sealed class DownloadCoordinator
         _reporter = reporter;
         _versionProbe = versionProbe;
         _validation = validation;
+        _stateNotifier = stateNotifier;
         _logger = logger;
         _maxConcurrentDownloads = maxConcurrentDownloads;
         _maxTotalConnections = maxTotalConnections;
 
         _concurrencySlots = new SemaphoreSlim(maxConcurrentDownloads, maxConcurrentDownloads);
         _connectionSlots = new SemaphoreSlim(maxTotalConnections, maxTotalConnections);
+    }
+
+    /// <summary>
+    /// ENLAZA TARDE el aviso de que el estado del cliente cambió, así que el coordinador
+    /// puede avisar de que una descarga empieza o termina (AD-22, FR-10).
+    ///
+    /// <para>
+    /// El enlace es TARDE porque el REGISTRO publica el estado y necesita al
+    /// coordinador, y el coordinador necesita al registro: construir los dos con el uno
+    /// al otro al mismo tiempo sería un ciclo (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="notifier">
+    /// Port of the aviso de que el estado del cliente cambió, or <c>null</c> when the
+    /// client does not publish it. Sin avisador la descarga SIGUE: la proyección es un
+    /// complemento y no su motivo de vida (AD-1, AD-22).
+    /// </param>
+    public void ConfigureStateNotifier(IClientStateChangeNotifier? notifier)
+    {
+        lock (_lock)
+        {
+            _stateNotifier = notifier;
+        }
     }
 
     /// <summary>
@@ -251,7 +282,14 @@ public sealed class DownloadCoordinator
             cancellationToken)
             .ConfigureAwait(false);
 
+        // AD-22, FR-10: la descarga EMPIEZA, así que la lista de operaciones en curso del
+        // cliente cambia y el servidor tiene que recibir el estado COMPLETO: sin este
+        // aviso, la tabla del organizador no muestra la descarga que acaba de empezar
+        // (AD-22).
         handle.Attach(Publish);
+
+        // El aviso al organizador no bloquea el comienzo de la transferencia de bytes.
+        NotifyStateChanged();
 
         handle.TrackRun(RunAsync(handle, cancellationToken));
 
@@ -1112,6 +1150,18 @@ public sealed class DownloadCoordinator
     {
         Changed?.Invoke(handle);
 
+        // AD-22, FR-10: la operaciÃ³n TERMINA, asÃ­ que deja de estar en curso y la lista
+        // de operaciones del cliente cambia. El aviso publica el estado COMPLETO, asÃ­ que
+        // el servidor deja de mostrar una descarga que ya terminÃ³ (AD-22).
+        //
+        // El aviso es de MEJOR ESFUERZO y NUNCA impide que la descarga siga: lo que
+        // sobrevive al reinicio es el offset persistido en el disco del cliente (AD-11,
+        // AD-22).
+        if (IsTerminal(handle.StateMachine.Current))
+        {
+            NotifyStateChanged();
+        }
+
         if (_reporter is null)
         {
             return;
@@ -1139,6 +1189,80 @@ public sealed class DownloadCoordinator
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
+
+    /// <summary>
+    /// Avisa de que el estado del cliente cambiÃ³, sin esperar al servidor: la
+    /// notificaciÃ³n es de MEJOR ESFUERZO y NUNCA impide que la descarga siga (AD-1,
+    /// AD-11, AD-22).
+    /// </summary>
+    private void NotifyStateChanged()
+    {
+        if (_stateNotifier is null)
+        {
+            return;
+        }
+
+        var notification = NotifyStateChangedAsync(CancellationToken.None);
+
+        lock (_lock)
+        {
+            _pendingReports.Add(notification);
+        }
+
+        _ = notification.ContinueWith(
+            completed =>
+            {
+                lock (_lock)
+                {
+                    _pendingReports.Remove(completed);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Avisa de que el estado del cliente cambiÃ³, y ESPERA al servidor (AD-22).
+    ///
+    /// <para>
+    /// La espera es la del ARRANQUE de una descarga: la operaciÃ³n ya estÃ¡ persistida, asÃ­
+    /// que esperar al servidor no pone en riesgo el offset (AD-11).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the notification.</param>
+    /// <returns>A task that completes when the notification has been attempted.</returns>
+    private async Task NotifyStateChangedAsync(CancellationToken cancellationToken)
+    {
+        if (_stateNotifier is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _stateNotifier
+                .NotifyAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La notificaciÃ³n del cambio de estado NO puede impedir que la descarga
+            // siga: el offset persistido es lo que sobrevive al reinicio (AD-11, AD-22).
+            _logger.LogWarning(
+                exception,
+                "No se pudo publicar el cambio de estado del cliente tras la operaciÃ³n de descarga: la descarga sigue.");
+        }
+    }
+
+    /// <summary>
+    /// Tells whether a state of the download machine is TERMINAL, y la operaciÃ³n deja de
+    /// estar en curso (AD-10).
+    /// </summary>
+    /// <param name="state">State of the download machine.</param>
+    /// <returns><c>true</c> when the state is terminal.</returns>
+    private static bool IsTerminal(DownloadState state) =>
+        state is DownloadState.Completed or DownloadState.Cancelled or DownloadState.Failed;
 
     /// <summary>
     /// Waits until every publication of the progress that is in flight has finished

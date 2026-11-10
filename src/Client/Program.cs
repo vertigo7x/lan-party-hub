@@ -1,5 +1,6 @@
 using Avalonia;
 using LANPartyHub.Client.Application;
+using LANPartyHub.Client.Application.Clients;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
@@ -48,6 +49,8 @@ public static class Program
         InstallationComposition? installations = null;
         GameLauncherComposition? gameLauncher = null;
         DialogPrivilegedOperationConfirmation? privilegedConfirmation = null;
+        ClientStateHubPublisher? statePublisher = null;
+        ClientStateStoreLease? stateStoreLease = null;
 
         try
         {
@@ -82,11 +85,44 @@ public static class Program
             // y esa puerta vive en el caso de uso de la conexión.
             connection = OpenConnection(correlationScope, loggerFactory, startup.StateDatabasePath);
 
+            // AD-18, AD-29: el publicador del estado del cliente es el ÚNICO canal de
+            // push del sistema, así que se abre UNA vez y se comparte con la
+            // sincronización, el registro y las instalaciones: todas las publicaciones
+            // viajan por la MISMA conexión con el hub (AD-22).
+            //
+            // Un fallo al abrirlo NO impide que el cliente arrancar: la proyección es un
+            // complemento del cliente y no su motivo de vida (AD-1).
+            statePublisher = OpenStatePublisher(startup, loggerFactory);
+
+            // AD-7, AD-8, AD-9, AC1: la composición de las instalaciones. El manifiesto
+            // firmado se pide al servidor, su firma se valida contra el ancla ya fijada y
+            // SOLO después se crea el directorio de instalación (AC1, AC3).
+            //
+            // AC2: la confirmación de lo privilegiado la lleva el overlay de UN SOLO
+            // NIVEL dentro de la ventana, así que el puerto se construye aquí y el
+            // presentador se fija cuando la ventana ya existe (UX-DR-16, UX-DR-37).
+            privilegedConfirmation = new DialogPrivilegedOperationConfirmation(
+                (operation, detail) => new PrivilegedOperationDialog(operation, detail));
+
+            // AD-22, FR-10: la composición de las instalaciones se abre ANTES que la del
+            // REGISTRO, porque el registro publica el estado del cliente y ese estado
+            // lleva las instalaciones EN CURSO, que el tracker de la composición de las
+            // instalaciones posee (AD-18, AD-22).
+            installations = OpenInstallations(
+                startup,
+                correlationScope,
+                loggerFactory,
+                privilegedConfirmation,
+                statePublisher);
+
             // AD-5, AD-26: la composición de la sincronización del catálogo vive mientras
             // vive la ventana del jugador, porque la sincronización tiene que reaccionar al
             // disparo del hub mientras el cliente corre. Se abre DESPUÉS del startup, que
             // ya ha aplicado las migraciones de la base de datos del cliente (AD-11).
-            catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory, connection);
+            //
+            // AD-33: el sincronizador REPORTA el resultado terminal de las operaciones
+            // retiradas del catálogo, así que recibe el publicador del estado (AD-22).
+            catalogSync = OpenCatalogSync(startup, correlationScope, loggerFactory, connection, statePublisher);
 
             // AD-30, AD-32: la composición del REGISTRO del equipo. El cliente se
             // registra ante el servidor cuando se conecta y cuando el servidor vuelve
@@ -95,7 +131,37 @@ public static class Program
             //
             // Un fallo al abrirla NO impide que el cliente arrancar: el registro es un
             // complemento del cliente y no su motivo de vida (AD-1).
-            registration = OpenRegistration(startup, correlationScope, loggerFactory);
+            //
+            // AD-22: el registro publica el estado REAL del cliente —las instalaciones
+            // que tiene y las operaciones en curso—, así que recibe el store local y la
+            // fuente de las instalaciones en curso (AD-18, AD-22).
+            //
+            // AD-11: el alquiler del store se abre AQUÍ y se dispone al final de la
+            // sesión, así que el contexto sobre `state.sqlite` no queda retenido (AD-11).
+            stateStoreLease = OpenClientStateStore(startup);
+
+            registration = OpenRegistration(
+                startup,
+                correlationScope,
+                loggerFactory,
+                statePublisher: statePublisher,
+                stateStore: stateStoreLease?.Store,
+                activeInstallations: installations?.ActiveInstallations,
+                connectionPublisher: statePublisher);
+
+            // AD-22, FR-10: la publicación del estado COMPLETO se ENLAZA TARDE, después de
+            // que existan las dos composiciones. El registro necesita al tracker como
+            // fuente de las instalaciones EN CURSO, y el tracker necesita al registro
+            // para publicar esa lista: construirlos con el uno al otro al mismo tiempo
+            // sería un ciclo, así que uno de los dos llega después (AD-22).
+            //
+            // Con el enlace, una instalación que empieza o termina DECLARA al servidor
+            // sus operaciones en curso, y la tabla del organizador ve aparecer y
+            // desaparecer la operación sin esperar a la siguiente publicación (AD-22).
+            if (installations?.ActiveInstallations is { } tracker && registration is not null)
+            {
+                tracker.ConfigureStatePublication(registration.PublishCurrentStateAsync);
+            }
 
             // AD-4, AD-28: la transferencia de bytes entra por el puerto
             // `ITransferEngine` y el puerto se entrega con UNA sola implementación,
@@ -115,19 +181,28 @@ public static class Program
             //
             // Un fallo al abrirla NO impide que el cliente arrancar: las descargas son un
             // complemento del cliente y no su motivo de vida (AD-1).
-            downloads = OpenDownloads(startup, transfer, correlationScope, loggerFactory, connection);
+            downloads = OpenDownloads(
+                startup,
+                transfer,
+                correlationScope,
+                loggerFactory,
+                connection,
+                statePublisher);
 
-            // AD-7, AD-8, AD-9, AC1: la composición de las instalaciones. El manifiesto
-            // firmado se pide al servidor, su firma se valida contra el ancla ya fijada y
-            // SOLO después se crea el directorio de instalación (AC1, AC3).
+            // AD-22, FR-10: la publicación del estado COMPLETO se ENLAZA TARDE al
+            // coordinador de las descargas, así que una descarga que EMPIEZA o que
+            // TERMINA DECLARA al servidor sus operaciones en curso, y la tabla del
+            // organizador ve aparecer y desaparecer la operación sin esperar a la
+            // siguiente publicación periódica (AD-22).
             //
-            // AC2: la confirmación de lo privilegiado la lleva el overlay de UN SOLO
-            // NIVEL dentro de la ventana, así que el puerto se construye aquí y el
-            // presentador se fija cuando la ventana ya existe (UX-DR-16, UX-DR-37).
-            privilegedConfirmation = new DialogPrivilegedOperationConfirmation(
-                (operation, detail) => new PrivilegedOperationDialog(operation, detail));
-
-            installations = OpenInstallations(startup, correlationScope, loggerFactory, privilegedConfirmation);
+            // El enlace es TARDE porque el REGISTRO publica el estado y el coordinador
+            // necesita al registro: construirlos con el uno al otro al mismo tiempo sería
+            // un ciclo (AD-22).
+            if (downloads is not null && registration is not null)
+            {
+                downloads.Coordinator.ConfigureStateNotifier(
+                    new RegistrationStateChangeNotifier(registration));
+            }
 
             // AD-19, AC1: la composición del lanzador de juegos. El lanzador NO necesita
             // servidor para arrancar: lee la instalación que el cliente ya registró y el
@@ -165,10 +240,124 @@ public static class Program
         {
             catalogSync?.DisposeAsync().AsTask().GetAwaiter().GetResult();
             downloads?.Dispose();
+            registration?.Dispose();
             installations?.Dispose();
             transfer?.Dispose();
+            statePublisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            // AD-11: el contexto del store del estado se cierra con la sesión, así que
+            // no queda una conexión retenida sobre `state.sqlite` (AD-11).
+            stateStoreLease?.Dispose();
+
             correlationScope?.Dispose();
             loggerFactory?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Opens the publisher of the state of the client (AD-18, AD-29).
+    ///
+    /// <para>
+    /// El publicador es el ÚNICO canal de push del sistema, así que se abre UNA vez y se
+    /// comparte con el registro, la sincronización y las instalaciones: todas las
+    /// publicaciones viajan por la MISMA conexión con el hub (AD-22).
+    /// </para>
+    /// <para>
+    /// Un fallo al abrirlo NO impide que el cliente arrancar: la proyección es un
+    /// complemento del cliente y no su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The publisher, or <c>null</c> when it could not be opened.</returns>
+    private static ClientStateHubPublisher? OpenStatePublisher(
+        ClientStartupResult startup,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (string.IsNullOrWhiteSpace(startup.ServerAddress))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new ClientStateHubPublisher(
+                new Uri(startup.ServerAddress, UriKind.Absolute),
+                loggerFactory.CreateLogger<ClientStateHubPublisher>());
+        }
+        catch (Exception exception)
+        {
+            // El cliente no puede publicar su estado, pero sigue siendo un cliente que
+            // arranca: el catálogo y las instalaciones no dependen de la proyección
+            // (AD-1).
+            loggerFactory
+                .CreateLogger("LANPartyHub.Client.State")
+                .LogWarning(
+                    exception,
+                    "No se pudo abrir el publicador del estado del cliente: el cliente sigue arrancando sin publicar su estado.");
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Opens the access to the local database of the client, de donde salen las
+    /// instalaciones y las operaciones REALES que el cliente publica (AD-22).
+    ///
+    /// <para>
+    /// El store se abre sobre el MISMO archivo SQLite que el arranque ya migró, así que
+    /// la publicación del estado ve las instalaciones que el cliente ya registró
+    /// (AD-11, AD-22).
+    /// </para>
+    /// <para>
+    /// El alquiler DEVUELVE la conexión con el archivo: el contexto se abre UNA vez y
+    /// se DISPONE cuando la sesión termina, así que no queda una conexión retenida
+    /// compitiendo con los demás contextos que el cliente abre sobre la misma base
+    /// (AD-11).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <returns>The lease of the store, or <c>null</c> when it could not be opened.</returns>
+    private static ClientStateStoreLease? OpenClientStateStore(ClientStartupResult startup)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+
+        ClientStateDbContext? context = null;
+
+        try
+        {
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = startup.StateDatabasePath,
+                Pooling = false,
+            }.ToString();
+
+            var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite(
+                    connectionString,
+                    sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                .Options;
+
+            context = new ClientStateDbContext(options);
+
+            return new ClientStateStoreLease(
+                context,
+                new ClientStateStore(context, startup.Layout));
+        }
+        catch (Exception)
+        {
+            // Sin store el estado se publica SIN las instalaciones y las operaciones, y el
+            // cliente sigue arrancando: la proyección es un complemento y no su motivo de
+            // vida (AD-1, AD-22).
+            //
+            // El contexto a medias se DISPONE aquí: un contexto abierto sobre
+            // `state.sqlite` retiene la conexión con el archivo (AD-11).
+            context?.Dispose();
+
+            return null;
         }
     }
 
@@ -404,7 +593,8 @@ public static class Program
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
-        ConnectionComposition? connection = null)
+        ConnectionComposition? connection = null,
+        IOperationOutcomeReporter? outcomeReporter = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -425,7 +615,8 @@ public static class Program
                 correlationScope,
                 loggerFactory,
                 connection?.ConnectionService,
-                new AvaloniaUiThread());
+                new AvaloniaUiThread(),
+                outcomeReporter);
 
             composition.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
@@ -469,11 +660,39 @@ public static class Program
     /// of the team is persisted (AD-12, AD-30).
     /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="correlationScope">Scope that correlates the log of the client.</param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="baseDirectory">
+    /// Folder of the deployment: it holds the configuration file where the effective name
+    /// of the team is persisted (AD-12, AD-30).
+    /// </param>
+    /// <param name="statePublisher">
+    /// Publisher of the state of the client, que es el ÚNICO canal de push del sistema
+    /// (AD-18, AD-29).
+    /// </param>
+    /// <param name="stateStore">
+    /// Access to the local database of the client, de donde salen las instalaciones y las
+    /// operaciones REALES que el cliente publica (AD-22).
+    /// </param>
+    /// <param name="activeInstallations">
+    /// Source of the INSTALLATION operations that the client is running right now, así que
+    /// el estado publicado las lleva como operaciones en curso (AD-18, AD-22, FR-10).
+    /// </param>
+    /// <param name="connectionPublisher">
+    /// Port of the publication of the CONNECTION state ALONE, para el cliente que no
+    /// puede sostener una instantánea completa de su estado (AD-18, AD-22, AD-29).
+    /// </param>
+    /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static ClientRegistrationComposition? OpenRegistration(
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
-        string? baseDirectory = null)
+        string? baseDirectory = null,
+        IClientStatePublisher? statePublisher = null,
+        IClientStateStore? stateStore = null,
+        IActiveInstallationSource? activeInstallations = null,
+        IClientConnectionPublisher? connectionPublisher = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -485,6 +704,7 @@ public static class Program
         }
 
         ClientRegistrationComposition? composition = null;
+        ClientStateHubPublisher? ownedPublisher = null;
 
         try
         {
@@ -500,17 +720,34 @@ public static class Program
 
             // AD-18, AD-29: el publicador del estado viaja por el hub del servidor, que
             // es el canal sancionado para el estado que declara el cliente.
-            var statePublisher = new ClientStateHubPublisher(
-                new Uri(startup.ServerAddress, UriKind.Absolute),
-                loggerFactory.CreateLogger<ClientStateHubPublisher>());
+            //
+            // El publicador es COMPARTIDO con la sincronización y las instalaciones, así
+            // que la conexión con el hub se abre UNA vez y todas las publicaciones viajan
+            // por el mismo canal (AD-18, AD-22).
+            if (statePublisher is null)
+            {
+                ownedPublisher = new ClientStateHubPublisher(
+                    new Uri(startup.ServerAddress, UriKind.Absolute),
+                    loggerFactory.CreateLogger<ClientStateHubPublisher>());
+            }
 
+            var publisher = (IClientStatePublisher?)statePublisher ?? ownedPublisher!;
+
+            // AD-22: el estado que el cliente publica es el REAL: las instalaciones que
+            // tiene registradas y las operaciones que están en curso. El store del
+            // cliente es la fuente de las instalaciones, y la fuente de las
+            // instalaciones EN CURSO se entrega aparte (AD-18, AD-22).
             composition = new ClientRegistrationComposition(
                 new Uri(startup.ServerAddress, UriKind.Absolute),
                 correlationScope,
                 startup.Identity,
                 nameStore,
-                statePublisher,
-                loggerFactory);
+                publisher,
+                loggerFactory,
+                stateStore,
+                activeInstallations,
+                connectionPublisher ?? ownedPublisher,
+                ownedPublisher);
         }
         catch (Exception exception)
         {
@@ -523,6 +760,10 @@ public static class Program
                     "No se pudo abrir la composición del registro del equipo: el cliente sigue arrancando sin ella.");
 
             composition?.Dispose();
+            if (composition is null)
+            {
+                ownedPublisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             composition = null;
         }
@@ -551,13 +792,20 @@ public static class Program
     /// Composition of the connection, whose sonda de versiones declara la puerta de
     /// compatibilidad que las descargas repiten antes de reanudar (AD-6, AC5).
     /// </param>
+    /// <param name="progressReporter">
+    /// Publisher of the progress of the download, or <c>null</c> when the client could
+    /// not open the shared one. AD-22, AD-29: el progreso viaja por el publicador
+    /// COMPARTIDO del estado del cliente, así que el progreso y el estado salen por la
+    /// MISMA conexión con el hub y no pueden reordenarse (AD-22).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static DownloadComposition? OpenDownloads(
         ClientStartupResult startup,
         TransferComposition transfer,
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
-        ConnectionComposition? connection = null)
+        ConnectionComposition? connection = null,
+        ClientStateHubPublisher? progressReporter = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(transfer);
@@ -608,7 +856,8 @@ public static class Program
                 stateStore,
                 startup.MaxConcurrentDownloads,
                 startup.MaxTotalConnections,
-                connection?.VersionProbe);
+                connection?.VersionProbe,
+                progressReporter);
         }
         catch (Exception exception)
         {
@@ -647,12 +896,18 @@ public static class Program
     /// Port of the confirmation of the privileged operations, or <c>null</c> when the
     /// composition is built without interfaz (AC2).
     /// </param>
+    /// <param name="progressReporter">
+    /// Port of the publication of the progress of the installation, or <c>null</c> when
+    /// the client cannot publish it. Sin publicador la instalación SIGUE: la proyección
+    /// es un complemento y no su motivo de vida (AD-1, AD-22).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static InstallationComposition? OpenInstallations(
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
-        IPrivilegedOperationConfirmation? confirmation = null)
+        IPrivilegedOperationConfirmation? confirmation = null,
+        IInstallationProgressReporter? progressReporter = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -710,7 +965,8 @@ public static class Program
                 stateStore,
                 loggerFactory,
                 confirmation,
-                snapshotStore);
+                snapshotStore,
+                progressReporter);
         }
         catch (Exception exception)
         {
@@ -873,4 +1129,37 @@ public static class Program
             // There is no desktop to draw the window on, so the message stays in the log.
         }
     }
+}
+
+/// <summary>
+/// Aviso de que el estado del cliente cambió, sobre la composición del REGISTRO
+/// (AD-22, FR-10).
+///
+/// <para>
+/// La composición del REGISTRO es la que publica el estado COMPLETO del cliente —las
+/// instalaciones que tiene y las operaciones en curso—, así que es la que recibe el
+/// aviso del coordinador de las descargas cuando una descarga empieza o termina
+/// (AD-18, AD-22).
+/// </para>
+/// <para>
+/// El adaptador NUNCA impide que la descarga siga: el registro ya captura sus propios
+/// fallos, así que el aviso solo llega al servidor cuando se puede (AD-1, AD-22).
+/// </para>
+/// </summary>
+internal sealed class RegistrationStateChangeNotifier : IClientStateChangeNotifier
+{
+    private readonly ClientRegistrationComposition _registration;
+
+    /// <summary>Creates the notifier over the composition of the registration.</summary>
+    /// <param name="registration">Composition of the registration of the team.</param>
+    public RegistrationStateChangeNotifier(ClientRegistrationComposition registration)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+
+        _registration = registration;
+    }
+
+    /// <inheritdoc />
+    public Task NotifyAsync(CancellationToken cancellationToken) =>
+        _registration.PublishCurrentStateAsync(cancellationToken);
 }

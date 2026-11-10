@@ -23,9 +23,11 @@ public sealed class SharedContractInventoryTests
         "CatalogViewState",
         "CatalogVersionOrder",
         "ClientStateChanged",
+        "ClientConnectionChanged",
         "DownloadProgressUpdated",
         "InstallationProgressUpdated",
         "ClientErrorReported",
+        "OperationOutcomeReported",
         "CatalogChanged",
         "CatalogSnapshot",
         "ClientRegistrationView",
@@ -36,6 +38,7 @@ public sealed class SharedContractInventoryTests
         "VersionInfo",
         "ServerEndpoint",
         "ConnectionState",
+        "OperationTypeNames",
     ];
 
     private static readonly string[] ForbiddenSharedAssemblies =
@@ -77,9 +80,11 @@ public sealed class SharedContractInventoryTests
     [InlineData("CatalogViewState")]
     [InlineData("CatalogVersionOrder")]
     [InlineData("ClientStateChanged")]
+    [InlineData("ClientConnectionChanged")]
     [InlineData("DownloadProgressUpdated")]
     [InlineData("InstallationProgressUpdated")]
     [InlineData("ClientErrorReported")]
+    [InlineData("OperationOutcomeReported")]
     [InlineData("CatalogChanged")]
     [InlineData("CatalogSnapshot")]
     [InlineData("ClientRegistrationView")]
@@ -104,10 +109,10 @@ public sealed class SharedContractInventoryTests
     }
 
     [Fact]
-    public void Shared_declares_twenty_two_contracts()
+    public void Shared_declares_twenty_five_contracts()
     {
-        Assert.Equal(22, RequiredContractTypes.Length);
-        Assert.Equal(22, PublicTopLevelTypes(SharedAssembly).Count);
+        Assert.Equal(25, RequiredContractTypes.Length);
+        Assert.Equal(25, PublicTopLevelTypes(SharedAssembly).Count);
     }
 
     [Fact]

@@ -59,6 +59,11 @@ namespace LANPartyHub.Client.Host;
         /// Client of the server of the event, when the composition OWNS it, or <c>null</c>
         /// when the caller does.
         /// </param>
+        /// <param name="progressReporter">
+        /// Port of the publication of the progress of the installation, or <c>null</c>
+        /// when the composition cannot publish it. Sin publicador la instalación SIGUE:
+        /// la proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+        /// </param>
         public InstallationComposition(
             ISignedManifestClient manifests,
             IManifestSignatureVerifier verifier,
@@ -70,7 +75,8 @@ namespace LANPartyHub.Client.Host;
             ILoggerFactory loggerFactory,
             IPrivilegedOperationConfirmation? confirmation = null,
             ICatalogSnapshotStore? snapshots = null,
-            HttpClient? httpClient = null)
+            HttpClient? httpClient = null,
+            IInstallationProgressReporter? progressReporter = null)
         {
             ArgumentNullException.ThrowIfNull(manifests);
             ArgumentNullException.ThrowIfNull(verifier);
@@ -102,6 +108,14 @@ namespace LANPartyHub.Client.Host;
                 Executor,
                 loggerFactory.CreateLogger<ManifestTreeWriter>());
 
+            // AD-22: el tracker de las instalaciones EN CURSO es el dueño del
+            // identificador de la operación y de la fase REAL que se publica al
+            // servidor. Sin publicador la instalación SIGUE, así que el tracker se
+            // construye aunque no haya a quién publicar (AD-1, AD-22).
+            ActiveInstallations = new ActiveInstallations(
+                progressReporter,
+                loggerFactory.CreateLogger<ActiveInstallations>());
+
             // AC1, UX-DR-20: la REPARACIÓN reutiliza el mismo ejecutor y el mismo
             // confine que la instalación, y su caso de uso es de CERO RED: localiza el
             // paquete YA VALIDADO en la carpeta de descargas y el manifiesto FIRMADO en
@@ -128,7 +142,8 @@ namespace LANPartyHub.Client.Host;
                 paths,
                 Tree,
                 stateStore,
-                loggerFactory.CreateLogger<InstallationCoordinator>());
+                loggerFactory.CreateLogger<InstallationCoordinator>(),
+                ActiveInstallations);
         }
 
         /// <summary>
@@ -159,6 +174,13 @@ namespace LANPartyHub.Client.Host;
     /// The coordinator of the installation operations of the client.
     /// </summary>
     public InstallationCoordinator Coordinator { get; }
+
+    /// <summary>
+    /// Tracker of the INSTALLATION operations that the client is running right now, que
+    /// es el dueño del identificador de la operación y de la fase REAL que se publica
+    /// al servidor (AD-22, FR-10).
+    /// </summary>
+    public ActiveInstallations ActiveInstallations { get; }
 
     /// <summary>
     /// The case of use of the REPAIR of an invalid installation, que reutiliza el paquete
@@ -192,6 +214,11 @@ namespace LANPartyHub.Client.Host;
     /// Port of the persistence of the snapshot of the catalog, que es donde se resuelve el
     /// paquete de la VERSIÓN INSTALADA que se repara (AC1).
     /// </param>
+    /// <param name="progressReporter">
+    /// Port of the publication of the progress of the installation, or <c>null</c> when
+    /// the composition cannot publish it. Sin publicador la instalación SIGUE: la
+    /// proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+    /// </param>
     /// <returns>The composition of the installations.</returns>
     public static InstallationComposition Create(
         Uri serverAddress,
@@ -201,7 +228,8 @@ namespace LANPartyHub.Client.Host;
         ITrustAnchorReader trustAnchorReader,
         ILoggerFactory loggerFactory,
         IPrivilegedOperationConfirmation? confirmation = null,
-        ICatalogSnapshotStore? snapshots = null)
+        ICatalogSnapshotStore? snapshots = null,
+        IInstallationProgressReporter? progressReporter = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -234,7 +262,8 @@ namespace LANPartyHub.Client.Host;
             loggerFactory,
             confirmation,
             snapshots,
-            httpClient);
+            httpClient,
+            progressReporter);
     }
 
     /// <inheritdoc />

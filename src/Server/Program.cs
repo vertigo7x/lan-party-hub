@@ -240,6 +240,29 @@ public partial class Program
         builder.Services.AddScoped<ListClients>();
         builder.Services.AddScoped<ReportClientState>();
 
+        // AD-22: la proyección de las INSTALACIONES se PERSISTE en la tabla
+        // `CLIENT_INSTALLATION_VIEW`, con un UPSERT idempotente por (clientId, gameId).
+        builder.Services.AddScoped<IClientInstallationViewRepository, ClientInstallationViewRepository>();
+
+        // AD-15, AD-22: los errores YA REGISTRADOS se MUESTRAN en la vista. La
+        // producción de los errores es de otra historia (AD-33).
+        builder.Services.AddScoped<IClientErrorRepository, ClientErrorRepository>();
+
+        // AD-22: las OPERACIONES en curso viven EN MEMORIA, en un servicio CONCURRENTE
+        // que el hub y la lectura de la vista COMPARTEN: son el estado vivo de una
+        // operación y su dueño es el cliente (AD-10).
+        builder.Services.AddSingleton<ClientOperationsProjection>();
+
+        // AD-22, AD-33: el progreso de las operaciones y su resultado TERMINAL, que es un
+        // resultado y NUNCA un error.
+        builder.Services.AddScoped<ReportClientProgress>();
+        builder.Services.AddScoped<ReportOperationOutcome>();
+
+        // AD-18, AD-29, AD-32: la conexión ALONE del cliente, para el cliente que no
+        // puede sostener una instantánea completa de su estado. El caso de uso NO toca
+        // las instalaciones ni las operaciones ya proyectadas (AD-22).
+        builder.Services.AddScoped<ReportClientConnection>();
+
         // AD-14: el reparto equitativo del enlace es POR CLIENTE, así que el servidor
         // admite un número CONFIGURABLE de respuestas de rango simultáneas por cliente y
         // todas las conexiones de un cliente beben del mismo cubo.

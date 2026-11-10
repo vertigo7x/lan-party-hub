@@ -36,6 +36,13 @@ public sealed class ClientRegistrationComposition : IDisposable
     private readonly HttpClient _httpClient;
     private readonly RegisterWithServer _registerWithServer;
     private readonly IClientStatePublisher _statePublisher;
+    private readonly IClientConnectionPublisher? _connectionPublisher;
+    private readonly ClientStateHubPublisher? _ownedPublisher;
+    private readonly IClientStateStore? _stateStore;
+    private readonly IActiveInstallationSource? _activeInstallations;
+    private readonly Lock _connectionStateGate = new();
+
+    private ConnectionState _lastConnectionState = ConnectionState.Disconnected;
 
     /// <summary>Creates the composition of the registration against the event server.</summary>
     /// <param name="serverAddress">Address of the event server.</param>
@@ -48,13 +55,35 @@ public sealed class ClientRegistrationComposition : IDisposable
     /// <param name="nameStore">Access to the effective name of the team.</param>
     /// <param name="statePublisher">Publisher of the state of the connection of the client.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="stateStore">
+    /// Access to the local database of the client, de donde salen las instalaciones y las
+    /// operaciones REALES que el cliente publica (AD-22). When it is <c>null</c> the
+    /// composition does NOT publish the state: sin store local el cliente no tiene una
+    /// instantánea completa que pueda sostener, y publicarla vacía vaciaría por error la
+    /// proyección del servidor (AD-22).
+    /// </param>
+    /// <param name="activeInstallations">
+    /// Source of the INSTALLATION operations that the client is running right now, or
+    /// <c>null</c> when the client does not track them. Sin fuente, la composición
+    /// publica el estado sin las instalaciones en curso, y la publicación del resto del
+    /// estado no se rompe (AD-1, AD-22).
+    /// </param>
+    /// <param name="connectionPublisher">
+    /// Port of the publication of the CONNECTION state ALONE, or <c>null</c> when the
+    /// client cannot publish it. Sin publicador la conexión NO se comunica por separado:
+    /// el servidor la conoce por la vía del REGISTRO (AD-29, AD-32).
+    /// </param>
     public ClientRegistrationComposition(
         Uri serverAddress,
         IClientRequestHeaders headers,
         ClientIdentity identity,
         IClientEffectiveNameStore nameStore,
         IClientStatePublisher statePublisher,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IClientStateStore? stateStore = null,
+        IActiveInstallationSource? activeInstallations = null,
+        IClientConnectionPublisher? connectionPublisher = null,
+        ClientStateHubPublisher? ownedPublisher = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -66,7 +95,10 @@ public sealed class ClientRegistrationComposition : IDisposable
         Identity = identity;
 
         _statePublisher = statePublisher;
-
+        _connectionPublisher = connectionPublisher;
+        _ownedPublisher = ownedPublisher;
+        _stateStore = stateStore;
+        _activeInstallations = activeInstallations;
         // AD-6: la versión del cliente es la del binario que se está ejecutando y la
         // versión del protocolo es la constante del contrato compartido.
         var versions = new ClientBuildVersion();
@@ -101,6 +133,28 @@ public sealed class ClientRegistrationComposition : IDisposable
 
     /// <summary>Log of the registration of the client.</summary>
     public ILogger Logger { get; }
+
+    /// <summary>
+    /// The LAST connection state that the client DECLARED, así que una publicación que
+    /// el cliente no puede acompañar con un estado nuevo declara el que ya conoce
+    /// (AD-29, AD-22).
+    ///
+    /// <para>
+    /// El estado NUNCA se mejora por convenience: un cliente que no ha declarado nada
+    /// declara <see cref="ConnectionState.Disconnected"/>, así que una publicación hecha
+    /// sin conexión NO afirma que el equipo esté conectado (AD-29).
+    /// </para>
+    /// </summary>
+    public ConnectionState LastConnectionState
+    {
+        get
+        {
+            lock (_connectionStateGate)
+            {
+                return _lastConnectionState;
+            }
+        }
+    }
 
     /// <summary>
     /// Registers the team against the event server, proposing the EFFECTIVE name that
@@ -158,8 +212,26 @@ public sealed class ClientRegistrationComposition : IDisposable
     }
 
     /// <summary>
-    /// Publishes the state of the connection of the client, so the server persists it
-    /// and the table of clients reflects it (AD-18, AD-29, FR-10).
+    /// Publishes the state of the connection of the client, TOGETHER WITH the
+    /// installations and the operations that it really has, so the server can project
+    /// them and the table of clients reflects it (AD-18, AD-22, AD-29, FR-10).
+    ///
+    /// <para>
+    /// La publicación se hace DESPUÉS del registro, y también en cada cambio y en cada
+    /// reconexión: el cliente publica su estado real, no una lista vacía (AD-22).
+    /// </para>
+    /// <para>
+    /// La publicación es una INSTANTÁNEA COMPLETA: el servidor sustituye la proyección
+    /// que tenía por la que recibe. Cuando el cliente NO puede leer sus datos locales la
+    /// publicación COMPLETA se OMITE y se REGISTRA, porque una instantánea vacía vaciaría
+    /// por error la vista del organizador (AD-22).
+    /// </para>
+    /// <para>
+    /// La comunicación de la CONEXIÓN se hace entonces por el evento de SOLO conexión:
+    /// el cliente declara su estado de conexión sin juegos ni operaciones, así que el
+    /// servidor refleja la desconexión SIN tocar la proyección que ya tenía de ese
+    /// cliente (AD-18, AD-22, AD-29).
+    /// </para>
     /// </summary>
     /// <param name="connectionState">Connection state that the client declares.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
@@ -168,15 +240,101 @@ public sealed class ClientRegistrationComposition : IDisposable
         ConnectionState connectionState,
         CancellationToken cancellationToken)
     {
+        // AD-29: el estado DECLARADO es el último que el cliente conoce, así que la
+        // publicación posterior declara ese y no uno inventado.
+        TrackConnectionState(connectionState);
+
+        // AD-22: la publicación del estado es una INSTANTÁNEA COMPLETA: la lista de
+        // operaciones que viaja es la lista COMPLETA de las del cliente, así que el
+        // servidor sustituye la proyección que tenía por la que recibe. Publicar una
+        // lista VACÍA cuando el cliente NO puede leer sus datos locales BORRARÍA la
+        // proyección que el servidor ya tenía (AD-22).
+        //
+        // Por eso, sin store local NO se publica una instantánea: el cliente no tiene
+        // una que pueda sostener, y la proyección del servidor se conserva. Lo que sí se
+        // comunica es la CONEXIÓN, por el evento de SOLO conexión (AD-18, AD-22, AD-29).
+        if (_stateStore is null)
+        {
+            Logger.LogWarning(
+                "No se publica el estado del equipo: el cliente no tiene acceso a sus datos locales, así que no puede declarar una instantánea completa sin vaciar la proyección del servidor.");
+
+            await PublishConnectionOnlyAsync(connectionState, cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
         try
         {
-            await _statePublisher
+            // AD-22: las instalaciones y las operaciones son LOCALES, y el cliente
+            // publica su estado REAL. La ruta de la instalación no sale del cliente.
+            //
+            // AD-18, AD-22: las INSTALACIONES en curso son operaciones en curso como
+            // las demás, así que la fuente de las instalaciones activas se entrega al
+            // caso de uso y la tabla del organizador muestra la fase REAL.
+            var publisher = new PublishClientState(
+                _stateStore,
+                _statePublisher,
+                new FixedClientIdentity(Identity),
+                _activeInstallations);
+
+            await publisher
+                .ExecuteAsync(connectionState, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // AD-22: una lectura local que falla NO se convierte en una instantánea
+            // vacía: la proyección que el servidor ya tiene se CONSERVA, y la vista no se
+            // vacía por error (AD-22).
+            //
+            // La publicación del estado NO impide que el jugador siga usando el cliente:
+            // el estado es un complemento y no su motivo de vida (AD-1).
+            Logger.LogWarning(
+                exception,
+                "No se pudo publicar el estado del equipo: el cliente sigue operando y la proyección del servidor se conserva.");
+
+            // AD-18, AD-22, AD-29: la lectura local falló, así que el cliente declara
+            // SOLO su conexión. El servidor refleja el estado de conexión sin tocar la
+            // proyección que ya tenía de este equipo.
+            await PublishConnectionOnlyAsync(connectionState, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Publishes the CONNECTION state of the client ALONE, sin juegos ni operaciones
+    /// (AD-18, AD-22, AD-29).
+    ///
+    /// <para>
+    /// El evento existe para el cliente que no puede sostener una INSTANTÁNEA COMPLETA
+    /// de su estado: el servidor refleja la conexión o la desconexión y CONSERVA la
+    /// proyección que ya tenía de ese equipo (AD-22, AD-29).
+    /// </para>
+    /// <para>
+    /// La publicación NUNCA impide que el cliente siga operando: es un complemento y no
+    /// su motivo de vida (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="connectionState">Connection state that the client declares.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    private async Task PublishConnectionOnlyAsync(
+        ConnectionState connectionState,
+        CancellationToken cancellationToken)
+    {
+        if (_connectionPublisher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _connectionPublisher
                 .PublishAsync(
-                    new ClientStateChanged(
-                        Identity.CanonicalId,
-                        connectionState,
-                        [],
-                        []),
+                    new ClientConnectionChanged(Identity.CanonicalId, connectionState),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -186,11 +344,44 @@ public sealed class ClientRegistrationComposition : IDisposable
         }
         catch (Exception exception)
         {
-            // La publicación del estado NO impide que el jugador siga usando el
-            // cliente: el estado es un complemento y no su motivo de vida (AD-1).
+            // La publicación de la conexión NUNCA impide que el cliente siga operando
+            // (AD-1, AD-22).
             Logger.LogWarning(
                 exception,
-                "No se pudo publicar el estado de la conexión del equipo: el cliente sigue operando.");
+                "No se pudo publicar la conexión del equipo: el cliente sigue operando.");
+        }
+    }
+
+    /// <summary>
+    /// Publishes the state of the client with the LAST connection state that the client
+    /// DECLARED, así que una publicación que el cliente no puede acompañar con un estado
+    /// nuevo no inventa ninguno (AD-29, AD-22).
+    ///
+    /// <para>
+    /// Esta es la publicación que el tracker de las instalaciones ENLAZA TARDE: una
+    /// operación que empieza o termina cambia la lista de operaciones en curso, y esa
+    /// lista solo la publica el REGISTRO (AD-22, FR-10).
+    /// </para>
+    /// <para>
+    /// Un cliente que no ha declarado ningún estado declara
+    /// <see cref="ConnectionState.Disconnected"/>: la publicación NUNCA afirma una
+    /// conexión que el cliente no tiene (AD-29).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    public Task PublishCurrentStateAsync(CancellationToken cancellationToken) =>
+        PublishStateAsync(LastConnectionState, cancellationToken);
+
+    /// <summary>
+    /// Remembers the connection state that the client DECLARED (AD-29).
+    /// </summary>
+    /// <param name="connectionState">Connection state that the client declares.</param>
+    private void TrackConnectionState(ConnectionState connectionState)
+    {
+        lock (_connectionStateGate)
+        {
+            _lastConnectionState = connectionState;
         }
     }
 
@@ -274,6 +465,7 @@ public sealed class ClientRegistrationComposition : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+        _ownedPublisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
 
@@ -292,3 +484,26 @@ public sealed class ClientRegistrationComposition : IDisposable
 public sealed record ClientRegistrationResult(
     ClientRegistrationOutcome? Outcome,
     ApiError? Rejection);
+
+/// <summary>
+/// Source of the canonical identifier of the client, sobre la identidad que la
+/// composición ya tiene (AD-23).
+/// </summary>
+/// <param name="identity">Identity of the team.</param>
+internal sealed class FixedClientIdentity : LANPartyHub.Client.Application.Clients.ClientIdentityProvider
+{
+    /// <summary>Creates the source over an identity.</summary>
+    /// <param name="identity">Identity of the team.</param>
+    public FixedClientIdentity(ClientIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        Identity = identity;
+    }
+
+    /// <summary>Identity of the team.</summary>
+    public ClientIdentity Identity { get; }
+
+    /// <inheritdoc />
+    public string CanonicalId => Identity.CanonicalId;
+}

@@ -454,6 +454,10 @@ public sealed class ClientRegistrationTests
                 "protocolVersion",
                 "connectionState",
                 "lastSeenAt",
+                "installedGames",
+                "activeOperations",
+                "recentOutcomes",
+                "errors",
             ],
             names);
     }

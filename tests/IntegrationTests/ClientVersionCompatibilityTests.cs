@@ -105,6 +105,40 @@ public sealed class ClientVersionCompatibilityTests
     }
 
     [Fact]
+    public async Task A_client_with_a_protocol_version_of_the_past_is_rejected_with_upgrade_required()
+    {
+        // AD-6, AD-30: el mínimo que el servidor declara por omisión es la MISMA versión
+        // de protocolo que habla, así que un cliente que declara la versión anterior es
+        // demasiado viejo y recibe el mismo rechazo que el cliente demasiado nuevo: la
+        // forma nueva del evento de conexión NO le permite eludir la puerta (AD-6).
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var response = await client.SendAsync(
+            BuildCatalogRequest(VersionInfo.CurrentProtocolVersion - 1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UpgradeRequired, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_client_with_the_exact_protocol_version_of_the_server_is_served_with_normality()
+    {
+        // AD-6, AD-30: el cliente que declara EXACTAMENTE la versión que habla el
+        // servidor está dentro del rango, así que se sirve con normalidad.
+        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        using var response = await client.SendAsync(
+            BuildCatalogRequest(VersionInfo.CurrentProtocolVersion),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task A_request_without_the_version_headers_is_rejected_with_upgrade_required()
     {
         // AD-6: TODA petición declara la versión. La que no la declara no puede ser

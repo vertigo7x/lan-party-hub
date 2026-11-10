@@ -62,16 +62,51 @@ public sealed class ClientStateHubMethodNameTests
     }
 
     [Fact]
-    public void The_use_case_that_persists_the_state_comes_from_the_container()
+    public void The_name_of_the_connection_only_method_is_the_same_on_the_client_and_the_server()
     {
-        // AD-1, AD-22: el caso de uso se INYECTA en el hub, así que el hub no depende
-        // del adaptador que persiste el estado y el estado no se pierde.
+        // AD-18, AD-29: el evento de SOLO conexión usa el mismo nombre exacto en los
+        // dos lados; de otro modo la desconexión se pierde en silencio.
+        Assert.Equal(
+            ClientStateHubPublisher.ClientConnectionChangedMethodName,
+            CatalogHub.ClientConnectionChangedMethodName);
+    }
+
+    [Fact]
+    public void The_method_of_the_connection_only_event_receives_only_its_exact_payload()
+    {
+        var method = typeof(CatalogHub)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(candidate => candidate.Name == ClientStateHubPublisher.ClientConnectionChangedMethodName);
+
+        Assert.Equal(
+            [typeof(ClientConnectionChanged)],
+            method.GetParameters().Select(parameter => parameter.ParameterType));
+    }
+
+    [Fact]
+    public void The_use_cases_that_persist_the_state_come_from_the_container()
+    {
+        // AD-1, AD-22: los casos de uso se INYECTAN en el hub, así que el hub no depende
+        // de los adaptadores que persisten el estado y el estado no se pierde.
+        //
+        // AD-18, AD-22, AD-33: el hub recibe el estado del equipo, el progreso de sus
+        // operaciones y el resultado terminal de sus operaciones, así que los TRES casos
+        // de uso viajan por el constructor.
         var constructors = typeof(CatalogHub).GetConstructors();
 
         var constructor = Assert.Single(constructors);
 
+        var parameterTypes = constructor.GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
         Assert.Equal(
-            typeof(ReportClientState),
-            constructor.GetParameters().Single().ParameterType);
+            [
+                typeof(ReportClientState),
+                typeof(ReportClientProgress),
+                typeof(ReportOperationOutcome),
+                typeof(ReportClientConnection),
+            ],
+            parameterTypes);
     }
 }

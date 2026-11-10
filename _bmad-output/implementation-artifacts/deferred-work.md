@@ -13,3 +13,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-build-lite-plan-schema.md`
   summary: Admitir rutas de escritura bajo nuevos directorios con una validación segura.
   evidence: La validación actual exige que el directorio padre exista; nuevas carpetas de módulos requieren un mecanismo explícito para declararlas sin confundir roles con rutas.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-2-proyeccion-de-instalaciones-y-de-operaciones-en-curso.md`
+  summary: El cierre del cliente resuelve `DisposeAsync()` de forma síncrona (`GetAwaiter().GetResult()`) en el camino del hilo de la interfaz.
+  evidence: El patrón es PREEXISTENTE en el cierre del cliente y no lo introduce la 9.2, así que queda fuera de esta historia; no se ha demostrado que la continuación capture el hilo de la interfaz. Para confirmarlo hay que observar el hilo que ejecuta la continuación de la disposición asíncrona durante el cierre y comprobar si bloquea ese hilo.

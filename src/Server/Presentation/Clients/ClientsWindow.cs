@@ -40,6 +40,12 @@ public sealed class ClientsWindow : Window
     public const string RowName = "ClientRow";
 
     /// <summary>
+    /// Name that the panel of the detail carries, so the detail is identifiable among
+    /// the borders of the visual tree (UX-DR-14).
+    /// </summary>
+    public const string DetailName = "ClientDetail";
+
+    /// <summary>
     /// Height of a row of the dense table, in pixels (UX-DR-14).
     /// </summary>
     public const double RowHeight = 40;
@@ -119,6 +125,7 @@ public sealed class ClientsWindow : Window
 
         _detail = new Border
         {
+            Name = DetailName,
             Padding = new Thickness(12),
             BorderThickness = new Thickness(0, SeparatorThickness, 0, 0),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x2C, 0x37, 0xFF)),
@@ -209,9 +216,8 @@ public sealed class ClientsWindow : Window
 
     /// <summary>
     /// Builds the header of the table. The columns of the games installed, the active
-    /// downloads, the progress of the installations and the registered errors are
-    /// RESERVED: their heading is already the final one, and their data arrives with
-    /// the stories 9.2 and 9.3 (FR-10).
+    /// downloads, the progress of the installations and the registered errors carry the
+    /// REAL projection that the server holds (FR-10, AD-22).
     /// </summary>
     /// <returns>The header of the table.</returns>
     private static Grid BuildHeader()
@@ -277,10 +283,10 @@ public sealed class ClientsWindow : Window
             BuildMonospaceCell(row.ClientVersion),
             BuildMonospaceCell(row.ProtocolVersion),
             BuildMetaCell(row.LastSeenAt),
-            BuildReservedCell(),
-            BuildReservedCell(),
-            BuildReservedCell(),
-            BuildReservedCell(),
+            BuildMetaCell(row.InstalledGamesText),
+            BuildMetaCell(row.ActiveDownloadsText),
+            BuildMetaCell(row.InstallationProgressText),
+            BuildMetaCell(row.RegisteredErrorsText),
         };
 
         var grid = new Grid
@@ -320,6 +326,13 @@ public sealed class ClientsWindow : Window
     /// La selección es una operación de la ventana, no un efecto colateral del clic: el
     /// organizador elige la fila y ve su detalle sin salir de la tabla (UX-DR-14).
     /// </para>
+    /// <para>
+    /// El detalle lleva lo que la columna densa NO cabe: los resultados TERMINALES que
+    /// el cliente reportó —con el texto de la tabla única de microcopia, así que «Paquete
+    /// retirado del catálogo» se ve como un resultado y no como un fallo (AD-25, AD-33)—
+    /// y el detalle de cada error registrado con su CAUSA y su SIGUIENTE PASO (AD-15,
+    /// UX-DR-15).
+    /// </para>
     /// </summary>
     /// <param name="row">Row of the client that the organizer chose.</param>
     public void Select(ClientRow row)
@@ -331,10 +344,26 @@ public sealed class ClientsWindow : Window
         _detailText.Text =
             $"{row.MachineName} · {row.ClientId} · {row.ConnectionStateText} · "
             + $"cliente {row.ClientVersion} · protocolo {row.ProtocolVersion} · "
-            + $"último contacto {row.LastSeenAt}";
+            + $"último contacto {row.LastSeenAt}"
+            + DetailLine(row.InstalledGamesText, "juegos instalados")
+            + DetailLine(row.ActiveDownloadsText, "descargas activas")
+            + DetailLine(row.InstallationProgressText, "instalaciones en curso")
+            + DetailLine(row.RegisteredErrorsText, "errores registrados")
+            + DetailLine(row.RegisteredErrorDetailsText, "detalle de los errores registrados")
+            + DetailLine(row.RecentOutcomesText, "resultados de operaciones terminadas");
 
         _detail.IsVisible = true;
     }
+
+    /// <summary>
+    /// Composes the line of the detail of a section of the projection, y la OMITE cuando
+    /// la sección está vacía: el detalle no muestra un espacio vacío (AD-25).
+    /// </summary>
+    /// <param name="value">Text of the section.</param>
+    /// <param name="label">Name of the section.</param>
+    /// <returns>The line of the detail, or an empty text.</returns>
+    private static string DetailLine(string value, string label) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : $" · {label}: {value}";
 
     /// <summary>
     /// The row of the table that is selected, or <c>null</c> when no row is.
@@ -343,15 +372,31 @@ public sealed class ClientsWindow : Window
 
     /// <summary>
     /// Builds a cell of data with the strong body typography (UX-DR-14).
+    ///
+    /// <para>
+    /// La celda es de UNA línea con recorte por elipsis: la fila es de 40 px y su alto
+    /// es FIJO, así que el texto se recorta en vez de desbordar la fila (UX-DR-14).
+    /// </para>
     /// </summary>
     /// <param name="value">Value of the cell.</param>
     /// <returns>The control of the cell.</returns>
-    private static TextBlock BuildDataCell(string value) => new()
+    private static TextBlock BuildDataCell(string value)
     {
-        Text = value,
-        FontSize = BodyStrongFontSize,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        var cell = new TextBlock
+        {
+            Text = value,
+            FontSize = BodyStrongFontSize,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        // El texto COMPLETO vive en el tooltip: una celda densa que recorta no pierde
+        // información, la deja a un clic de distancia (AD-22, UX-DR-14).
+        ToolTip.SetTip(cell, value);
+
+        return cell;
+    }
 
     /// <summary>
     /// Builds a cell of literal with the monospaced typography, the one of the
@@ -359,39 +404,56 @@ public sealed class ClientsWindow : Window
     /// </summary>
     /// <param name="value">Value of the cell.</param>
     /// <returns>The control of the cell.</returns>
-    private static TextBlock BuildMonospaceCell(string value) => new()
+    private static TextBlock BuildMonospaceCell(string value)
     {
-        Text = value,
-        FontFamily = MonospaceFontFamily,
-        FontSize = BodyStrongFontSize,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        var cell = new TextBlock
+        {
+            Text = value,
+            FontFamily = MonospaceFontFamily,
+            FontSize = BodyStrongFontSize,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        ToolTip.SetTip(cell, value);
+
+        return cell;
+    }
 
     /// <summary>
     /// Builds a cell of metadata, the one of the instants and the units (UX-DR-14).
+    ///
+    /// <para>
+    /// La celda de la proyección lleva listas con identificadores largos —los juegos
+    /// instalados, las descargas activas, la fase de la instalación y los errores— y la
+    /// columna es de 110 o 130 px: sin recorte el texto se desborda sobre la celda
+    /// vecina y se pierde la legibilidad de la fila (AD-22, UX-DR-14).
+    /// </para>
+    /// <para>
+    /// La celda es de UNA línea con recorte por elipsis, así que la fila conserva su
+    /// alto FIJO de 40 px, y el texto COMPLETO vive en el tooltip: nada de la
+    /// proyección se pierde (AD-22, UX-DR-14).
+    /// </para>
     /// </summary>
     /// <param name="value">Value of the cell.</param>
     /// <returns>The control of the cell.</returns>
-    private static TextBlock BuildMetaCell(string value) => new()
+    private static TextBlock BuildMetaCell(string value)
     {
-        Text = value,
-        FontFamily = MetaFontFamily,
-        FontSize = MetaFontSize,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        var cell = new TextBlock
+        {
+            Text = value,
+            FontFamily = MetaFontFamily,
+            FontSize = MetaFontSize,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
 
-    /// <summary>
-    /// Builds a cell of a column RESERVED for the stories 9.2 and 9.3. The heading is
-    /// already the final one, and the cell stays empty because the server does not hold
-    /// that data yet: la vista no inventa un dato que no existe (FR-10).
-    /// </summary>
-    /// <returns>The control of the cell.</returns>
-    private static TextBlock BuildReservedCell() => new()
-    {
-        FontFamily = MetaFontFamily,
-        FontSize = MetaFontSize,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        ToolTip.SetTip(cell, value);
+
+        return cell;
+    }
 
     /// <summary>
     /// The headings of the columns of the table, in order (FR-10, UX-DR-14).
@@ -416,8 +478,8 @@ public sealed class ClientsWindow : Window
     ///
     /// <para>
     /// Las columnas suman 1180 px y la ventana mide 1100, así que la tabla va dentro
-    /// de un visor con scroll HORIZONTAL: las columnas reservadas de las historias 9.2
-    /// y 9.3 tienen que ser alcanzables, no recortadas (FR-10).
+    /// de un visor con scroll HORIZONTAL: las columnas de la proyección tienen que ser
+    /// alcanzables, no recortadas (FR-10).
     /// </para>
     /// </summary>
     private static ColumnDefinitions BuildColumnDefinitions() =>
