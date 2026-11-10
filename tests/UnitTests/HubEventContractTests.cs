@@ -71,8 +71,8 @@ public sealed class HubEventContractTests
 
     /// <summary>
     /// The payloads that travel CLIENTE → SERVIDOR through the hub: el estado del equipo
-    /// (AD-18), el progreso de sus operaciones (AD-22) y el resultado terminal de sus
-    /// operaciones (AD-33).
+    /// (AD-18), el progreso de sus operaciones (AD-22), el resultado terminal de sus
+    /// operaciones (AD-33) y el error que reporta (AD-15).
     /// </summary>
     private static IReadOnlyList<Type> ClientToServerPayloads =>
     [
@@ -81,7 +81,50 @@ public sealed class HubEventContractTests
         typeof(DownloadProgressUpdated),
         typeof(InstallationProgressUpdated),
         typeof(OperationOutcomeReported),
+        typeof(ClientErrorReported),
     ];
+
+    /// <summary>
+    /// El hub recibe el ERROR que el cliente declara (AD-15, AD-18).
+    /// </summary>
+    [Fact]
+    public void The_hub_receives_the_error_that_the_client_declares()
+    {
+        // AD-15, AR-4: el error que viaja en el payload es del ÚNICO tipo de error del
+        // sistema, `ApiError`, así que el método del hub lo recibe con su forma exacta.
+        var method = typeof(CatalogHub)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(candidate => candidate.GetParameters().FirstOrDefault()?.ParameterType
+                == typeof(ClientErrorReported));
+
+        Assert.Equal(
+            typeof(ClientErrorReported),
+            method.GetParameters().First().ParameterType);
+
+        Assert.Equal(
+            CatalogHub.ClientErrorReportedMethodName,
+            nameof(ClientErrorReported));
+    }
+
+    /// <summary>
+    /// El payload del error que reporta el cliente lleva el ÚNICO tipo de error del
+    /// sistema (AD-15, AR-4).
+    /// </summary>
+    [Fact]
+    public void The_error_that_the_client_declares_carries_the_single_error_shape()
+    {
+        var properties = typeof(ClientErrorReported).GetProperties();
+
+        Assert.Equal(
+            [
+                nameof(ClientErrorReported.ClientId),
+                nameof(ClientErrorReported.OperationId),
+                nameof(ClientErrorReported.Error),
+            ],
+            properties.Select(property => property.Name));
+
+        Assert.Equal(typeof(ApiError), properties.Single(property => property.Name == nameof(ClientErrorReported.Error)).PropertyType);
+    }
 
     [Fact]
     public void The_hub_receives_the_state_that_the_client_declares()

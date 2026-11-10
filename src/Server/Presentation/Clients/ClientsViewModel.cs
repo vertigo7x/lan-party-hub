@@ -1,3 +1,4 @@
+using LANPartyHub.Server.Domain.Clients;
 using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Server.Presentation.Clients;
@@ -25,7 +26,9 @@ public sealed class ClientsViewModel
 {
     private readonly List<ClientRegistrationView> _clients = [];
 
-    /// <summary>Creates the view model of the section of the clients.</summary>
+    /// <summary>
+    /// Creates the view model of the section of the clients.
+    /// </summary>
     public ClientsViewModel()
     {
     }
@@ -41,6 +44,26 @@ public sealed class ClientsViewModel
 
         _clients.AddRange(clients);
     }
+
+    /// <summary>
+    /// Oldest protocol version that the server accepts (AD-6, FR-4).
+    ///
+    /// <para>
+    /// El rango de compatibilidad es la POLÍTICA del servidor, así que la vista NO lo
+    /// inventa: lo recibe del servidor que la construye (AD-6, AD-15).
+    /// </para>
+    /// <para>
+    /// El valor por defecto es la versión MÁS ANTIGUA que puede existir, así que una
+    /// vista que no ha recibido la política NO marca a nadie como incompatible: solo
+    /// el servidor, que la conoce, puede pronunciarse (AD-6, AD-25).
+    /// </para>
+    /// </summary>
+    public int MinimumProtocolVersion { get; init; } = 1;
+
+    /// <summary>
+    /// Protocol version that the server speaks (AD-6).
+    /// </summary>
+    public int CurrentProtocolVersion => VersionInfo.CurrentProtocolVersion;
 
     /// <summary>
     /// The clients of the event, as the list shows them.
@@ -72,7 +95,10 @@ public sealed class ClientsViewModel
                 InstallationProgressText(client),
                 RegisteredErrorsText(client),
                 RecentOutcomesText(client),
-                RegisteredErrorDetailsText(client)))
+                RegisteredErrorDetailsText(client),
+                IsIncompatible(client),
+                IsDisconnected(client),
+                CompatibilityText(client)))
     ];
 
     /// <summary>
@@ -259,6 +285,65 @@ public sealed class ClientsViewModel
     }
 
     /// <summary>
+    /// Tells whether the client is INCOMPATIBLE with the server: su versión de
+    /// protocolo está fuera del rango que el servidor soporta (AD-6, FR-4).
+    ///
+    /// <para>
+    /// La regla de compatibilidad la tiene el DOMINIO del servidor y la vista no la
+    /// reescribe: la consulta, así que el organizador y el servidor nunca discrepan
+    /// sobre qué clientes pueden operar (AD-6, AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="client">Client whose row is composed.</param>
+    /// <returns><c>true</c> when the client is incompatible with the server.</returns>
+    private bool IsIncompatible(ClientRegistrationView client) =>
+        !ProtocolCompatibility.IsCompatible(
+            client.ProtocolVersion,
+            MinimumProtocolVersion,
+            CurrentProtocolVersion);
+
+    /// <summary>
+    /// Tells whether the client is DISCONNECTED, así que su estado va en el color de
+    /// peligro y su error asociado se ve en el detalle de la fila (AD-22, UX-DR-44).
+    /// </summary>
+    /// <param name="client">Client whose row is composed.</param>
+    /// <returns><c>true</c> when the client is disconnected.</returns>
+    private static bool IsDisconnected(ClientRegistrationView client) =>
+        client.ConnectionState == ConnectionState.Disconnected;
+
+    /// <summary>
+    /// Composes the text of the INCOMPATIBILITY of a client: su versión de cliente, la
+    /// de protocolo, el DIAGNÓSTICO del catálogo y la indicación de que NO OPERA
+    /// (AD-6, FR-4, UX-DR-31).
+    ///
+    /// <para>
+    /// El diagnóstico sale del <see cref="ErrorCatalog"/>, así que la vista NO inventa
+    /// el texto del problema ni el del siguiente paso (AD-15, AD-25).
+    /// </para>
+    /// <para>
+    /// Un cliente incompatible NO opera: la fila lo dice, porque un cliente que no puede
+    /// hablar con el servidor no puede iniciar operaciones de juego (AD-6, FR-4).
+    /// </para>
+    /// </summary>
+    /// <param name="client">Client whose row is composed.</param>
+    /// <returns>The text of the incompatibility, or an empty text when there is none.</returns>
+    private string CompatibilityText(ClientRegistrationView client)
+    {
+        if (!IsIncompatible(client))
+        {
+            return string.Empty;
+        }
+
+        var error = ErrorCatalog.Resolve(ErrorCatalog.ClientVersionIncompatibleCode);
+
+        return
+            $"cliente {client.ClientVersion} · protocolo {client.ProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            + $" · diagnóstico: {error.Message} · {error.Cause}"
+            + $" · siguiente paso: {error.NextStep}"
+            + " · no opera";
+    }
+
+    /// <summary>
     /// Tells whether an operation is a DOWNLOAD, por el nombre del tipo de operación
     /// (AD-22).
     /// </summary>
@@ -337,6 +422,19 @@ public sealed class ClientsViewModel
 /// Detail of the registered errors, with their cause and their next step. It is EMPTY
 /// when the client has no registered error (AD-15, AD-22).
 /// </param>
+/// <param name="IsIncompatible">
+/// Whether the client is INCOMPATIBLE with the server: its row shows its version and
+/// its diagnosis, and it indicates that it does NOT operate (AD-6, FR-4, UX-DR-31).
+/// </param>
+/// <param name="IsDisconnected">
+/// Whether the client is DISCONNECTED, so its state goes in the color of danger and
+/// its associated error is shown in the detail of the row (AD-22, UX-DR-44).
+/// </param>
+/// <param name="CompatibilityText">
+/// Text of the incompatibility of the client, with its version, the diagnosis of the
+/// catalog and the indication that it does NOT operate. It is EMPTY when the client is
+/// compatible (AD-6, AD-15, UX-DR-31).
+/// </param>
 public sealed record ClientRow(
     string ClientId,
     string MachineName,
@@ -349,4 +447,7 @@ public sealed record ClientRow(
     string InstallationProgressText,
     string RegisteredErrorsText,
     string RecentOutcomesText,
-    string RegisteredErrorDetailsText);
+    string RegisteredErrorDetailsText,
+    bool IsIncompatible,
+    bool IsDisconnected,
+    string CompatibilityText);

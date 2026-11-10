@@ -98,7 +98,12 @@ public sealed class ServerApp : Avalonia.Application
             // de la LAN, y la alcanza el organizador desde la navegación.
             window.ClientsRequested += async (_, _) =>
             {
-                var clients = new ClientsWindow(new ClientsViewModel(), listClients);
+                // AD-6, FR-4: la fila INCOMPATIBLE se decide con el rango de versiones
+                // que el servidor REALMENTE admite, así que la vista recibe la política
+                // efectiva del servidor y no la inventa (AD-6, AD-15).
+                var clients = new ClientsWindow(
+                    new ClientsViewModel { MinimumProtocolVersion = configuration.MinimumProtocolVersion },
+                    listClients);
 
                 await clients.ShowDialog(window).ConfigureAwait(true);
             };

@@ -34,6 +34,7 @@ public sealed class CatalogHub : Hub
     private readonly ReportClientProgress _reportClientProgress;
     private readonly ReportOperationOutcome _reportOperationOutcome;
     private readonly ReportClientConnection _reportClientConnection;
+    private readonly ReportClientError _reportClientError;
 
     /// <summary>Route of the hub of the state of the client.</summary>
     public const string Route = "/hubs/client-state";
@@ -69,6 +70,11 @@ public sealed class CatalogHub : Hub
     /// </summary>
     public const string ClientConnectionChangedMethodName = nameof(ClientConnectionChanged);
 
+    /// <summary>
+    /// Name of the method that receives the ERROR that the client reports (AD-15, AD-18).
+    /// </summary>
+    public const string ClientErrorReportedMethodName = nameof(ClientErrorReported);
+
     /// <summary>Creates the hub of the state of the client.</summary>
     /// <param name="reportClientState">Use case that persists the state of the client.</param>
     /// <param name="reportClientProgress">Use case that projects the progress of the client.</param>
@@ -76,21 +82,25 @@ public sealed class CatalogHub : Hub
     /// <param name="reportClientConnection">
     /// Use case that persists ONLY the connection state that the client declares.
     /// </param>
+    /// <param name="reportClientError">Use case that registers the error that the client reports.</param>
     public CatalogHub(
         ReportClientState reportClientState,
         ReportClientProgress reportClientProgress,
         ReportOperationOutcome reportOperationOutcome,
-        ReportClientConnection reportClientConnection)
+        ReportClientConnection reportClientConnection,
+        ReportClientError reportClientError)
     {
         ArgumentNullException.ThrowIfNull(reportClientState);
         ArgumentNullException.ThrowIfNull(reportClientProgress);
         ArgumentNullException.ThrowIfNull(reportOperationOutcome);
         ArgumentNullException.ThrowIfNull(reportClientConnection);
+        ArgumentNullException.ThrowIfNull(reportClientError);
 
         _reportClientState = reportClientState;
         _reportClientProgress = reportClientProgress;
         _reportOperationOutcome = reportOperationOutcome;
         _reportClientConnection = reportClientConnection;
+        _reportClientError = reportClientError;
     }
 
     /// <summary>
@@ -208,6 +218,31 @@ public sealed class CatalogHub : Hub
 
         await _reportClientConnection
             .ExecuteAsync(changed, Context.ConnectionAborted)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Receives the ERROR that the client reports (AD-15, AD-18, FR-10).
+    ///
+    /// <para>
+    /// El error que viaja en el payload es del ÚNICO tipo de error del sistema,
+    /// <see cref="ApiError"/>, con su código estable del catálogo, su mensaje, su CAUSA y
+    /// su SIGUIENTE PASO (AD-15, AR-4).
+    /// </para>
+    /// <para>
+    /// El método NO lleva ningún dato de OTRO cliente: el <c>clientId</c> del payload es
+    /// el del propio cliente que publica, y un error de un cliente que NO está
+    /// registrado no crea ninguna fila (AD-29, AD-30).
+    /// </para>
+    /// </summary>
+    /// <param name="reported">Error that the client declares.</param>
+    /// <returns>A task that completes when the error has been registered.</returns>
+    public async Task ClientErrorReported(ClientErrorReported reported)
+    {
+        ArgumentNullException.ThrowIfNull(reported);
+
+        await _reportClientError
+            .ExecuteAsync(reported, Context.ConnectionAborted)
             .ConfigureAwait(false);
     }
 }

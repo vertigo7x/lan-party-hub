@@ -1,7 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.VisualTree;
+using LANPartyHub.Client.Presentation.Errors;
 using LANPartyHub.Server.Application.Clients;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Server.Domain.Clients;
@@ -302,6 +304,211 @@ public sealed class ClientsTableTests
     }
 
     /// <summary>
+    /// La fila de un cliente INCOMPATIBLE muestra su versión y su diagnóstico, e indica
+    /// que NO OPERA (AC3, FR-4, UX-DR-31).
+    /// </summary>
+    [AvaloniaFact]
+    public async Task The_row_of_an_incompatible_client_shows_its_version_and_its_diagnosis()
+    {
+        var catalog = ErrorCatalog.Resolve(ErrorCatalog.ClientVersionIncompatibleCode);
+
+        var window = await OpenWindowAsync(
+            Client(
+                "EQ-PC",
+                FirstClientId,
+                clientVersion: "0.9.0",
+                protocolVersion: 0));
+
+        var row = Assert.Single(window.ViewModel.Rows);
+
+        // AC3, UX-DR-31: la fila dice la versión del cliente y la del protocolo.
+        Assert.True(row.IsIncompatible);
+        Assert.Contains("0.9.0", row.CompatibilityText, StringComparison.Ordinal);
+        Assert.Contains("0", row.CompatibilityText, StringComparison.Ordinal);
+
+        // AC3, AD-15, AD-25: el diagnóstico sale del catálogo de errores, no de un texto
+        // inventado por la vista.
+        Assert.Contains(catalog.Message, row.CompatibilityText, StringComparison.Ordinal);
+        Assert.Contains(catalog.Cause, row.CompatibilityText, StringComparison.Ordinal);
+        Assert.Contains(catalog.NextStep, row.CompatibilityText, StringComparison.Ordinal);
+
+        // AC3, FR-4: la fila indica que el cliente NO OPERA.
+        Assert.Contains("no opera", row.CompatibilityText, StringComparison.OrdinalIgnoreCase);
+
+        // AC3: el detalle de la fila lleva el diagnóstico de la incompatibilidad.
+        window.Select(row);
+
+        var detail = DetailTextOf(window);
+
+        Assert.Contains(catalog.Message, detail, StringComparison.Ordinal);
+        Assert.Contains("no opera", detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Un cliente COMPATIBLE no lleva el diagnóstico de incompatibilidad: la fila no
+    /// inventa un problema que no existe (AD-6, AD-25).
+    /// </summary>
+    [AvaloniaFact]
+    public void A_compatible_client_has_no_compatibility_diagnosis()
+    {
+        var viewModel = new ClientsViewModel([Client("EQ-PC", FirstClientId)]);
+
+        var row = Assert.Single(viewModel.Rows);
+
+        Assert.False(row.IsIncompatible);
+        Assert.Equal(string.Empty, row.CompatibilityText);
+    }
+
+    /// <summary>
+    /// La fila de un cliente DESCONECTADO va en el color de PELIGRO (AC4, UX-DR-44).
+    /// </summary>
+    [AvaloniaFact]
+    public async Task The_row_of_a_disconnected_client_uses_the_color_of_danger()
+    {
+        var window = await OpenWindowAsync(
+            Client("EQ-PC", FirstClientId, connectionState: ConnectionState.Disconnected));
+
+        var row = Assert.Single(window.ViewModel.Rows);
+
+        Assert.True(row.IsDisconnected);
+
+        var stateCell = StatesOf(window).Single();
+
+        Assert.Equal(StateDisplayMap.GetText(ConnectionState.Disconnected), stateCell);
+
+        // AC4, UX-DR-44: el estado va en `{colors.state-danger}`.
+        Assert.Equal(
+            ClientsWindow.StateDangerColor,
+            Assert.IsType<SolidColorBrush>(StateForegroundOf(window)).Color);
+    }
+
+    /// <summary>
+    /// El error ASOCIADO a un cliente DESCONECTADO aparece en el detalle de su fila
+    /// (AC4, UX-DR-44).
+    /// </summary>
+    [AvaloniaFact]
+    public async Task The_detail_of_a_disconnected_row_shows_its_associated_error()
+    {
+        var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+        var window = await OpenWindowAsync(
+            Client(
+                "EQ-PC",
+                FirstClientId,
+                connectionState: ConnectionState.Disconnected,
+                errors:
+                [
+                    new ClientRegistrationView.RegisteredError(
+                        "err-1",
+                        "op-1",
+                        ErrorCatalog.PackageIntegrityMismatchCode,
+                        error.Message,
+                        error.Cause,
+                        error.NextStep,
+                        new DateTimeOffset(2026, 11, 9, 10, 5, 0, TimeSpan.Zero)),
+                ]));
+
+        window.Select(window.ViewModel.Rows[0]);
+
+        var detail = DetailTextOf(window);
+
+        // AC4, AD-15, UX-DR-44: el error asociado se ve con su causa y su siguiente paso.
+        Assert.Contains(error.Code, detail, StringComparison.Ordinal);
+        Assert.Contains(error.Cause, detail, StringComparison.Ordinal);
+        Assert.Contains(error.NextStep, detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// El detalle de la fila muestra el error registrado con su CAUSA y su SIGUIENTE PASO,
+    /// y la descarga ACTIVA con su progreso REAL (AC2, UX-DR-44).
+    /// </summary>
+    [AvaloniaFact]
+    public async Task The_detail_of_the_row_shows_the_error_and_the_active_download_with_its_real_progress()
+    {
+        var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+        var window = await OpenWindowAsync(
+            Client(
+                "EQ-PC",
+                FirstClientId,
+                errors:
+                [
+                    new ClientRegistrationView.RegisteredError(
+                        "err-1",
+                        "op-1",
+                        ErrorCatalog.PackageIntegrityMismatchCode,
+                        error.Message,
+                        error.Cause,
+                        error.NextStep,
+                        new DateTimeOffset(2026, 11, 9, 10, 5, 0, TimeSpan.Zero)),
+                ],
+                activeOperations:
+                [
+                    new ClientRegistrationView.ActiveOperation(
+                        "download-1",
+                        "download",
+                        StateDisplayMap.GetText(DownloadState.Downloading),
+                        512,
+                        2048),
+                ]));
+
+        window.Select(window.ViewModel.Rows[0]);
+
+        var detail = DetailTextOf(window);
+
+        // AC2, UX-DR-44: el error con su causa y su siguiente paso.
+        Assert.Contains(error.Cause, detail, StringComparison.Ordinal);
+        Assert.Contains(error.NextStep, detail, StringComparison.Ordinal);
+
+        // AC2, AD-22: la descarga activa con su progreso REAL, nunca un porcentaje
+        // inventado.
+        Assert.Contains("512 B", detail, StringComparison.Ordinal);
+        Assert.Contains("2048 B", detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// El aviso de error dice la CAUSA, la ACCIÓN INTENTADA y el SIGUIENTE PASO, y no
+    /// lleva iconografía (AC5, UX-DR-36).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_error_notice_shows_the_cause_the_attempted_action_and_the_next_step()
+    {
+        var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+        var toast = new ErrorToast(new ErrorMessageViewModel(error));
+
+        toast.Show(new ErrorMessageViewModel(error));
+
+        // AC5: el contenido del aviso es la causa, la acción intentada y el siguiente
+        // paso.
+        Assert.Equal(error.Cause, toast.CauseText.Text);
+        Assert.Equal(error.Message, toast.AttemptedActionText.Text);
+        Assert.Equal(error.NextStep, toast.NextStepText.Text);
+
+        // AC5: el aviso NO lleva iconografía, así que su contenido son SOLO los tres
+        // bloques de texto.
+        Assert.Equal(3, toast.GetVisualDescendants().OfType<TextBlock>().Count());
+    }
+
+    /// <summary>
+    /// La acción intentada puede NOMBRAR la operación que se intentó hacer, y el aviso
+    /// la presenta junto a la causa y al siguiente paso (AC5, UX-DR-36).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_error_notice_names_the_action_that_was_attempted()
+    {
+        var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+        var toast = new ErrorToast(new ErrorMessageViewModel(error, "Descargar el paquete"));
+
+        toast.Show(new ErrorMessageViewModel(error, "Descargar el paquete"));
+
+        Assert.Equal("Descargar el paquete", toast.AttemptedActionText.Text);
+        Assert.Equal(error.Cause, toast.CauseText.Text);
+        Assert.Equal(error.NextStep, toast.NextStepText.Text);
+    }
+
+    /// <summary>
     /// Builds the window of the section with the clients that the test gives it.
     ///
     /// <para>
@@ -414,6 +621,18 @@ public sealed class ClientsTableTests
             .ToArray();
 
     /// <summary>
+    /// The ink of the cell of the state of the connection, así que la prueba puede
+    /// comprobar el color de PELIGRO de la fila (AC4, UX-DR-44).
+    /// </summary>
+    /// <param name="window">Window of the section.</param>
+    /// <returns>The brush of the cell of the state.</returns>
+    private static IBrush? StateForegroundOf(ClientsWindow window) =>
+        RowsOf(window)
+            .Select(border => ((Grid)border.Child!).Children.OfType<TextBlock>().ElementAt(2))
+            .Single()
+            .Foreground;
+
+    /// <summary>
     /// The text of the DETALLE de la fila seleccionada, tal y como lo ve el organizador.
     /// </summary>
     /// <param name="window">Window of the section.</param>
@@ -433,13 +652,16 @@ public sealed class ClientsTableTests
         IReadOnlyList<ClientRegistrationView.OperationOutcomeResult>? recentOutcomes = null,
         IReadOnlyList<ClientRegistrationView.RegisteredError>? errors = null,
         IReadOnlyList<ClientRegistrationView.InstalledGame>? installedGames = null,
-        IReadOnlyList<ClientRegistrationView.ActiveOperation>? activeOperations = null) =>
+        IReadOnlyList<ClientRegistrationView.ActiveOperation>? activeOperations = null,
+        ConnectionState connectionState = ConnectionState.AnchorVerified,
+        int protocolVersion = 1,
+        string clientVersion = "1.0.0") =>
         new(
             clientId,
             machineName,
-            "1.0.0",
-            1,
-            ConnectionState.AnchorVerified,
+            clientVersion,
+            protocolVersion,
+            connectionState,
             new DateTimeOffset(2026, 11, 9, 10, 0, 0, TimeSpan.Zero),
             installedGames: installedGames,
             activeOperations: activeOperations,
@@ -559,5 +781,25 @@ public sealed class ClientsTableTests
                 _rowsByClient.TryGetValue(clientId, out var rows)
                     ? [.. rows]
                     : []);
+
+        public Task SaveAsync(ClientErrorWrite error, CancellationToken cancellationToken)
+        {
+            if (!_rowsByClient.TryGetValue(error.ClientId, out var rows))
+            {
+                rows = [];
+                _rowsByClient[error.ClientId] = rows;
+            }
+
+            rows.Add(new ClientErrorRow(
+                error.ErrorId,
+                error.OperationId,
+                error.Code,
+                error.Message,
+                error.Cause,
+                error.NextStep,
+                error.OccurredAt));
+
+            return Task.CompletedTask;
+        }
     }
 }

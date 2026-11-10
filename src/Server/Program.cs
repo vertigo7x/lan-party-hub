@@ -244,9 +244,10 @@ public partial class Program
         // `CLIENT_INSTALLATION_VIEW`, con un UPSERT idempotente por (clientId, gameId).
         builder.Services.AddScoped<IClientInstallationViewRepository, ClientInstallationViewRepository>();
 
-        // AD-15, AD-22: los errores YA REGISTRADOS se MUESTRAN en la vista. La
-        // producción de los errores es de otra historia (AD-33).
+        // AD-15, AD-22: los errores YA REGISTRADOS se MUESTRAN en la vista y los que
+        // el cliente REPORTA se PERSISTEN en el registro, con sus tres partes (AD-33).
         builder.Services.AddScoped<IClientErrorRepository, ClientErrorRepository>();
+        builder.Services.AddScoped<ReportClientError>();
 
         // AD-22: las OPERACIONES en curso viven EN MEMORIA, en un servicio CONCURRENTE
         // que el hub y la lectura de la vista COMPARTEN: son el estado vivo de una
