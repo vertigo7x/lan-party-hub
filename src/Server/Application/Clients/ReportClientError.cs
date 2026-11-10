@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using LANPartyHub.Server.Application.Ports;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging;
@@ -97,8 +99,13 @@ public sealed class ReportClientError
         // AD-15: el error se registra con su identificador, así que la vista de
         // organización lo muestra con su código, su mensaje, su causa y su siguiente
         // paso (AD-22, UX-DR-44).
+        //
+        // AD-22: el identificador del error es ESTABLE y se DERIVA del reporte, así que
+        // la republicación del mismo error —una reconexión, un reintento de publicación—
+        // NO duplica el diagnóstico que el organizador ve (AD-15, AD-22). Un identificador
+        // volátil rompería esa idempotencia y dejaría dos filas del mismo error.
         var registered = new ClientErrorWrite(
-            Guid.CreateVersion7().ToString("N"),
+            DeriveErrorId(reported),
             reported.ClientId,
             reported.OperationId ?? string.Empty,
             reported.Error.Code,
@@ -128,4 +135,39 @@ public sealed class ReportClientError
         && !string.IsNullOrWhiteSpace(error.Message)
         && !string.IsNullOrWhiteSpace(error.Cause)
         && !string.IsNullOrWhiteSpace(error.NextStep);
+
+    /// <summary>
+    /// Derives the identifier of the error from the report, de forma DETERMINISTA (AD-22).
+    ///
+    /// <para>
+    /// El identificador es el hash del equipo, de la operación y del código estable del
+    /// error: el MISMO error reportado dos veces produce el MISMO identificador, así que
+    /// la escritura es idempotente por `errorId` y una republicación del cliente NO
+    /// duplica el diagnóstico que el organizador ve (AD-15, AD-22).
+    /// </para>
+    /// <para>
+    /// El contrato `ClientErrorReported` NO lleva identificador de error: su forma
+    /// EXACTA es `clientId`, `operationId` y `error` (AD-18, AD-22), así que el
+    /// identificador lo deriva el servidor a partir de lo que el cliente declara.
+    /// </para>
+    /// <para>
+    /// El separador es un carácter que no aparece en el identificador del cliente ni en
+    /// el de la operación, así que dos tripletas distintas nunca producen el mismo
+    /// identificador.
+    /// </para>
+    /// </summary>
+    /// <param name="reported">Error that the client declared.</param>
+    /// <returns>The identifier of the error, stable for the same report.</returns>
+    private static string DeriveErrorId(ClientErrorReported reported)
+    {
+        var material = string.Join(
+            '\u001F',
+            reported.ClientId ?? string.Empty,
+            reported.OperationId ?? string.Empty,
+            reported.Error.Code ?? string.Empty);
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+
+        return Convert.ToHexString(digest).ToLowerInvariant();
+    }
 }

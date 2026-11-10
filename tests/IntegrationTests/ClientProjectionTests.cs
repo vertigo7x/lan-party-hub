@@ -773,6 +773,162 @@ public sealed class ClientProjectionTests
     }
 
     [Fact]
+    public async Task The_republication_of_the_same_error_does_not_duplicate_the_diagnostic()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-repeated-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // AD-15, AD-22: la escritura es IDEMPOTENTE por `errorId`, así que la
+            // republicación del MISMO error —una reconexión, un reintento de publicación—
+            // NO crea una segunda fila del diagnóstico.
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            // La tabla `CLIENT_ERROR` conserva UNA SOLA fila del error.
+            var rows = ReadClientErrorRows(dataDirectory);
+            var row = Assert.Single(rows);
+
+            Assert.Equal(ClientId, row.ClientId);
+            Assert.Equal(DownloadOperationId, row.OperationId);
+            Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, row.Code);
+
+            // Y la vista de organización muestra UN SOLO error en la fila del equipo.
+            var clients = await ReadClientsAsync(http);
+            var first = Assert.Single(clients, candidate =>
+                candidate.GetProperty("clientId").GetString() == ClientId);
+
+            var registered = Assert.Single(first.GetProperty("errors").EnumerateArray());
+            Assert.Equal(row.ErrorId, registered.GetProperty("errorId").GetString());
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_errors_of_different_operations_of_the_same_client_are_registered_apart()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-distinct-errors-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // Dos errores DISTINTOS del mismo equipo —operaciones distintas— son dos
+            // diagnósticos distintos, así que cada uno tiene su propia fila.
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, InstallationOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            var rows = ReadClientErrorRows(dataDirectory);
+
+            Assert.Equal(2, rows.Count);
+            Assert.Contains(rows, candidate => candidate.OperationId == DownloadOperationId);
+            Assert.Contains(rows, candidate => candidate.OperationId == InstallationOperationId);
+            Assert.Equal(2, rows.Select(candidate => candidate.ErrorId).Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_concurrent_reports_of_the_same_error_do_not_fail_and_register_one_row()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-concurrent-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // AD-22: dos reportes CONCURRENTES del mismo error NO compiten por la clave
+            // primaria: la escritura es un UPSERT y ninguno de los dos falla.
+            var publications = Enumerable.Range(0, 8).Select(_ => connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken));
+
+            await Task.WhenAll(publications);
+
+            var rows = ReadClientErrorRows(dataDirectory);
+
+            Assert.Single(rows);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
     public async Task The_error_of_a_client_that_is_not_registered_does_not_create_a_row()
     {
         var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-unknown-error-").FullName;

@@ -17,6 +17,11 @@ namespace LANPartyHub.Server.Infrastructure.Persistence;
 /// añade ninguna migración de esquema (AD-15, AD-22).
 /// </para>
 /// <para>
+/// La escritura es un UPSERT idempotente por la clave primaria <c>PK_CLIENT_ERROR</c>:
+/// la republicación del mismo error NO crea una segunda fila, y dos reportes
+/// CONCURRENTES del mismo error NO compiten por la clave (AD-15, AD-22).
+/// </para>
+/// <para>
 /// El resultado terminal de una operación retirada del catálogo NUNCA llega a esta
 /// tabla: es un RESULTADO y no un fallo (AD-33, R-MVP-8).
 /// </para>
@@ -70,29 +75,23 @@ public sealed class ClientErrorRepository : IClientErrorRepository
         // AD-15, AD-22: la escritura es IDEMPOTENTE por `errorId`. El mismo error
         // reportado dos veces NO crea una segunda fila, así que una republicación del
         // cliente no duplica el diagnóstico que el organizador ve.
-        var existing = await _context.ClientErrors
-            .AsNoTracking()
-            .AnyAsync(candidate => candidate.ErrorId == error.ErrorId, cancellationToken)
+        //
+        // La escritura es un UPSERT `INSERT OR IGNORE` sobre la clave primaria
+        // `PK_CLIENT_ERROR`: la fila que ya existe se CONSERVA y la que no existe se
+        // inserta. NO es un "consultar y después insertar", porque dos reportes del
+        // mismo error que llegan CONCURRENTES pasarían los dos la consulta y el
+        // segundo insertaría sobre una clave que ya existe, con un `DbUpdateException`
+        // que rompería la publicación del cliente.
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+             INSERT OR IGNORE INTO CLIENT_ERROR
+                 (errorId, clientId, operationId, code, message, cause, nextStep, occurredAt)
+             VALUES
+                 ({error.ErrorId}, {error.ClientId}, {error.OperationId}, {error.Code},
+                  {error.Message}, {error.Cause}, {error.NextStep}, {FormatOccurredAt(error.OccurredAt)})
+             """,
+            cancellationToken)
             .ConfigureAwait(false);
-
-        if (existing)
-        {
-            return;
-        }
-
-        _context.ClientErrors.Add(new ClientErrorEntity
-        {
-            ErrorId = error.ErrorId,
-            ClientId = error.ClientId,
-            OperationId = error.OperationId,
-            Code = error.Code,
-            Message = error.Message,
-            Cause = error.Cause,
-            NextStep = error.NextStep,
-            OccurredAt = FormatOccurredAt(error.OccurredAt),
-        });
-
-        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
