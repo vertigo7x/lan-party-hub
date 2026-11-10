@@ -31,7 +31,13 @@ namespace LANPartyHub.Client.Infrastructure.Networking;
 /// (AD-11).
 /// </para>
 /// </summary>
-public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IClientStatePublisher, IAsyncDisposable
+public sealed class ClientStateHubPublisher :
+    IDownloadProgressReporter,
+    IClientStatePublisher,
+    IClientConnectionPublisher,
+    IInstallationProgressReporter,
+    IOperationOutcomeReporter,
+    IAsyncDisposable
 {
     /// <summary>Route of the hub of the state of the client.</summary>
     public const string Route = "/hubs/client-state";
@@ -46,6 +52,24 @@ public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IClient
     /// Name of the method of the hub that receives the state of the client (AD-18, AD-29).
     /// </summary>
     public const string ClientStateChangedMethodName = nameof(ClientStateChanged);
+
+    /// <summary>
+    /// Name of the method of the hub that receives the progress of an installation
+    /// operation (AD-22).
+    /// </summary>
+    public const string InstallationProgressUpdatedMethodName = nameof(InstallationProgressUpdated);
+
+    /// <summary>
+    /// Name of the method of the hub that receives the TERMINAL result of an operation
+    /// (AD-33).
+    /// </summary>
+    public const string OperationOutcomeReportedMethodName = nameof(OperationOutcomeReported);
+
+    /// <summary>
+    /// Name of the method of the hub that receives the CONNECTION state ALONE
+    /// (AD-18, AD-29).
+    /// </summary>
+    public const string ClientConnectionChangedMethodName = nameof(ClientConnectionChanged);
 
     private readonly HubConnection _connection;
     private readonly ILogger<ClientStateHubPublisher> _logger;
@@ -119,24 +143,123 @@ public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IClient
     {
         ArgumentNullException.ThrowIfNull(state);
 
+        await InvokeAsync(
+            ClientStateChangedMethodName,
+            state,
+            state.ClientId,
+            "el estado del cliente",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the CONNECTION state of the client ALONE, so the server can reflect the
+    /// disconnection without emptying the projection it already holds (AD-18, AD-29).
+    ///
+    /// <para>
+    /// La publicación NO lleva juegos ni operaciones: es el UNICO caso en el que el
+    /// cliente comunica su conexión sin poder sostener una instantánea completa de su
+    /// estado (AD-22, AD-29, AD-32).
+    /// </para>
+    /// </summary>
+    /// <param name="changed">Connection state that the client declares.</param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    public async Task PublishAsync(ClientConnectionChanged changed, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changed);
+
+        await InvokeAsync(
+            ClientConnectionChangedMethodName,
+            changed,
+            changed.ClientId,
+            "la conexión del cliente",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the REAL phase of an installation operation, so the server can project
+    /// it and the table of clients shows the phase REAL (AD-22, FR-10).
+    ///
+    /// <para>
+    /// El payload NO lleva porcentaje: un porcentaje sobre un total que no se conoce
+    /// sería una mentira, así que la publicación conserva la fase tal cual (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="progress">Progress of the installation that the client declares.</param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    public async Task ReportAsync(
+        InstallationProgressUpdated progress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+
+        await InvokeAsync(
+            InstallationProgressUpdatedMethodName,
+            progress,
+            progress.ClientId,
+            "el progreso de la instalación",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the TERMINAL result of an operation, so the server can show it as a
+    /// RESULT and never as an error (AD-33, R-MVP-8).
+    /// </summary>
+    /// <param name="reported">Result that the client declares.</param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    public async Task ReportAsync(
+        OperationOutcomeReported reported,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reported);
+
+        await InvokeAsync(
+            OperationOutcomeReportedMethodName,
+            reported,
+            reported.ClientId,
+            "el resultado de la operación",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Invokes a method of the hub, TOLERANDO que el servidor todavía NO lo declare: la
+    /// proyección es un complemento y no puede romper al jugador (AD-1, AD-22).
+    /// </summary>
+    /// <typeparam name="TPayload">Type of the published payload.</typeparam>
+    /// <param name="methodName">Name of the method of the hub.</param>
+    /// <param name="payload">Payload of the publication.</param>
+    /// <param name="clientId">Identifier of the client, for the diagnostic.</param>
+    /// <param name="description">Description of what is published, for the diagnostic.</param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    private async Task InvokeAsync<TPayload>(
+        string methodName,
+        TPayload payload,
+        string clientId,
+        string description,
+        CancellationToken cancellationToken)
+    {
         try
         {
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
             if (_connection.State != HubConnectionState.Connected)
             {
-                // AD-29: el servidor no está, así que el estado no llega. El cliente
-                // sigue operando: la publicación del estado NO es lo que habilita al
+                // AD-29: el servidor no está, así que la publicación no llega. El
+                // cliente sigue operando: la publicación NO es lo que habilita al
                 // equipo (AD-1).
                 _logger.LogWarning(
-                    "No se pudo publicar el estado del cliente {ClientId}: el hub del estado del cliente no está conectado.",
-                    state.ClientId);
+                    "No se pudo publicar {Description} del cliente {ClientId}: el hub del estado del cliente no está conectado.",
+                    description,
+                    clientId);
 
                 return;
             }
 
             await _connection
-                .InvokeAsync(ClientStateChangedMethodName, state, cancellationToken)
+                .InvokeAsync(methodName, payload, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -145,13 +268,13 @@ public sealed class ClientStateHubPublisher : IDownloadProgressReporter, IClient
         }
         catch (Exception exception)
         {
-            // AD-29: la publicación del estado TOLERA la ausencia del método en el
-            // servidor, y la REGISTRA: el estado es un complemento del cliente y no su
-            // motivo de vida (AD-1).
+            // La publicación TOLERA la ausencia del método en el servidor, y la REGISTRA:
+            // la proyección es de otra historia y no puede romper al cliente (AD-1).
             _logger.LogWarning(
                 exception,
-                "No se pudo publicar el estado del cliente {ClientId}: el servidor no aceptó la publicación.",
-                state.ClientId);
+                "No se pudo publicar {Description} del cliente {ClientId}: el servidor no aceptó la publicación.",
+                description,
+                clientId);
         }
     }
 

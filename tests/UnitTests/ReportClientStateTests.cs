@@ -32,7 +32,11 @@ public sealed class ReportClientStateTests
                 ConnectionState.AnchorVerified,
                 DateTimeOffset.UtcNow));
 
-        var useCase = new ReportClientState(repository, NullLogger<ReportClientState>.Instance);
+        var useCase = new ReportClientState(
+            repository,
+            new RecordingInstallations(),
+            new ClientOperationsProjection(),
+            NullLogger<ReportClientState>.Instance);
 
         await useCase.ExecuteAsync(
             new ClientStateChanged(ClientId, ConnectionState.Disconnected, [], []),
@@ -47,7 +51,11 @@ public sealed class ReportClientStateTests
     {
         var repository = new RecordingRegistry();
 
-        var useCase = new ReportClientState(repository, NullLogger<ReportClientState>.Instance);
+        var useCase = new ReportClientState(
+            repository,
+            new RecordingInstallations(),
+            new ClientOperationsProjection(),
+            NullLogger<ReportClientState>.Instance);
 
         await useCase.ExecuteAsync(
             new ClientStateChanged(ClientId, ConnectionState.Disconnected, [], []),
@@ -56,6 +64,94 @@ public sealed class ReportClientStateTests
         // AD-30, AD-32: el alta del equipo es la operación de REGISTRO, así que un
         // estado de un cliente que no está registrado no crea ninguna fila.
         Assert.Null(repository.Saved);
+    }
+
+    [Fact]
+    public async Task An_unknown_installation_state_is_rejected_without_losing_the_other_installations()
+    {
+        var repository = new RecordingRegistry(
+            new ClientRegistrationRow(
+                ClientId,
+                "EQ-PC",
+                "1.0.0",
+                1,
+                ConnectionState.AnchorVerified,
+                DateTimeOffset.UtcNow));
+
+        var installations = new RecordingInstallations();
+        var useCase = new ReportClientState(
+            repository,
+            installations,
+            new ClientOperationsProjection(),
+            NullLogger<ReportClientState>.Instance);
+
+        await useCase.ExecuteAsync(
+            new ClientStateChanged(
+                ClientId,
+                ConnectionState.AnchorVerified,
+                [
+                    new ClientStateChanged.InstalledGame(
+                        "game-unknown",
+                        "1.0.0",
+                        (InstallationState)999),
+                    new ClientStateChanged.InstalledGame(
+                        "game-valid",
+                        "2.0.0",
+                        InstallationState.Installed),
+                ],
+                []),
+            TestContext.Current.CancellationToken);
+
+        // AD-22: un estado desconocido se rechaza SOLO en esa fila y el resto de la
+        // proyección se conserva.
+        var row = Assert.Single(installations.Rows);
+        Assert.Equal("game-valid", row.GameId);
+        Assert.Equal(
+            StateDisplayMap.GetText(InstallationState.Installed),
+            row.ValidationStateText);
+
+        await useCase.ExecuteAsync(
+            new ClientStateChanged(ClientId, ConnectionState.AnchorVerified,
+                [new ClientStateChanged.InstalledGame("game-valid", "2.0.0", (InstallationState)999)],
+                []),
+            TestContext.Current.CancellationToken);
+
+        // Rechazar el valor desconocido no borra una instalación ya proyectada.
+        Assert.Equal("game-valid", Assert.Single(installations.Rows).GameId);
+    }
+
+    [Fact]
+    public async Task Null_lists_in_a_malformed_snapshot_do_not_fail_the_publication()
+    {
+        var repository = new RecordingRegistry(
+            new ClientRegistrationRow(
+                ClientId,
+                "EQ-PC",
+                "1.0.0",
+                1,
+                ConnectionState.AnchorVerified,
+                DateTimeOffset.UtcNow));
+
+        var installations = new RecordingInstallations();
+        var operations = new ClientOperationsProjection();
+        var useCase = new ReportClientState(
+            repository,
+            installations,
+            operations,
+            NullLogger<ReportClientState>.Instance);
+
+        await useCase.ExecuteAsync(
+            new ClientStateChanged(
+                ClientId,
+                ConnectionState.AnchorVerified,
+                null!,
+                null!),
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(repository.Saved);
+        Assert.Equal(ConnectionState.AnchorVerified, repository.Saved!.ConnectionState);
+        Assert.Empty(installations.Rows);
+        Assert.Empty(operations.ListActiveOperations(ClientId));
     }
 
     [Fact]
@@ -70,7 +166,11 @@ public sealed class ReportClientStateTests
                 ConnectionState.AnchorVerified,
                 DateTimeOffset.UtcNow));
 
-        var useCase = new ReportClientState(repository, NullLogger<ReportClientState>.Instance);
+        var useCase = new ReportClientState(
+            repository,
+            new RecordingInstallations(),
+            new ClientOperationsProjection(),
+            NullLogger<ReportClientState>.Instance);
 
         await useCase.ExecuteAsync(
             new ClientStateChanged(ClientId, ConnectionState.Disconnected, [], []),
@@ -110,6 +210,44 @@ public sealed class ReportClientStateTests
         public Task SaveAsync(ClientRegistrationRow row, CancellationToken cancellationToken)
         {
             Saved = row;
+
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// A projection of the installations that keeps the rows that the use case writes,
+    /// without a database (AD-22).
+    /// </summary>
+    private sealed class RecordingInstallations : IClientInstallationViewRepository
+    {
+        private readonly List<ClientInstallationViewRow> _rows = [];
+
+        public IReadOnlyList<ClientInstallationViewRow> Rows => _rows;
+
+        public Task SaveAsync(ClientInstallationViewRow row, CancellationToken cancellationToken)
+        {
+            // AD-22: el UPSERT es idempotente por (clientId, gameId).
+            _rows.RemoveAll(candidate =>
+                candidate.ClientId == row.ClientId && candidate.GameId == row.GameId);
+            _rows.Add(row);
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ClientInstallationViewRow>> ListByClientAsync(
+            string clientId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ClientInstallationViewRow>>(
+                _rows.Where(row => row.ClientId == clientId).ToArray());
+
+        public Task RemoveAbsentAsync(
+            string clientId,
+            IReadOnlySet<string> reportedGameIds,
+            CancellationToken cancellationToken)
+        {
+            _rows.RemoveAll(row =>
+                row.ClientId == clientId && !reportedGameIds.Contains(row.GameId));
 
             return Task.CompletedTask;
         }

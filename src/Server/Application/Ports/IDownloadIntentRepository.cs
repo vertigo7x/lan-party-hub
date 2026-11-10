@@ -43,6 +43,25 @@ public interface IDownloadIntentRepository
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes with the answer.</returns>
     Task<bool> KnowsClientAsync(string clientId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Writes the TERMINAL result of the operation in the column <c>outcome</c> of the
+    /// intention (AD-33).
+    ///
+    /// <para>
+    /// El resultado es un RESULTADO y NUNCA un error: el valor
+    /// <c>PackageWithdrawn</c> NO produce <c>ApiError</c>, NO se persiste como
+    /// <c>ClientError</c> y NO se registra en el <c>ErrorCatalog</c> (AD-33, R-MVP-8).
+    /// </para>
+    /// <para>
+    /// La escritura es IDEMPOTENTE: el mismo resultado reportado dos veces deja la
+    /// misma fila, con el mismo resultado (AD-22, AD-33).
+    /// </para>
+    /// </summary>
+    /// <param name="intent">Intention whose terminal result is written.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the result has been written.</returns>
+    Task SaveOutcomeAsync(DownloadIntentRow intent, CancellationToken cancellationToken);
 }
 
 /// <summary>

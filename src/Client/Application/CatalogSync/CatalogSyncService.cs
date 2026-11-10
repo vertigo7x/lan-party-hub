@@ -29,8 +29,10 @@ public sealed class CatalogSyncService
 {
     private readonly ICatalogSnapshotClient _client;
     private readonly ICatalogSnapshotStore _store;
+    private readonly IClientStateStore? _stateStore;
     private readonly ICatalogChangeNotifier _notifier;
     private readonly CatalogSnapshotApplier _applier;
+    private readonly IOperationOutcomeReporter? _outcomeReporter;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<CatalogSyncService> _logger;
     private readonly Lock _gate = new();
@@ -48,13 +50,26 @@ public sealed class CatalogSyncService
     /// one and it exists so that the age of the catalog can be exercised with a known
     /// instant.
     /// </param>
+    /// <param name="outcomeReporter">
+    /// Port of the publication of the TERMINAL result of an operation, or <c>null</c> when
+    /// the client cannot publish it. Sin publicador la sincronización SIGUE: la
+    /// proyección es un complemento y no su motivo de vida (AD-1, AD-33).
+    /// </param>
+    /// <param name="stateStore">
+    /// Access to the local database of the client, de donde sale el identificador que
+    /// ATRIBUYE el resultado de la operación, or <c>null</c> when the client cannot
+    /// attribute it. Sin store el resultado no se publica, y la sincronización sigue
+    /// (AD-1, AD-23, AD-33).
+    /// </param>
     public CatalogSyncService(
         ICatalogSnapshotClient client,
         ICatalogSnapshotStore store,
         ICatalogChangeNotifier notifier,
         CatalogSnapshotApplier applier,
         ILogger<CatalogSyncService> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IOperationOutcomeReporter? outcomeReporter = null,
+        IClientStateStore? stateStore = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(store);
@@ -64,10 +79,12 @@ public sealed class CatalogSyncService
 
         _client = client;
         _store = store;
+        _stateStore = stateStore;
         _notifier = notifier;
         _applier = applier;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _outcomeReporter = outcomeReporter;
     }
 
     /// <summary>
@@ -130,6 +147,12 @@ public sealed class CatalogSyncService
             _logger.LogInformation(
                 "La sincronización del catálogo terminó con la versión {CatalogVersion}.",
                 outcome.CatalogVersion);
+
+            // AD-33, R-MVP-8: las operaciones RETIRADAS terminan con un RESULTADO, no con
+            // un error. El resultado se REPORTA al servidor para que lo muestre como tal,
+            // y la publicación NUNCA impide que la sincronización termine (AD-1).
+            await ReportWithdrawnOperationsAsync(outcome.WithdrawnOperations, cancellationToken)
+                .ConfigureAwait(false);
 
             return CatalogSyncState.UpToDate(
                 outcome.CatalogVersion,
@@ -202,6 +225,76 @@ public sealed class CatalogSyncService
     /// </para>
     /// </summary>
     /// <param name="catalogVersion">Version that the server announced.</param>
+    /// <summary>
+    /// REPORTS the terminal result of the operations that the catalog withdrew
+    /// (AD-33, R-MVP-8).
+    ///
+    /// <para>
+    /// El resultado es un RESULTADO y NUNCA un error: el valor
+    /// <see cref="OperationOutcome.PackageWithdrawn"/> no produce
+    /// <see cref="ApiError"/>, no se persiste como error del cliente y no se registra en
+    /// el catálogo de errores (AD-33).
+    /// </para>
+    /// <para>
+    /// La publicación NUNCA impide que la sincronización termine: un servidor que no
+    /// recibe el resultado no puede impedir que el catálogo se aplique (AD-1, AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="withdrawn">Operations that terminate with the withdrawal.</param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the results have been published.</returns>
+    private async Task ReportWithdrawnOperationsAsync(
+        IReadOnlyList<WithdrawnOperation> withdrawn,
+        CancellationToken cancellationToken)
+    {
+        if (_outcomeReporter is null || _stateStore is null || withdrawn.Count == 0)
+        {
+            return;
+        }
+
+        // AD-23: el identificador del cliente lo emitió el cliente una sola vez y lo
+        // persistió, así que el resultado se ATRIBUYE con el identificador guardado.
+        var identity = await _stateStore
+            .LoadIdentityAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (identity is null)
+        {
+            // El cliente todavía no ha emitido su identificador, así que no hay a quién
+            // atribuir el resultado (AD-23).
+            return;
+        }
+
+        foreach (var operation in withdrawn)
+        {
+            try
+            {
+                await _outcomeReporter
+                    .ReportAsync(
+                        new OperationOutcomeReported(
+                            identity.CanonicalId,
+                            operation.OperationId,
+                            operation.Outcome),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // La publicación del resultado NUNCA impide que la sincronización
+                // termine: el resultado es un complemento y no su motivo de vida
+                // (AD-1, AD-33).
+                _logger.LogWarning(
+                    exception,
+                    "No se pudo reportar el resultado de la operación {OperationId}: la sincronización sigue.",
+                    operation.OperationId);
+            }
+        }
+    }
+
     private void RememberAnnouncedVersion(long catalogVersion)
     {
         lock (_gate)

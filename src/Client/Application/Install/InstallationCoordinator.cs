@@ -247,6 +247,7 @@ public sealed class InstallationCoordinator
     private readonly IInstallPathResolver _paths;
     private readonly IInstallTreeWriter _tree;
     private readonly IClientStateStore _stateStore;
+    private readonly ActiveInstallations? _activeInstallations;
     private readonly ILogger<InstallationCoordinator> _logger;
 
     /// <summary>Raised when the progress of an installation changes (AC4).</summary>
@@ -273,6 +274,11 @@ public sealed class InstallationCoordinator
     /// <param name="tree">Port of the application of the typed operations of the manifest.</param>
     /// <param name="stateStore">Access to the database of the client.</param>
     /// <param name="logger">Log of the coordinator.</param>
+    /// <param name="activeInstallations">
+    /// Tracker of the INSTALLATION operations in course, or <c>null</c> when the client
+    /// does not track them. Con tracker, la FASE REAL de la operación se publica al
+    /// servidor y la tabla del organizador la muestra (AD-22, FR-10).
+    /// </param>
     public InstallationCoordinator(
         ISignedManifestClient manifests,
         IManifestSignatureVerifier verifier,
@@ -282,7 +288,8 @@ public sealed class InstallationCoordinator
         IInstallPathResolver paths,
         IInstallTreeWriter tree,
         IClientStateStore stateStore,
-        ILogger<InstallationCoordinator> logger)
+        ILogger<InstallationCoordinator> logger,
+        ActiveInstallations? activeInstallations = null)
     {
         ArgumentNullException.ThrowIfNull(manifests);
         ArgumentNullException.ThrowIfNull(verifier);
@@ -303,6 +310,7 @@ public sealed class InstallationCoordinator
         _tree = tree;
         _stateStore = stateStore;
         _logger = logger;
+        _activeInstallations = activeInstallations;
     }
 
     /// <summary>
@@ -324,6 +332,58 @@ public sealed class InstallationCoordinator
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(installedVersion);
 
+        // AD-22: la operación de instalación es una UNIDAD DE TRABAJO EN CURSO, así que
+        // el cliente la declara al servidor con su identificador y su fase REAL. El
+        // identificador lo MIENTE el tracker, que es su dueño (AD-23).
+        var trackedOperation = await BeginTrackedOperationAsync(gameId, cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            return await RunInstallationAsync(
+                gameId,
+                packageId,
+                installedVersion,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // AD-22: la operación deja de estar EN CURSO en CUALQUIER salida —cancelación,
+            // excepción inesperada o resultado— así que el servidor no la muestra como
+            // activa para siempre. Su INSTALACIÓN persiste, que es otra cosa (AD-26).
+            //
+            // AD-22: el CIERRE se publica con un token VIVO, así que una operación
+            // cancelada también llega a soltar su vista en el servidor (AD-22, FR-10).
+            await FinishTrackedOperationAsync(trackedOperation).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Runs the installation itself, con la operación YA declarada (AD-22).
+    ///
+    /// <para>
+    /// El seguimiento de la operación lo cierra el <see cref="InstallAsync"/> que la
+    /// empezó, así que esta método NO lo cierra: una sola puerta, todos los caminos
+    /// (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    private async Task<InstallationResult> RunInstallationAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        string? trackedOperation,
+        CancellationToken cancellationToken)
+    {
         // PASO 1: obtener el manifiesto firmado (AD-8).
         var envelope = await _manifests
             .GetAsync(packageId, cancellationToken)
@@ -331,6 +391,8 @@ public sealed class InstallationCoordinator
 
         if (envelope is null)
         {
+            await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
+
             return Reject(
                 ErrorCatalog.ManifestSignatureInvalidCode,
                 $"El servidor no sirvió un manifiesto firmado para el paquete '{packageId}'.",
@@ -345,6 +407,8 @@ public sealed class InstallationCoordinator
         {
             // El rechazo PRECEDE a persistir: ni manifiesto en la caché, ni directorio de
             // instalación, ni parcial, ni fila (AD-8, AC3, AD-27).
+            await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
+
             return Reject(
                 verification.Error.Code,
                 verification.Reason!,
@@ -385,6 +449,8 @@ public sealed class InstallationCoordinator
             // operación queda FALLIDA, no reparable por reanudación (AD-8, AC1).
             DiscardPartial(packagePath);
 
+            await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
+
             return Reject(
                 integrity.Error!.Code,
                 $"{integrity.Reason} El archivo parcial se descarta y la operación no se puede reanudar.",
@@ -418,7 +484,11 @@ public sealed class InstallationCoordinator
 
         // AC4: el progreso se publica con la fase y el porcentaje entero de los bytes
         // REALES escritos, así que la barra nunca contradice al texto (UX-DR-13).
-        var sink = new CoordinatorProgressSink(this);
+        //
+        // AD-22: el sumidero publica ALSO la FASE REAL de la operación al servidor, con
+        // el identificador que el tracker minte, así que la tabla del organizador
+        // muestra la fase en la que está la instalación (AD-22, FR-10).
+        var sink = new CoordinatorProgressSink(this, trackedOperation, cancellationToken);
 
         // PASO 4 (continuación): la aplicación del árbol por puerto (AD-7, AD-9). La
         // operación privilegiada pide CONFIRMACIÓN EXPLÍCITA dentro de esta llamada, y
@@ -427,9 +497,17 @@ public sealed class InstallationCoordinator
 
         try
         {
-            tree = await _tree
-                .ApplyAsync(manifest, rootPath, packagePath, sink, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                tree = await _tree
+                    .ApplyAsync(manifest, rootPath, packagePath, sink, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                // Esperar la fase antes del resultado terminal, incluso si falla el árbol.
+                await sink.FlushAsync().ConfigureAwait(false);
+            }
         }
         catch (PrivilegedOperationDeclinedException exception)
         {
@@ -448,13 +526,20 @@ public sealed class InstallationCoordinator
                 exception.Message,
                 cancellationToken).ConfigureAwait(false);
 
-            Publish(InstallPhase.Failed, sink.LastBytesWritten, sink.LastTotalBytes);
-
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
                 installedVersion,
                 ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode);
+
+            // AD-22: la fase REAL de la FALLA se publica antes de cerrar el seguimiento,
+            // así que el servidor sabe que la operación terminó (AD-22, FR-10).
+            await PublishAsync(
+                InstallPhase.Failed,
+                sink.LastBytesWritten,
+                sink.LastTotalBytes,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
 
             return Reject(
                 ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
@@ -476,8 +561,6 @@ public sealed class InstallationCoordinator
                 exception.Message,
                 cancellationToken).ConfigureAwait(false);
 
-            Publish(InstallPhase.Failed, sink.LastBytesWritten, sink.LastTotalBytes);
-
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
@@ -488,6 +571,15 @@ public sealed class InstallationCoordinator
                 exception,
                 "La instalación del juego {GameId} falló al aplicar el manifiesto: la operación queda fallida y es reintentable.",
                 gameId);
+
+            // AD-22: la fase REAL de la FALLA se publica antes de cerrar el seguimiento,
+            // así que el servidor sabe que la operación terminó (AD-22, FR-10).
+            await PublishAsync(
+                InstallPhase.Failed,
+                sink.LastBytesWritten,
+                sink.LastTotalBytes,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
 
             return Reject(
                 ErrorCatalog.InstallOperationFailedCode,
@@ -539,10 +631,15 @@ public sealed class InstallationCoordinator
 
         // AC4: la operación terminada publica su fase final, y la barra conserva su
         // longitud REAL (UX-DR-13).
-        Publish(
+        //
+        // AD-22: la fase final se publica ALSO al servidor, con el identificador de la
+        // operación, antes de cerrar el seguimiento (AD-22, FR-10).
+        await PublishAsync(
             verdict.IsInstalled ? InstallPhase.Completed : InstallPhase.Failed,
             sink.LastBytesWritten,
-            sink.LastTotalBytes);
+            sink.LastTotalBytes,
+            trackedOperation,
+            cancellationToken).ConfigureAwait(false);
 
         // AC6: el motivo de la reparabilidad y la acción quedan REGISTRADOS, y el
         // veredicto los lleva de forma VISIBLE (la microcopia del motivo llega en 8.2).
@@ -569,6 +666,9 @@ public sealed class InstallationCoordinator
                 installDirectoryId);
         }
 
+        // AD-22: la operación deja de estar EN CURSO, así que deja de publicarse como
+        // activa. Su INSTALACIÓN persiste, que es otra cosa (AD-22, AD-26). El cierre
+        // del seguimiento lo hace la puerta que la empezó (AD-22).
         return InstallationResult.Certified(verdict, installDirectoryId, rootPath);
     }
 
@@ -741,6 +841,109 @@ public sealed class InstallationCoordinator
     }
 
     /// <summary>
+    /// Publishes the REAL phase of a FAILED installation, así que el organizador ve que
+    /// la operación terminó en fallo y no solo que desapareció (AD-22, FR-10).
+    ///
+    /// <para>
+    /// La publicación usa un token VIVO: un rechazo NO viene de una cancelación, así que
+    /// la fase de fallo tiene que llegar al servidor aunque la operación ya no pueda
+    /// cancelar nada (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <returns>A task that completes when the phase has been published, or has failed.</returns>
+    private Task PublishFailurePhaseAsync(string? trackedOperation) =>
+        PublishAsync(InstallPhase.Failed, 0, null, trackedOperation, CancellationToken.None);
+
+    /// <summary>
+    /// Publishes the progress of the operation to whoever is listening (AC4).
+    /// </summary>
+    /// <param name="phase">Phase the operation is in.</param>
+    /// <param name="bytesWritten">Bytes that have really been written so far.</param>
+    /// <param name="totalBytes">Total bytes that the operation expects to write.</param>
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    private async Task PublishAsync(
+        InstallPhase phase,
+        long bytesWritten,
+        long? totalBytes,
+        string? trackedOperation,
+        CancellationToken cancellationToken)
+    {
+        ProgressChanged?.Invoke(new InstallProgress(phase, bytesWritten, totalBytes));
+
+        await PublishPhaseAsync(phase, trackedOperation, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the REAL phase of the operation to the server, WITHOUT raising
+    /// <see cref="ProgressChanged"/> (AD-22, FR-10).    ///
+    /// <para>
+    /// La fase REAL se publica al servidor con el identificador de la operación, y el
+    /// payload NO lleva porcentaje: un porcentaje sobre un total que no se conoce sería una
+    /// mentira (AD-22, FR-10).
+    /// </para>
+    /// <para>
+    /// La publicación de la fase al servidor NO vuelve a raises <see
+    /// cref="ProgressChanged"/>: la vista ya recibió esa fase cuando el ejecutor la
+    /// reportó, así que un segundo aviso repetiría la barra con la misma fase (AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="phase">Phase the operation is in.</param>
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the phase has been published, or has failed.</returns>
+    private async Task PublishPhaseAsync(
+        InstallPhase phase,
+        string? trackedOperation,
+        CancellationToken cancellationToken)
+    {
+        if (_activeInstallations is null || trackedOperation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var identity = await _stateStore
+                .LoadIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (identity is null)
+            {
+                return;
+            }
+
+            await _activeInstallations
+                .ReportPhaseAsync(identity.CanonicalId, trackedOperation, phase, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // La publicación del progreso NUNCA impide que la instalación siga: el
+            // servidor que no recibe la fase no puede impedir que el manifiesto se
+            // aplique (AD-1, AD-22).
+            _logger.LogWarning(
+                exception,
+                "No se pudo publicar la fase '{Phase}' de la instalación: la instalación sigue.",
+                phase);
+        }
+    }
+
+    /// <summary>
     /// Publishes the progress of the operation to whoever is listening (AC4).
     /// </summary>
     /// <param name="phase">Phase the operation is in.</param>
@@ -750,15 +953,209 @@ public sealed class InstallationCoordinator
         ProgressChanged?.Invoke(new InstallProgress(phase, bytesWritten, totalBytes));
 
     /// <summary>
+    /// Starts the TRACKING of the installation operation, MINTANDO su identificador
+    /// (AD-22).
+    ///
+    /// <para>
+    /// Sin tracker la operación NO se declara al servidor, y la instalación NO se rompe:
+    /// la proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+    /// </para>
+    /// <para>
+    /// La operación que empieza se PUBLICA al servidor con el estado COMPLETO del
+    /// cliente, así que la tabla del organizador la ve EN CURSO desde el principio y no
+    /// solo cuando el cliente publique su estado por otra vía (AD-22, FR-10).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the game that is installed.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The identifier of the tracked operation, or <c>null</c> when the client does not
+    /// track the installation.
+    /// </returns>
+    private async Task<string?> BeginTrackedOperationAsync(
+        string gameId,
+        CancellationToken cancellationToken)
+    {
+        if (_activeInstallations is null)
+        {
+            return null;
+        }
+
+        string? operationId = null;
+
+        try
+        {
+            var identity = await _stateStore
+                .LoadIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (identity is null)
+            {
+                return null;
+            }
+
+            operationId = _activeInstallations.Begin(identity.CanonicalId, gameId);
+
+            // AD-22, FR-10: la operación EN CURSO se declara al servidor antes de que la
+            // instalación avance, así que el organizador la ve desde el principio.
+            await PublishTrackedStateAsync(cancellationToken).ConfigureAwait(false);
+
+            return operationId;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // AD-22: la operación YA está en el tracker cuando la publicación se
+            // cancela, así que la SUELTA aquí: si no, quedaría EN CURSO para siempre
+            // sin que ninguna puerta la cierre, porque esta excepción sale ANTES del
+            // <c>try/finally</c> de <see cref="InstallAsync"/> (AD-22, FR-10).
+            AbandonTrackedOperation(operationId, gameId);
+
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // AD-22: la operación ya declarada que NO se pudo publicar tampoco puede
+            // quedar en curso: se suelta para que no sobreviva a una declaración que
+            // falló (AD-22, FR-10).
+            AbandonTrackedOperation(operationId, gameId);
+
+            // El tracking NO impide que la instalación siga (AD-1, AD-22).
+            _logger.LogWarning(
+                exception,
+                "No se pudo iniciar el seguimiento de la instalación del juego {GameId}: la instalación sigue.",
+                gameId);
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Finishes the TRACKING of the installation operation: la operación deja de estar en
+    /// curso, y su instalación PERSISTE (AD-22, AD-26).
+    ///
+    /// <para>
+    /// La operación que termina se PUBLICA al servidor con el estado COMPLETO del
+    /// cliente, así que la tabla del organizador la ve TERMINADA y no la muestra como
+    /// activa (AD-22, FR-10).
+    /// </para>
+    /// </summary>
+    /// <param name="trackedOperation">Identifier of the tracked operation, or <c>null</c>.</param>
+    /// <returns>A task that completes when the operation has been finished.</returns>
+    private async Task FinishTrackedOperationAsync(string? trackedOperation)
+    {
+        if (_activeInstallations is null || trackedOperation is null)
+        {
+            return;
+        }
+
+        _activeInstallations.Complete(trackedOperation);
+
+        // AD-22, FR-10: la operación deja de estar EN CURSO, así que el servidor tiene que
+        // recibir el estado COMPLETO del cliente para quitarla de la lista de operaciones
+        // en curso.
+        //
+        // AD-22: la operación que terminó puede ser una CANCELADA, así que el token de
+        // la instalación ya está CANCELADO y su publicación no llegaría nunca al
+        // servidor: la operación cancelada seguiría EN CURSO en la tabla del
+        // organizador. El CIERRE se publica con un token VIVO, así que la vista se
+        // limpia aunque la operación se cancele (AD-22, FR-10).
+        //
+        // El cierre es de MEJOR ESFUERZO: una publicación que falla NO deja la
+        // operación en el tracker, que ya la soltó (AD-1, AD-22).
+        using var closure = new CancellationTokenSource();
+
+        await PublishTrackedStateAsync(closure.Token).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ABANDONS the TRACKING of an installation operation that was declared but could not
+    /// be published, así que la operación NO queda en curso para siempre (AD-22, FR-10).
+    /// </summary>
+    /// <param name="trackedOperation">
+    /// Identifier of the tracked operation, or <c>null</c> when the operation was never
+    /// declared.
+    /// </param>
+    /// <param name="gameId">Identifier of the game that is being installed.</param>
+    private void AbandonTrackedOperation(string? trackedOperation, string gameId)
+    {
+        if (_activeInstallations is null || trackedOperation is null)
+        {
+            return;
+        }
+
+        _activeInstallations.Complete(trackedOperation);
+
+        _logger.LogWarning(
+            "La instalación del juego {GameId} no pudo declararse en curso, así que la operación {OperationId} se suelta: el servidor no la mostrará como activa.",
+            gameId,
+            trackedOperation);
+    }
+
+    /// <summary>
+    /// Publishes the COMPLETE state of the client, de MEJOR ESFUERZO (AD-22, FR-10).
+    ///
+    /// <para>
+    /// La publicación NUNCA impide que la instalación siga: un servidor que no recibe el
+    /// estado no puede impedir que el manifiesto se aplique (AD-1, AD-22). La
+    /// cancelación, en cambio, SÍ se propaga: una instalación cancelada no tiene que
+    /// publicar nada más (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the publication.</param>
+    /// <returns>A task that completes when the publication has been attempted.</returns>
+    private async Task PublishTrackedStateAsync(CancellationToken cancellationToken)
+    {
+        if (_activeInstallations is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _activeInstallations
+                .PublishStateAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // La publicación del estado NUNCA impide que la instalación siga (AD-1, AD-22).
+            _logger.LogWarning(
+                exception,
+                "No se pudo publicar el estado del cliente tras el cambio de la instalación en curso: la instalación sigue.");
+        }
+    }
+
+    /// <summary>
     /// Sumidero del progreso que PUBLICA en el coordinador, así que la vista recibe la
     /// fase y el porcentaje de los bytes REALES (AC4).
+    ///
+    /// <para>
+    /// El sumidero publica ALSO la fase REAL al servidor, con el identificador de la
+    /// operación que el tracker minte (AD-22, FR-10).
+    /// </para>
     /// </summary>
     private sealed class CoordinatorProgressSink : IInstallProgressSink
     {
         private readonly InstallationCoordinator _coordinator;
+        private readonly string? _trackedOperation;
+        private readonly CancellationToken _cancellationToken;
+        private readonly Lock _gate = new();
 
-        public CoordinatorProgressSink(InstallationCoordinator coordinator) =>
+        private readonly Queue<ReportedPhase> _pending = new();
+
+        public CoordinatorProgressSink(
+            InstallationCoordinator coordinator,
+            string? trackedOperation = null,
+            CancellationToken cancellationToken = default)
+        {
             _coordinator = coordinator;
+            _trackedOperation = trackedOperation;
+            _cancellationToken = cancellationToken;
+        }
 
         /// <summary>Bytes that were really written in the last publication.</summary>
         public long LastBytesWritten { get; private set; }
@@ -771,8 +1168,74 @@ public sealed class InstallationCoordinator
             LastBytesWritten = bytesWritten;
             LastTotalBytes = totalBytes;
 
+            // AC4: la vista recibe el progreso UNA sola vez por publicación, así que la
+            // barra no se repite con la misma fase.
             _coordinator.Publish(phase, bytesWritten, totalBytes);
+
+            // AD-22: la fase REAL viaja al servidor con el identificador de la
+            // operación, y SIN porcentaje (AD-22, FR-10). La publicación se ENCOLA y se
+            // ESPERA en <see cref="FlushAsync"/>: un «dispara y olvida» publicaría la
+            // fase sin ORDEN y dejaría la cancelación sin observar.
+            //
+            // AD-22: las fases se ENCOLAN en el ORDEN en que el ejecutor las declaró,
+            // así que ninguna fase intermedia se pierde: la última fase no sustituye a
+            // las anteriores, y la espera privilegiada llega al servidor en su momento
+            // (AD-22, FR-10).
+            lock (_gate)
+            {
+                _pending.Enqueue(new ReportedPhase(phase, bytesWritten, totalBytes));
+            }
         }
+
+        /// <summary>
+        /// Publishes to the server EVERY phase that the executor reported, in the ORDER in
+        /// which it was reported (AD-22, FR-10).
+        ///
+        /// <para>
+        /// La publicación se ESPERA: una cancelación se observa y una excepción se
+        /// propaga, así que la operación cancelada no deja una tarea sin observar
+        /// (AD-1).
+        /// </para>
+        /// <para>
+        /// La publicación al servidor NO vuelve a raises <see
+        /// cref="InstallationCoordinator.ProgressChanged"/>: la vista ya recibió cada
+        /// fase cuando el ejecutor la reportó, así que un segundo aviso repetiría la
+        /// barra con la misma fase (AC4, B04).
+        /// </para>
+        /// </summary>
+        /// <returns>A task that completes when the phases have been published.</returns>
+        public async Task FlushAsync()
+        {
+            while (true)
+            {
+                ReportedPhase phase;
+
+                lock (_gate)
+                {
+                    if (_pending.Count == 0)
+                    {
+                        return;
+                    }
+
+                    phase = _pending.Dequeue();
+                }
+
+                await _coordinator
+                    .PublishPhaseAsync(phase.Phase, _trackedOperation, _cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// A phase that the executor reported, que espera a ser publicada (AD-22).
+        /// </summary>
+        /// <param name="Phase">Phase the operation was in.</param>
+        /// <param name="BytesWritten">Bytes that had really been written so far.</param>
+        /// <param name="TotalBytes">Total bytes that the operation expects to write.</param>
+        private readonly record struct ReportedPhase(
+            InstallPhase Phase,
+            long BytesWritten,
+            long? TotalBytes);
     }
 
     /// <summary>

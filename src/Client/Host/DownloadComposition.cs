@@ -32,13 +32,15 @@ namespace LANPartyHub.Client.Host;
 /// <para>
 /// AD-22: la composición entrega el puerto <see cref="IDownloadProgressReporter"/> con su
 /// adaptador sobre el hub del estado del cliente, así que el progreso de la descarga se
-/// publica con el contrato exacto <c>DownloadProgressUpdated</c>.
+/// publica con el contrato exacto <c>DownloadProgressUpdated</c>. El publicador es el
+/// COMPARTIDO con el resto de las publicaciones del cliente —una sola conexión con el
+/// hub—, así que el progreso y el estado no pueden reordenarse (AD-22, AD-29).
 /// </para>
 /// </summary>
 public sealed class DownloadComposition : IDisposable
 {
     private readonly HttpClient _httpClient;
-    private readonly ClientStateHubPublisher? _publisher;
+    private readonly ClientStateHubPublisher? _ownedPublisher;
 
     /// <summary>Creates the composition of the downloads.</summary>
     /// <param name="serverAddress">
@@ -72,6 +74,13 @@ public sealed class DownloadComposition : IDisposable
     /// Port of the probe of the versions of the server, or <c>null</c> when the client
     /// does not check the compatibility before reanudar (AD-6, AC5).
     /// </param>
+    /// <param name="progressReporter">
+    /// Publisher of the progress of the download, or <c>null</c> when the composition
+    /// opens its own. AD-22, AD-29: el publicador del estado del cliente es el ÚNICO
+    /// canal de push del sistema, así que el ARRANQUE le entrega el publicador COMPARTIDO
+    /// y el progreso y el estado viajan por la MISMA conexión con el hub: dos conexiones
+    /// separadas podrían reordenar las publicaciones (AD-22).
+    /// </param>
     public DownloadComposition(
         Uri serverAddress,
         IClientRequestHeaders headers,
@@ -82,7 +91,8 @@ public sealed class DownloadComposition : IDisposable
         ITrustAnchorReader? trustAnchorReader = null,
         int maxConcurrentDownloads = DownloadCoordinator.DefaultMaxConcurrentDownloads,
         int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections,
-        IServerVersionProbe? versionProbe = null)
+        IServerVersionProbe? versionProbe = null,
+        IDownloadProgressReporter? progressReporter = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -109,28 +119,37 @@ public sealed class DownloadComposition : IDisposable
 
         Intents = new DownloadIntentHttpClient(_httpClient, versions);
 
-        // AD-22: el publicador del progreso vive sobre el hub del estado del cliente. Un
-        // fallo al abrirlo NO impide que las descargas sigan: lo que sobrevive al
+        // AD-22, AD-29: el publicador del progreso vive sobre el hub del estado del
+        // cliente, y es el MISMO que el registro, la sincronización y las instalaciones
+        // usan: la conexión con el hub se abre UNA vez y todas las publicaciones viajan
+        // por el mismo canal, así que no se reordenan (AD-22).
+        //
+        // Un fallo al abrirlo NO impide que las descargas sigan: lo que sobrevive al
         // reinicio es el offset persistido en el disco del cliente (AD-11).
-        IDownloadProgressReporter? reporter = null;
+        var reporter = progressReporter;
 
-        try
+        if (reporter is null)
         {
-            _publisher = new ClientStateHubPublisher(
-                serverAddress,
-                loggerFactory.CreateLogger<ClientStateHubPublisher>());
+            try
+            {
+                var publisher = new ClientStateHubPublisher(
+                    serverAddress,
+                    loggerFactory.CreateLogger<ClientStateHubPublisher>());
 
-            reporter = _publisher;
-        }
-        catch (Exception exception)
-        {
-            _publisher = null;
+                _ownedPublisher = publisher;
 
-            loggerFactory
-                .CreateLogger("LANPartyHub.Client.Downloads")
-                .LogWarning(
-                    exception,
-                    "No se pudo abrir el publicador del progreso de las descargas: las descargas siguen sin publicar su progreso.");
+                reporter = publisher;
+            }
+            catch (Exception exception)
+            {
+                _ownedPublisher = null;
+
+                loggerFactory
+                    .CreateLogger("LANPartyHub.Client.Downloads")
+                    .LogWarning(
+                        exception,
+                        "No se pudo abrir el publicador del progreso de las descargas: las descargas siguen sin publicar su progreso.");
+            }
         }
 
         // AD-2, AD-8, AD-20: el manifiesto firmado se pide al servidor por su propia ruta,
@@ -193,7 +212,9 @@ public sealed class DownloadComposition : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        _publisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        // Solo se dispone el publicador PROPIO: el compartido lo dispone el arranque,
+        // así que la conexión con el hub se cierra una vez y no dos (AD-22).
+        _ownedPublisher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
         _httpClient.Dispose();
     }

@@ -86,6 +86,32 @@ public sealed class DownloadIntentRepository : IDownloadIntentRepository
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task SaveOutcomeAsync(DownloadIntentRow intent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        ArgumentException.ThrowIfNullOrWhiteSpace(intent.OperationId);
+
+        var entity = await _context.DownloadIntents
+            .FirstOrDefaultAsync(
+                candidate => candidate.OperationId == intent.OperationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            // La operación NO tiene intención registrada: no hay fila que actualizar.
+            return;
+        }
+
+        // AD-33: `outcome` NO sustituye a `state`. El estado sigue siendo el de la
+        // máquina y el resultado es el terminal. La escritura es idempotente: el mismo
+        // resultado reportado dos veces deja la misma fila (AD-22).
+        entity.Outcome = intent.Outcome;
+
+        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Creates the row of the registration of the client when the server does not know it
     /// yet (AD-22, AD-30).

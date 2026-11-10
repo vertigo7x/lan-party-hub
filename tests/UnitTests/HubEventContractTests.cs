@@ -53,20 +53,35 @@ public sealed class HubEventContractTests
         // `connectionState` de un `ClientRegistration` es un evento INTERNO del servidor, y
         // el cliente NUNCA recibe un evento de hub por ella (AC6, AD-29).
         //
-        // AD-18, AD-29: el hub SÍ declara el método que recibe el estado que declara el
-        // PROPIO cliente, porque esa es la dirección sancionada para el
-        // `connectionState`. El método va de cliente a servidor, así que no publica
+        // AD-18, AD-29: el hub SÍ declara los métodos que reciben lo que declara el
+        // PROPIO cliente, porque esa es la dirección sancionada: el `connectionState`
+        // (AD-18), el progreso de sus operaciones (AD-22) y el resultado terminal de sus
+        // operaciones (AD-33). Esos métodos van de cliente a servidor, así que no publican
         // ningún evento de servidor → cliente, y el `ClientsSnapshotChanged` sigue sin
         // existir (AD-29).
         var serverToClientMethods = typeof(CatalogHub)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(method => !method.IsSpecialName)
-            .Where(method => !typeof(ClientStateChanged).IsAssignableFrom(
+            .Where(method => !ClientToServerPayloads.Contains(
                 method.GetParameters().FirstOrDefault()?.ParameterType))
             .ToArray();
 
         Assert.Empty(serverToClientMethods);
     }
+
+    /// <summary>
+    /// The payloads that travel CLIENTE → SERVIDOR through the hub: el estado del equipo
+    /// (AD-18), el progreso de sus operaciones (AD-22) y el resultado terminal de sus
+    /// operaciones (AD-33).
+    /// </summary>
+    private static IReadOnlyList<Type> ClientToServerPayloads =>
+    [
+        typeof(ClientStateChanged),
+        typeof(ClientConnectionChanged),
+        typeof(DownloadProgressUpdated),
+        typeof(InstallationProgressUpdated),
+        typeof(OperationOutcomeReported),
+    ];
 
     [Fact]
     public void The_hub_receives_the_state_that_the_client_declares()
@@ -88,6 +103,38 @@ public sealed class HubEventContractTests
     }
 
     [Fact]
+    public void The_hub_receives_the_connection_state_that_the_client_declares_alone()
+    {
+        // AD-18, AD-22, AD-29: cuando el cliente no puede leer su estado local completo,
+        // declara SOLO la conexión. El payload tiene forma exacta y el hub lo recibe
+        // cliente → servidor, sin convertirlo en un evento servidor → cliente.
+        var method = typeof(CatalogHub)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(candidate => candidate.GetParameters().FirstOrDefault()?.ParameterType
+                == typeof(ClientConnectionChanged));
+
+        Assert.Equal(
+            typeof(ClientConnectionChanged),
+            method.GetParameters().First().ParameterType);
+
+        Assert.Equal(
+            CatalogHub.ClientConnectionChangedMethodName,
+            nameof(ClientConnectionChanged));
+    }
+
+    [Fact]
+    public void The_connection_only_payload_carries_only_the_client_and_its_connection_state()
+    {
+        // AD-18, AD-22: la forma es EXACTA. No puede admitir juegos, operaciones,
+        // instalaciones ni otros campos que convierten el evento en una instantánea.
+        var properties = typeof(ClientConnectionChanged).GetProperties();
+
+        Assert.Equal(
+            [nameof(ClientConnectionChanged.ClientId), nameof(ClientConnectionChanged.ConnectionState)],
+            properties.Select(property => property.Name));
+    }
+
+    [Fact]
     public void The_hub_publishes_the_catalog_trigger_with_the_name_of_the_contract()
     {
         // AD-5, AR-16: el nombre del evento es el del contrato, en PascalCase (AD-18).
@@ -106,6 +153,7 @@ public sealed class HubEventContractTests
             .GetExportedTypes()
             .Where(type => type != typeof(ClientRegistrationView))
             .Where(type => type != typeof(ClientStateChanged))
+            .Where(type => type != typeof(ClientConnectionChanged))
             .Where(type => type.GetProperties().Any(property =>
                 property.PropertyType == typeof(ConnectionState)))
             .Select(type => type.Name)

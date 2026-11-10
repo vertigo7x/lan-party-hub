@@ -37,5 +37,5 @@ public sealed record VersionInfo(string ClientVersion, string ServerVersion, int
     /// the inventory of the contracts of <c>Shared</c> does not change (AD-18, AD-33).
     /// </para>
     /// </summary>
-    public const int CurrentProtocolVersion = 1;
+    public const int CurrentProtocolVersion = 3;
 }

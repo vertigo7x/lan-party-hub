@@ -52,13 +52,19 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
     /// Hilo de la interfaz, que encola las notificaciones que llegan desde el grupo de
     /// hilos (AC3, AC4, AC5).
     /// </param>
+    /// <param name="outcomeReporter">
+    /// Port of the publication of the TERMINAL result of an operation, or <c>null</c> when
+    /// the client cannot publish it. Sin publicador la sincronización SIGUE: la
+    /// proyección es un complemento y no su motivo de vida (AD-1, AD-33).
+    /// </param>
     public CatalogSyncComposition(
         Uri serverAddress,
         string stateDatabasePath,
         IClientRequestHeaders headers,
         ILoggerFactory loggerFactory,
         IServerConnectionGate? connectionGate,
-        IUiThread uiThread)
+        IUiThread uiThread,
+        IOperationOutcomeReporter? outcomeReporter = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDatabasePath);
@@ -137,7 +143,9 @@ public sealed class CatalogSyncComposition : IAsyncDisposable, IServerReconnectH
             store,
             _hubClient,
             applier,
-            loggerFactory.CreateLogger<CatalogSyncService>());
+            loggerFactory.CreateLogger<CatalogSyncService>(),
+            outcomeReporter: outcomeReporter,
+            stateStore: _stateStore);
     }
 
     /// <summary>The use case of the synchronization of the catalog.</summary>

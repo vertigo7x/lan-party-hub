@@ -17,6 +17,7 @@ namespace LANPartyHub.IntegrationTests;
 /// file, because that is the only way to observe the network surface and the schema of the
 /// database of the server.
 /// </summary>
+[Collection(ServerStartupSocketIsolationCollection.Name)]
 public sealed class ServerStartupTests
 {
     private const int MdnsPort = 5353;

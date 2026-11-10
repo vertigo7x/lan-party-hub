@@ -367,12 +367,12 @@ public sealed class DownloadCoordinatorTests : IDisposable
             new Uri("http://192.168.1.10:5000/api/v1/packages/paquete-2/content"),
             TestContext.Current.CancellationToken);
 
-        gate.Release(100);
-
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
         // El límite de UNA descarga simultánea: la segunda espera.
         Assert.Single(engine.RequestedStarts);
+
+        gate.Release(100);
     }
 
     private static DownloadCoordinator CreateCoordinator(
