@@ -335,6 +335,16 @@ public sealed class ClientsTableTests
         // AC3, FR-4: la fila indica que el cliente NO OPERA.
         Assert.Contains("no opera", row.CompatibilityText, StringComparison.OrdinalIgnoreCase);
 
+        // AC3, UX-DR-31: la PROPIA celda del estado lo dice, así que el organizador lo ve
+        // sin abrir el detalle, y el diagnóstico completo queda en su tooltip.
+        var stateCell = StateCellsOf(window).Single();
+
+        Assert.Contains("no opera", stateCell.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            catalog.Message,
+            ToolTip.GetTip(stateCell) as string ?? string.Empty,
+            StringComparison.Ordinal);
+
         // AC3: el detalle de la fila lleva el diagnóstico de la incompatibilidad.
         window.Select(row);
 
@@ -619,6 +629,17 @@ public sealed class ClientsTableTests
         RowsOf(window)
             .Select(border => ((Grid)border.Child!).Children.OfType<TextBlock>().ElementAt(2).Text)
             .ToArray();
+
+    /// <summary>
+    /// The CELLS of the state of the connection, así que la prueba puede comprobar su
+    /// texto y su tooltip (AC3, UX-DR-31).
+    /// </summary>
+    /// <param name="window">Window of the section.</param>
+    /// <returns>The cells of the state.</returns>
+    private static List<TextBlock> StateCellsOf(ClientsWindow window) =>
+        RowsOf(window)
+            .Select(border => ((Grid)border.Child!).Children.OfType<TextBlock>().ElementAt(2))
+            .ToList();
 
     /// <summary>
     /// The ink of the cell of the state of the connection, así que la prueba puede

@@ -340,16 +340,33 @@ public sealed class ClientsWindow : Window
     /// El texto NUNCA se sustituye por el color: la fila sigue mostrando el estado de
     /// la tabla de microcopia y el ORGANIZADOR lo lee igual (AD-25).
     /// </para>
+    ///
+    /// <para>
+    /// La fila de un cliente INCOMPATIBLE dice en la propia celda que NO OPERA, así que
+    /// el organizador lo ve sin abrir el detalle, y el diagnóstico COMPLETO queda en el
+    /// tooltip de la celda (AC3, FR-4, UX-DR-31).
+    /// </para>
     /// </summary>
     /// <param name="row">Row of the client.</param>
     /// <returns>The control of the cell.</returns>
     private static TextBlock BuildStateCell(ClientRow row)
     {
-        var cell = BuildDataCell(row.ConnectionStateText);
+        var text = row.IsIncompatible
+            ? $"{row.ConnectionStateText} · {ClientsViewModel.DoesNotOperateText}"
+            : row.ConnectionStateText;
+
+        var cell = BuildDataCell(text);
 
         if (row.IsIncompatible || row.IsDisconnected)
         {
             cell.Foreground = new SolidColorBrush(StateDangerColor);
+        }
+
+        if (row.IsIncompatible && !string.IsNullOrWhiteSpace(row.CompatibilityText))
+        {
+            // El diagnóstico completo cabe en el tooltip, no en una celda densa: el
+            // recorte no pierde el dato (AC3, UX-DR-31).
+            ToolTip.SetTip(cell, row.CompatibilityText);
         }
 
         return cell;

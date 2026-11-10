@@ -46,6 +46,17 @@ public sealed class ClientsViewModel
     }
 
     /// <summary>
+    /// Text that says that an INCOMPATIBLE client does NOT operate (AC3, FR-4,
+    /// UX-DR-31).
+    ///
+    /// <para>
+    /// La fila lo dice en la celda del estado y el detalle lo repite con el diagnóstico,
+    /// así que el texto vive en UN SOLO sitio (AD-25, R-MVP-8).
+    /// </para>
+    /// </summary>
+    public const string DoesNotOperateText = "no opera";
+
+    /// <summary>
     /// Oldest protocol version that the server accepts (AD-6, FR-4).
     ///
     /// <para>
@@ -340,7 +351,7 @@ public sealed class ClientsViewModel
             $"cliente {client.ClientVersion} · protocolo {client.ProtocolVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
             + $" · diagnóstico: {error.Message} · {error.Cause}"
             + $" · siguiente paso: {error.NextStep}"
-            + " · no opera";
+            + $" · {DoesNotOperateText}";
     }
 
     /// <summary>
