@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-26-2026 17:03
-last_updated: 11-10-2026 11:40
+last_updated: 11-10-2026 15:43
 project: Lan Party Hub
 project_key: NOKEY
 tracking_system: file-system
@@ -87,7 +87,7 @@ development_status:
 
   epic-9: in-progress
   9-1-tabla-densa-de-clientes-conectados: done
-  9-2-proyecciÃ³n-de-instalaciones-y-de-operaciones-en-curso: review
+  9-2-proyecciÃ³n-de-instalaciones-y-de-operaciones-en-curso: done
   9-3-errores-registrados-con-causa-y-siguiente-paso: backlog
   9-4-diagnÃ³stico-correlacionado-en-el-cliente: backlog
   epic-9-retrospective: optional
