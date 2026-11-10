@@ -702,9 +702,272 @@ public sealed class ClientProjectionTests
     }
 
     [Fact]
-    public async Task The_organizer_reads_all_the_clients_with_one_get_and_no_request_per_client()
+    public async Task The_error_that_the_client_reports_is_registered_with_its_cause_and_next_step()
     {
-        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-reported-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, OtherClientId)).StatusCode);
+
+            // AD-15, AC1: el error que viaja en el payload es del ÚNICO tipo de error del
+            // sistema, `ApiError`, con su código estable, su mensaje, su causa y su
+            // siguiente paso.
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            var clients = await ReadClientsAsync(http);
+            var first = Assert.Single(clients, candidate =>
+                candidate.GetProperty("clientId").GetString() == ClientId);
+            var second = Assert.Single(clients, candidate =>
+                candidate.GetProperty("clientId").GetString() == OtherClientId);
+
+            var registered = Assert.Single(first.GetProperty("errors").EnumerateArray());
+
+            // AC1: el `ClientError` persistido lleva TODAS sus partes.
+            Assert.False(string.IsNullOrWhiteSpace(registered.GetProperty("errorId").GetString()));
+            Assert.Equal(DownloadOperationId, registered.GetProperty("operationId").GetString());
+            Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, registered.GetProperty("code").GetString());
+            Assert.Equal(error.Message, registered.GetProperty("message").GetString());
+            Assert.Equal(error.Cause, registered.GetProperty("cause").GetString());
+            Assert.Equal(error.NextStep, registered.GetProperty("nextStep").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(registered.GetProperty("occurredAt").GetString()));
+
+            // AC1, AD-29: el error es del cliente que lo reportó y de ningún otro.
+            Assert.Empty(second.GetProperty("errors").EnumerateArray());
+
+            // AC1: la fila del servidor guarda el error con TODAS sus partes.
+            var rows = ReadClientErrorRows(dataDirectory);
+            var row = Assert.Single(rows);
+
+            Assert.Equal(ClientId, row.ClientId);
+            Assert.Equal(DownloadOperationId, row.OperationId);
+            Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, row.Code);
+            Assert.Equal(error.Message, row.Message);
+            Assert.Equal(error.Cause, row.Cause);
+            Assert.Equal(error.NextStep, row.NextStep);
+            Assert.False(string.IsNullOrWhiteSpace(row.ErrorId));
+            Assert.False(string.IsNullOrWhiteSpace(row.OccurredAt));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_republication_of_the_same_error_does_not_duplicate_the_diagnostic()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-repeated-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // AD-15, AD-22: la escritura es IDEMPOTENTE por `errorId`, así que la
+            // republicación del MISMO error —una reconexión, un reintento de publicación—
+            // NO crea una segunda fila del diagnóstico.
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            // La tabla `CLIENT_ERROR` conserva UNA SOLA fila del error.
+            var rows = ReadClientErrorRows(dataDirectory);
+            var row = Assert.Single(rows);
+
+            Assert.Equal(ClientId, row.ClientId);
+            Assert.Equal(DownloadOperationId, row.OperationId);
+            Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, row.Code);
+
+            // Y la vista de organización muestra UN SOLO error en la fila del equipo.
+            var clients = await ReadClientsAsync(http);
+            var first = Assert.Single(clients, candidate =>
+                candidate.GetProperty("clientId").GetString() == ClientId);
+
+            var registered = Assert.Single(first.GetProperty("errors").EnumerateArray());
+            Assert.Equal(row.ErrorId, registered.GetProperty("errorId").GetString());
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_errors_of_different_operations_of_the_same_client_are_registered_apart()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-distinct-errors-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // Dos errores DISTINTOS del mismo equipo —operaciones distintas— son dos
+            // diagnósticos distintos, así que cada uno tiene su propia fila.
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, InstallationOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            var rows = ReadClientErrorRows(dataDirectory);
+
+            Assert.Equal(2, rows.Count);
+            Assert.Contains(rows, candidate => candidate.OperationId == DownloadOperationId);
+            Assert.Contains(rows, candidate => candidate.OperationId == InstallationOperationId);
+            Assert.Equal(2, rows.Select(candidate => candidate.ErrorId).Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_concurrent_reports_of_the_same_error_do_not_fail_and_register_one_row()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-concurrent-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+
+            // AD-22: dos reportes CONCURRENTES del mismo error NO compiten por la clave
+            // primaria: la escritura es un UPSERT y ninguno de los dos falla.
+            var publications = Enumerable.Range(0, 8).Select(_ => connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(ClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken));
+
+            await Task.WhenAll(publications);
+
+            var rows = ReadClientErrorRows(dataDirectory);
+
+            Assert.Single(rows);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_error_of_a_client_that_is_not_registered_does_not_create_a_row()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("lan-party-hub-unknown-error-").FullName;
+        var port = GetFreeTcpPort();
+
+        try
+        {
+            await using var host = await TestServer.StartAsync(dataDirectory, port, TestContext.Current.CancellationToken);
+            using var http = host.CreateClient();
+
+            var error = ErrorCatalog.Resolve(ErrorCatalog.PackageIntegrityMismatchCode);
+
+            await using var connection = await ConnectAsync(host);
+            await connection.InvokeAsync(
+                CatalogHub.ClientErrorReportedMethodName,
+                new ClientErrorReported(OtherClientId, DownloadOperationId, error),
+                TestContext.Current.CancellationToken);
+
+            // AD-30, AD-32: el alta del equipo es la operación de REGISTRO, así que el
+            // error de un cliente que no está registrado no crea ninguna fila.
+            Assert.Empty(await ReadClientsAsync(http));
+            Assert.Empty(ReadClientErrorRows(dataDirectory));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dataDirectory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // The operating system can still hold one of the files.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_organizer_reads_all_the_clients_with_one_get_and_no_request_per_client()
+    {        await using var host = await TestServer.StartAsync(TestContext.Current.CancellationToken);
         using var http = host.CreateClient();
 
         Assert.Equal(HttpStatusCode.OK, (await RegisterAsync(http, ClientId)).StatusCode);
@@ -1135,8 +1398,40 @@ public sealed class ClientProjectionTests
         return rows;
     }
 
-    private static void InsertClientError(
-        string dataDirectory,
+    private static IReadOnlyList<ClientErrorRow> ReadClientErrorRows(string dataDirectory)
+    {
+        var databasePath = Path.Combine(dataDirectory, "catalog.sqlite");
+        using var connection = new SqliteConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT errorId, clientId, operationId, code, message, cause, nextStep, occurredAt
+            FROM CLIENT_ERROR
+            ORDER BY errorId
+            """;
+
+        using var reader = command.ExecuteReader();
+        var rows = new List<ClientErrorRow>();
+
+        while (reader.Read())
+        {
+            rows.Add(new ClientErrorRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7)));
+        }
+
+        return rows;
+    }
+
+    private static void InsertClientError(        string dataDirectory,
         string errorId,
         string clientId,
         string operationId,
@@ -1196,4 +1491,14 @@ public sealed class ClientProjectionTests
         string OperationId,
         string ClientId,
         string Outcome);
+
+    private sealed record ClientErrorRow(
+        string ErrorId,
+        string ClientId,
+        string OperationId,
+        string Code,
+        string Message,
+        string Cause,
+        string NextStep,
+        string OccurredAt);
 }

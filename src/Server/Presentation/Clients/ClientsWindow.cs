@@ -75,6 +75,18 @@ public sealed class ClientsWindow : Window
     /// </summary>
     public const double SeparatorThickness = 1;
 
+    /// <summary>
+    /// The color of DANGER, <c>{colors.state-danger}</c> del diseño (DESIGN, UX-DR-31,
+    /// UX-DR-44).
+    ///
+    /// <para>
+    /// La fila INCOMPATIBLE y la fila DESCONECTADA llevan este color, porque son las dos
+    /// que el organizador tiene que notar de un vistazo. El color NUNCA sustituye al
+    /// texto: la fila dice lo que pasa y el color lo refuerza (AD-25, UX-DR-31).
+    /// </para>
+    /// </summary>
+    public static readonly Color StateDangerColor = Color.FromRgb(0xF2, 0x54, 0x5B);
+
     private readonly ListClients _listClients;
     private readonly StackPanel _rows;
     private readonly TextBlock _summary;
@@ -279,7 +291,7 @@ public sealed class ClientsWindow : Window
         {
             BuildMonospaceCell(row.ClientId),
             BuildDataCell(row.MachineName),
-            BuildDataCell(row.ConnectionStateText),
+            BuildStateCell(row),
             BuildMonospaceCell(row.ClientVersion),
             BuildMonospaceCell(row.ProtocolVersion),
             BuildMetaCell(row.LastSeenAt),
@@ -320,6 +332,47 @@ public sealed class ClientsWindow : Window
     }
 
     /// <summary>
+    /// Builds the cell of the state of the connection, pintando en el color de PELIGRO
+    /// la fila de un cliente INCOMPATIBLE y la de un cliente DESCONECTADO (AD-6, AD-22,
+    /// UX-DR-31, UX-DR-44).
+    ///
+    /// <para>
+    /// El texto NUNCA se sustituye por el color: la fila sigue mostrando el estado de
+    /// la tabla de microcopia y el ORGANIZADOR lo lee igual (AD-25).
+    /// </para>
+    ///
+    /// <para>
+    /// La fila de un cliente INCOMPATIBLE dice en la propia celda que NO OPERA, así que
+    /// el organizador lo ve sin abrir el detalle, y el diagnóstico COMPLETO queda en el
+    /// tooltip de la celda (AC3, FR-4, UX-DR-31).
+    /// </para>
+    /// </summary>
+    /// <param name="row">Row of the client.</param>
+    /// <returns>The control of the cell.</returns>
+    private static TextBlock BuildStateCell(ClientRow row)
+    {
+        var text = row.IsIncompatible
+            ? $"{row.ConnectionStateText} · {ClientsViewModel.DoesNotOperateText}"
+            : row.ConnectionStateText;
+
+        var cell = BuildDataCell(text);
+
+        if (row.IsIncompatible || row.IsDisconnected)
+        {
+            cell.Foreground = new SolidColorBrush(StateDangerColor);
+        }
+
+        if (row.IsIncompatible && !string.IsNullOrWhiteSpace(row.CompatibilityText))
+        {
+            // El diagnóstico completo cabe en el tooltip, no en una celda densa: el
+            // recorte no pierde el dato (AC3, UX-DR-31).
+            ToolTip.SetTip(cell, row.CompatibilityText);
+        }
+
+        return cell;
+    }
+
+    /// <summary>
     /// Selects a row of the table and shows its detail.
     ///
     /// <para>
@@ -345,6 +398,7 @@ public sealed class ClientsWindow : Window
             $"{row.MachineName} · {row.ClientId} · {row.ConnectionStateText} · "
             + $"cliente {row.ClientVersion} · protocolo {row.ProtocolVersion} · "
             + $"último contacto {row.LastSeenAt}"
+            + DetailLine(row.CompatibilityText, "compatibilidad")
             + DetailLine(row.InstalledGamesText, "juegos instalados")
             + DetailLine(row.ActiveDownloadsText, "descargas activas")
             + DetailLine(row.InstallationProgressText, "instalaciones en curso")

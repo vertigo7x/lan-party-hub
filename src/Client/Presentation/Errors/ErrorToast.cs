@@ -7,22 +7,24 @@ using LANPartyHub.Client.Presentation.Design;
 namespace LANPartyHub.Client.Presentation.Errors;
 
 /// <summary>
-/// Notice of error of the client, con sus TRES partes (AC3, UX-DR-36, DESIGN).
+/// Notice of error of the client, con la CAUSA, la ACCIÓN INTENTADA y el SIGUIENTE PASO
+/// (AC5, UX-DR-36, DESIGN).
 ///
 /// <para>
 /// El aviso es una barra de superficie de peligro con el texto del error dentro, y el
-/// texto son las tres partes del catálogo: qué falló, por qué y qué hacer ahora. NO lleva
-/// iconografía: el texto es el aviso (DESIGN, UX-DR-36).
+/// texto son las tres partes del aviso: por qué falló, qué se intentó hacer y qué hacer
+/// ahora. NO lleva iconografía: el texto es el aviso (DESIGN, UX-DR-36, AC5).
 /// </para>
 /// <para>
 /// El aviso NO sustituye a la persistencia del error en el registro: el log es el sumidero
-/// durable del diagnóstico (AD-15, UX-DR-36).
+/// durable del diagnóstico, y el servidor registra el error que el cliente reporta
+/// (AD-15, UX-DR-36).
 /// </para>
 /// </summary>
 public sealed class ErrorToast : Border
 {
-    private readonly TextBlock _message;
     private readonly TextBlock _cause;
+    private readonly TextBlock _attemptedAction;
     private readonly TextBlock _nextStep;
 
     /// <summary>
@@ -43,18 +45,21 @@ public sealed class ErrorToast : Border
         // peligro (DESIGN).
         var foreground = new SolidColorBrush(DesignTokens.SurfaceBase);
 
-        _message = new TextBlock
-        {
-            Text = viewModel.Message,
-            Foreground = foreground,
-            FontWeight = FontWeight.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-        };
-
+        // AC5: el contenido del aviso es la CAUSA, la ACCIÓN INTENTADA y el SIGUIENTE
+        // PASO, en ese orden, y SIN iconografía: el texto es el aviso (DESIGN,
+        // UX-DR-36).
         _cause = new TextBlock
         {
             Text = viewModel.Cause,
             Foreground = foreground,
+            TextWrapping = TextWrapping.Wrap,
+        };
+
+        _attemptedAction = new TextBlock
+        {
+            Text = viewModel.AttemptedAction,
+            Foreground = foreground,
+            FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
         };
 
@@ -71,40 +76,53 @@ public sealed class ErrorToast : Border
             Spacing = 4,
             Children =
             {
-                _message,
                 _cause,
+                _attemptedAction,
                 _nextStep,
             },
         };
     }
 
     /// <summary>
-    /// The text of WHAT FAILED, so it can be inspected and driven from the outside (AC3).
-    /// </summary>
-    public TextBlock MessageText => _message;
-
-    /// <summary>
     /// The text of WHY it failed, so it can be inspected and driven from the outside
-    /// (AC3).
+    /// (AC5).
     /// </summary>
     public TextBlock CauseText => _cause;
 
     /// <summary>
+    /// The text of the ACTION that was attempted, so it can be inspected and driven from
+    /// the outside (AC5).
+    /// </summary>
+    public TextBlock AttemptedActionText => _attemptedAction;
+
+    /// <summary>
     /// The text of WHAT TO DO NOW, so it can be inspected and driven from the outside
-    /// (AC3).
+    /// (AC5).
     /// </summary>
     public TextBlock NextStepText => _nextStep;
 
     /// <summary>
-    /// Shows the notice of error, con sus tres partes (AC3).
+    /// The text of WHAT FAILED, so it can be inspected and driven from the outside (AC3).
+    ///
+    /// <para>
+    /// El aviso presenta la acción intentada, así que este bloque es el de la acción: el
+    /// texto del catálogo es el de la acción mientras nadie declare otra cosa, así que el
+    /// aviso nunca dice menos de lo que dice el catálogo (AD-15, AC5).
+    /// </para>
+    /// </summary>
+    public TextBlock MessageText => _attemptedAction;
+
+    /// <summary>
+    /// Shows the notice of error, con la causa, la acción intentada y el siguiente paso
+    /// (AC5).
     /// </summary>
     /// <param name="viewModel">View model of the error.</param>
     public void Show(ErrorMessageViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
-        _message.Text = viewModel.Message;
         _cause.Text = viewModel.Cause;
+        _attemptedAction.Text = viewModel.AttemptedAction;
         _nextStep.Text = viewModel.NextStep;
 
         IsVisible = true;

@@ -1382,15 +1382,36 @@ def blocking_review_line(transcript: str) -> str:
     return ""
 
 
+def review_verdict_line(transcript: str) -> str:
+    """The verdict of a review: ``BLOCKING``, ``OK`` or an empty text.
+
+    <para>
+    El veredicto es la ÚLTIMA respuesta del revisor: el modelo puede dejar antes una
+    línea de preámbulo («voy a leer el diff»), así que el transcript entero no es nunca
+    igual a «OK». La línea de bloqueo ya se aceptaba con preámbulo; el visto bueno se
+    acepta con la MISMA regla (AD-15, docs/plan.md §8).
+    </para>
+    """
+    if blocking_review_line(transcript):
+        return "BLOCKING"
+
+    lines = [line.strip() for line in transcript.splitlines() if line.strip()]
+
+    if lines and lines[-1] == "OK":
+        return "OK"
+
+    return ""
+
+
 def review_result(log_path: Path) -> str:
     if not log_path.exists():
         raise legacy.DriverError("review produced no transcript")
     session, transcript = legacy.parse_skill_output(log_path)
     del session
-    blocking = blocking_review_line(transcript)
-    if blocking:
-        return blocking
-    if transcript.strip() == "OK":
+    verdict = review_verdict_line(transcript)
+    if verdict == "BLOCKING":
+        return blocking_review_line(transcript)
+    if verdict == "OK":
         return ""
     raise legacy.DriverError("review produced no explicit OK or BLOCKING verdict")
 
@@ -2406,6 +2427,12 @@ def self_test() -> int:
         failures.append("an OK review was parsed as blocking")
     if not blocking_review_line("note\nBLOCKING: an S1 is proven\n"):
         failures.append("a blocking review result was not parsed")
+    if review_verdict_line("I'll read the diff.\nOK\n") != "OK":
+        failures.append("an OK review with a preamble was not parsed")
+    if review_verdict_line("I'll read the diff.\nnote\nBLOCKING: an S1 is proven\n") != "BLOCKING":
+        failures.append("a blocking review with a preamble was not parsed")
+    if review_verdict_line("OK\nsomething else\n") != "":
+        failures.append("a review whose verdict is not the last line was accepted")
     if merged_commit_from_pr('{"state":"MERGED","mergeCommit":{"oid":"abc"}}') != "abc":
         failures.append("a merged squash commit was not parsed")
     if merged_commit_from_pr('{"state":"OPEN","mergeCommit":{"oid":"abc"}}'):

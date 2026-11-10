@@ -90,8 +90,8 @@ public sealed class ClientStateHubMethodNameTests
         // de los adaptadores que persisten el estado y el estado no se pierde.
         //
         // AD-18, AD-22, AD-33: el hub recibe el estado del equipo, el progreso de sus
-        // operaciones y el resultado terminal de sus operaciones, así que los TRES casos
-        // de uso viajan por el constructor.
+        // operaciones, el resultado terminal de sus operaciones y el error que reporta,
+        // así que los CINCO casos de uso viajan por el constructor.
         var constructors = typeof(CatalogHub).GetConstructors();
 
         var constructor = Assert.Single(constructors);
@@ -106,7 +106,30 @@ public sealed class ClientStateHubMethodNameTests
                 typeof(ReportClientProgress),
                 typeof(ReportOperationOutcome),
                 typeof(ReportClientConnection),
+                typeof(ReportClientError),
             ],
             parameterTypes);
+    }
+
+    [Fact]
+    public void The_name_of_the_error_method_is_the_same_on_the_client_and_the_server()
+    {
+        // AD-15, AD-18: el error que reporta el cliente usa el mismo nombre exacto en los
+        // dos lados; de otro modo el diagnóstico se pierde en silencio.
+        Assert.Equal(
+            CatalogHub.ClientErrorReportedMethodName,
+            nameof(ClientErrorReported));
+    }
+
+    [Fact]
+    public void The_method_of_the_error_receives_only_its_exact_payload()
+    {
+        var method = typeof(CatalogHub)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(candidate => candidate.Name == CatalogHub.ClientErrorReportedMethodName);
+
+        Assert.Equal(
+            [typeof(ClientErrorReported)],
+            method.GetParameters().Select(parameter => parameter.ParameterType));
     }
 }

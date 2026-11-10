@@ -17,3 +17,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-proyeccion-de-instalaciones-y-de-operaciones-en-curso.md`
   summary: El cierre del cliente resuelve `DisposeAsync()` de forma síncrona (`GetAwaiter().GetResult()`) en el camino del hilo de la interfaz.
   evidence: El patrón es PREEXISTENTE en el cierre del cliente y no lo introduce la 9.2, así que queda fuera de esta historia; no se ha demostrado que la continuación capture el hilo de la interfaz. Para confirmarlo hay que observar el hilo que ejecuta la continuación de la disposición asíncrona durante el cierre y comprobar si bloquea ese hilo.
+
+- source_spec: `_bmad-output/planning-artifacts/epics/epics-lan-party-hub-2026-10-26/epics.md`
+  summary: Ningún camino del cliente publica `ClientErrorReported` al servidor, así que el registro de errores del organizador solo se llenaría desde las pruebas.
+  evidence: La 9.3 deja listo el receptor (método del hub, caso de uso y persistencia con sus tres partes) y la vista que los muestra, pero el AC1 empieza por «Given un cliente que reporta un error» y hoy el contrato no tiene emisor: ni el coordinador de descargas ni el de instalaciones publican el error que catalogan. La 9.4 declara que el registro del cliente «presenta» los errores y no los produce, así que el hueco de la emisión queda sin asignar en el backlog y necesita una historia propia.
