@@ -40,6 +40,7 @@ public sealed class GameDetailView : UserControl
     private readonly TextBlock _operatingSystem;
     private readonly TextBlock _requirements;
     private readonly TextBlock _license;
+    private readonly TextBlock _availableVersion;
     private readonly TextBlock _installedVersion;
     private readonly GamePlayActionsView _playActions;
     private readonly TextBlock _launchFailure;
@@ -159,6 +160,16 @@ public sealed class GameDetailView : UserControl
             Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
         };
 
+        // AC1, AC3: la línea de la versión PUBLICADA lleva su etiqueta y su valor EXACTO en
+        // la tipografía monoespaciada, así que el jugador compara las dos versiones con los
+        // dígitos alineados (AC3, UX-DR-21).
+        _availableVersion = new TextBlock
+        {
+            FontFamily = new FontFamily(DesignTokens.MonoFontFamily),
+            FontSize = DesignTokens.MonoFontSize,
+            Foreground = new SolidColorBrush(DesignTokens.InkPrimary),
+        };
+
         // AC1, AC2: la ficha lleva la MISMA tabla de acciones que la Biblioteca, con el
         // motivo VISIBLE del bloqueo junto a la etiqueta de «Jugar» (AC3, UX-DR-18).
         _playActions = new GamePlayActionsView(viewModel.Actions, onPlay, onPrimary, onSecondary);
@@ -185,6 +196,11 @@ public sealed class GameDetailView : UserControl
                 BuildFact("Sistema operativo", _operatingSystem),
                 BuildFact("Requisitos", _requirements),
                 BuildFact("Licencia", _license),
+
+                // AC1, AC3: la versión PUBLICADA y la INSTALADA van en la tipografía
+                // monoespaciada, con su valor EXACTO, así que el jugador compara los
+                // dígitos alineados (AC3, UX-DR-21).
+                BuildFact(GameDetailViewModel.AvailableVersionLabel, _availableVersion),
                 _installedVersion,
                 _playActions,
                 _launchFailure,
@@ -315,6 +331,10 @@ public sealed class GameDetailView : UserControl
 
         _version.Text = viewModel.Version;
 
+        // AC1, AC3: la versión PUBLICADA lleva su etiqueta y su valor EXACTO en la
+        // tipografía monoespaciada (AC3, UX-DR-21).
+        _availableVersion.Text = viewModel.AvailableVersionLineText;
+
         _sizeValue.Text = viewModel.SizeValue;
         _sizeUnit.Text = viewModel.SizeUnit;
 
@@ -323,6 +343,8 @@ public sealed class GameDetailView : UserControl
         _requirements.Text = viewModel.RequirementsText;
         _license.Text = viewModel.License;
 
+        // AC1, AC3: la versión INSTALADA lleva su valor EXACTO en la tipografía
+        // monoespaciada (AC3, UX-DR-21).
         _installedVersion.Text = viewModel.InstalledVersionText ?? string.Empty;
 
         _installedVersion.IsVisible = viewModel.InstalledVersionText is not null;

@@ -220,4 +220,120 @@ public sealed class LibrarySurfaceViewModelTests
         Assert.Equal(2, viewModel.Entries.Count);
         Assert.False(viewModel.IsEmpty);
     }
+
+    [Fact]
+    public void An_outdated_installation_shows_the_badge_of_the_outdated_version()
+    {
+        // AC1, AC4, AR-8: la insignia de la desactualización sale de la ÚNICA tabla de
+        // microcopy, y la vista no escribe ningún texto de estado.
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations([OutdatedInstallation()]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.True(entry.IsOutdated);
+        Assert.Equal(
+            StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion),
+            entry.ViewStateText);
+        Assert.Equal("instalado con versión desactualizada", entry.ViewStateText);
+    }
+
+    [Fact]
+    public void An_up_to_date_installation_shows_the_badge_of_its_state()
+    {
+        // AC1: sólo la instalación desactualizada lleva la insignia de la desactualización.
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations(
+        [
+            new InstalledGamePlayability(
+                GameId,
+                "1.0.0",
+                InstallationState.Installed,
+                PlayabilityDecision.Playable()),
+        ]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.False(entry.IsOutdated);
+        Assert.Equal(StateDisplayMap.GetText(InstallationState.Installed), entry.ViewStateText);
+    }
+
+    [Fact]
+    public void An_outdated_installation_shows_the_update_as_the_primary_action()
+    {
+        // AC1, AC4: «Actualizar» sustituye a la acción primaria.
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations([OutdatedInstallation()]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.Equal("Actualizar", entry.Actions.PrimaryActionText);
+        Assert.True(entry.Actions.IsPrimaryUpdate);
+    }
+
+    [Fact]
+    public void An_outdated_installation_keeps_the_action_of_playing_available()
+    {
+        // AC4: «Jugar» permanece disponible SOLO si la instalación sigue siendo válida.
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations([OutdatedInstallation()]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.True(entry.Actions.CanPlay);
+        Assert.False(entry.Actions.IsBlocked);
+    }
+
+    [Fact]
+    public void An_outdated_installation_shows_both_versions()
+    {
+        // AC3, UX-DR-21: las dos líneas llevan su etiqueta y su valor EXACTO, así que el
+        // jugador compara la que tiene con la que hay.
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations([OutdatedInstallation()]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.Equal("1.9.0", entry.InstalledVersion);
+        Assert.Equal("1.10.0", entry.PublishedVersion);
+        Assert.Equal("Instalado · 1.9.0", entry.InstalledVersionText);
+        Assert.Equal("Disponible · 1.10.0", entry.AvailableVersionText);
+    }
+
+    [Fact]
+    public void A_row_without_a_known_published_version_has_no_available_version_line()
+    {
+        var viewModel = new LibrarySurfaceViewModel();
+
+        viewModel.ApplyInstallations(
+        [
+            new InstalledGamePlayability(
+                GameId,
+                "1.0.0",
+                InstallationState.Installed,
+                PlayabilityDecision.Playable()),
+        ]);
+
+        var entry = Assert.Single(viewModel.Entries);
+
+        Assert.Null(entry.AvailableVersionText);
+        Assert.Null(entry.PublishedVersion);
+    }
+
+    /// <summary>
+    /// Builds an installation that is VALID but OUTDATED, so la primaria es «Actualizar»
+    /// (AC1, AC4).
+    /// </summary>
+    /// <returns>The installation of the row.</returns>
+    private static InstalledGamePlayability OutdatedInstallation() => new(
+        GameId,
+        "1.9.0",
+        InstallationState.Installed,
+        PlayabilityDecision.Outdated("1.10.0"),
+        "1.10.0");
 }

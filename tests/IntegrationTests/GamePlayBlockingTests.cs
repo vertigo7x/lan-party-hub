@@ -383,7 +383,7 @@ public sealed class GamePlayBlockingTests : IDisposable
                 NullLogger<LANPartyHub.Client.Infrastructure.Process.SystemGameProcessRunner>.Instance),
             NullLogger<GameLaunchService>.Instance);
 
-        var projection = new PlayabilityProjection(store, inspector);
+        var projection = new PlayabilityProjection(store, inspector, snapshots);
 
         return new BlockingFixture(service, projection, context);
     }

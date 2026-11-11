@@ -183,6 +183,23 @@ public sealed class GameDetailViewModel
         ViewState is CatalogViewState.InstalledOutdatedVersion;
 
     /// <summary>
+    /// Label of the line of the PUBLISHED version, que el jugador compara con la
+    /// instalada (AC1, AC3, UX-DR-21).
+    /// </summary>
+    public const string AvailableVersionLabel = "Disponible";
+
+    /// <summary>
+    /// Text of the line of the PUBLISHED version (AC1, AC3, UX-DR-21).
+    ///
+    /// <para>
+    /// La línea dice «Disponible · 1.10.0» con la versión EXACTA que publica el catálogo,
+    /// así que el jugador ve las dos versiones CON SU VALOR, sin redondear (AC3, UX-DR-2).
+    /// </para>
+    /// </summary>
+    public string AvailableVersionLineText =>
+        $"{AvailableVersionLabel}{StateDisplayMap.InstalledVersionSeparator}{Version}";
+
+    /// <summary>
     /// Notifies that the ficha has to be rendered again.
     /// </summary>
     public void Refresh() => Changed?.Invoke();

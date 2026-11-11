@@ -2,7 +2,9 @@
 using System.Text.Json;
 using LANPartyHub.Client.Application.Catalog;
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Install;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Networking;
 using LANPartyHub.Client.Infrastructure.Persistence;
@@ -453,6 +455,94 @@ public sealed class CatalogSurfaceTests : IDisposable
         Assert.NotNull(detail);
         Assert.NotEqual(CatalogViewState.InstalledOutdatedVersion, detail!.ViewState);
         Assert.Equal("1.0.0", detail.InstalledVersion);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_videogame_with_an_older_installation_shows_the_badge_and_the_update()
+    {
+        // AC1, AC4: el cliente sincronizado con el catálogo publicado y una instalación REAL
+        // de versión anterior muestran la insignia de la desactualización y la acción
+        // «Actualizar» como primaria.
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        // La instalación validada del cliente es de una versión ANTERIOR a la publicada.
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "0.9.0",
+            InstallationState.Installed);
+
+        await ApplyInstallationsAsync(viewModel, databasePath);
+
+        viewModel.ApplyDecisions(
+            new Dictionary<string, PlayabilityDecision>(StringComparer.Ordinal)
+            {
+                [game.GameId] = PlayabilityResolver.Resolve(
+                    CertifiedVerdict(),
+                    installedVersion: "0.9.0",
+                    publishedVersion: game.Version),
+            });
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal(CatalogViewState.InstalledOutdatedVersion, detail!.ViewState);
+        Assert.Equal(
+            StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion),
+            detail.ViewStateText);
+        Assert.Equal("instalado con versión desactualizada", detail.ViewStateText);
+
+        // AC1, AC4: «Actualizar» sustituye a la acción primaria y «Jugar» sigue
+        // disponible porque la instalación es VÁLIDA.
+        Assert.Equal("Actualizar", detail.Actions.PrimaryActionText);
+        Assert.True(detail.Actions.IsPrimaryUpdate);
+        Assert.True(detail.CanPlay);
+    }
+
+    [Fact]
+    public async Task The_ficha_of_a_videogame_with_an_older_installation_shows_both_versions()
+    {
+        // AC3, UX-DR-21: la versión INSTALADA y la DISPONIBLE se muestran con su valor
+        // EXACTO, así que el jugador compara las dos.
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "0.9.0",
+            InstallationState.Installed);
+
+        await ApplyInstallationsAsync(viewModel, databasePath);
+
+        viewModel.OpenGameDetail(game);
+
+        var detail = viewModel.BuildGameDetail();
+
+        Assert.NotNull(detail);
+        Assert.Equal("Ya instalado · 0.9.0", detail!.InstalledVersionText);
+        Assert.Equal($"Disponible · {game.Version}", detail.AvailableVersionLineText);
     }
 
     [Fact]
@@ -916,6 +1006,17 @@ public sealed class CatalogSurfaceTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
+
+    /// <summary>
+    /// Builds a verdict of a CERTIFIED installation, so la instalación es VÁLIDA y «Jugar»
+    /// sigue disponible (AC1, AC4).
+    /// </summary>
+    /// <returns>The verdict of the certification.</returns>
+    private static InstallationVerdict CertifiedVerdict() => InstallationCertification.Certify(
+        packageValidatedAgainstAnchor: true,
+        manifestVerifyPassed: true,
+        pathsConfinedToRoot: true,
+        repairablePackageAvailable: false);
 
     /// <summary>
     /// Creates a temporary data folder.

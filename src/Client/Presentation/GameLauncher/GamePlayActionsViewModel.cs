@@ -55,6 +55,18 @@ public sealed class GamePlayActionsViewModel
     public const string DiagnoseActionText = "Diagnosticar";
 
     /// <summary>
+    /// Text of the PRIMARY action that replaces an outdated installation with the version
+    /// published in the catalog (AC1, AC4, FR-11, UX-DR-32).
+    ///
+    /// <para>
+    /// La acción se llama «Actualizar» y su TEXTO no es un texto de estado: es una acción,
+    /// y por eso vive en el cliente y no en la tabla de microcopy de <c>Shared</c>
+    /// (AD-18, AR-3).
+    /// </para>
+    /// </summary>
+    public const string UpdateActionText = "Actualizar";
+
+    /// <summary>
     /// Text that NAMES the CONSEQUENCE of the repair, así que el jugador sabe lo que va a
     /// pasar ANTES de que ocurra (AC1, UX-DR-20).
     ///
@@ -158,6 +170,7 @@ public sealed class GamePlayActionsViewModel
     {
         PlayabilityAction.Repair => RepairActionText,
         PlayabilityAction.Redownload => RedownloadActionText,
+        PlayabilityAction.Update => UpdateActionText,
         _ => PlayActionText,
     };
 
@@ -191,6 +204,24 @@ public sealed class GamePlayActionsViewModel
     /// Whether the PRIMARY action is «Descargar de nuevo» (AC2, UX-DR-17).
     /// </summary>
     public bool IsPrimaryRedownload => _decision.PrimaryAction == PlayabilityAction.Redownload;
+
+    /// <summary>
+    /// Whether the PRIMARY action is «Actualizar», que aparece SOLO con una instalación
+    /// VÁLIDA cuya versión es anterior a la publicada (AC1, AC4, UX-DR-32).
+    /// </summary>
+    public bool IsPrimaryUpdate => _decision.PrimaryAction == PlayabilityAction.Update;
+
+    /// <summary>
+    /// Whether the installation is VALID but OUTDATED, así que «Actualizar» es la primaria
+    /// y «Jugar» sigue disponible (AC1, AC4).
+    /// </summary>
+    public bool IsOutdated => _decision.IsOutdated;
+
+    /// <summary>
+    /// The version published in the catalog for the videogame, or <c>null</c> when the
+    /// client does not know it (AC1, AC3).
+    /// </summary>
+    public string? PublishedVersion => _decision.PublishedVersion;
 
     /// <summary>
     /// The ACCESSIBLE NAME of the action «Jugar», que el lector de pantalla anuncia con

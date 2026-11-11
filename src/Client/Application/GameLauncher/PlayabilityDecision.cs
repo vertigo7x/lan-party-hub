@@ -38,6 +38,30 @@ public sealed record PlayabilityDecision
     };
 
     /// <summary>
+    /// The installation is CERTIFIED but its version is OLDER than the version published
+    /// in the catalog for the same game, así que la acción primaria es «Actualizar»
+    /// (AC1, AC4, FR-11, UX-DR-32).
+    ///
+    /// <para>
+    /// La instalación SIGUE SIENDO VÁLIDA: «Jugar» NO se bloquea, porque el jugador puede
+    /// jugar la versión que tiene mientras decide si actualiza (AC4, UX-DR-17).
+    /// </para>
+    /// </summary>
+    /// <param name="publishedVersion">
+    /// Version published in the catalog for the game, in its EXACT value (AC3).
+    /// </param>
+    /// <returns>The decision of the outdated installation.</returns>
+    public static PlayabilityDecision Outdated(string publishedVersion) => new()
+    {
+        IsBlocked = false,
+        ReasonCode = null,
+        ReasonText = null,
+        PrimaryAction = PlayabilityAction.Update,
+        SecondaryAction = null,
+        PublishedVersion = publishedVersion,
+    };
+
+    /// <summary>
     /// The installation is NOT certified and the action «Jugar» is BLOCKED with the
     /// reason VISIBLE next to its label (AC1, AC2, UX-DR-18).
     /// </summary>
@@ -119,6 +143,24 @@ public sealed record PlayabilityDecision
     public PlayabilityAction? SecondaryAction { get; init; }
 
     /// <summary>
+    /// The version published in the catalog for the videogame, or <c>null</c> when the
+    /// decision does not carry one (AC1, AC3).
+    ///
+    /// <para>
+    /// La versión publicada se transporta en la decisión porque la insignia de la
+    /// desactualización necesita MOSTRAR la versión disponible junto a la instalada
+    /// (AC3, UX-DR-21).
+    /// </para>
+    /// </summary>
+    public string? PublishedVersion { get; init; }
+
+    /// <summary>
+    /// Whether the installation is VALID but its version is OLDER than the version
+    /// published in the catalog (AC1, AC4, FR-11).
+    /// </summary>
+    public bool IsOutdated => PrimaryAction == PlayabilityAction.Update;
+
+    /// <summary>
     /// The three parts of the error of the block, ready to show, or <c>null</c> when the
     /// action «Jugar» is enabled (AD-15, AD-25, UX-DR-36).
     /// </summary>
@@ -158,4 +200,16 @@ public enum PlayabilityAction
     /// The action «Diagnosticar», which opens the registered error (AC1, AC2).
     /// </summary>
     Diagnose,
+
+    /// <summary>
+    /// The action «Actualizar», which replaces an outdated installation with the version
+    /// published in the catalog (AC1, AC4, FR-11, UX-DR-32).
+    ///
+    /// <para>
+    /// «Actualizar» SUSTITUYE a la acción primaria: aparece SOLO cuando la instalación
+    /// es VÁLIDA y su versión es anterior a la publicada, así que la invalidez de la
+    /// instalación manda sobre la actualización (AC4).
+    /// </para>
+    /// </summary>
+    Update,
 }

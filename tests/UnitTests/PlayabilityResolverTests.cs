@@ -195,6 +195,170 @@ public sealed class PlayabilityResolverTests
         Assert.NotEqual(ErrorCatalog.GameLaunchExecutableMissingCode, decision.ReasonCode);
     }
 
+    [Fact]
+    public void An_outdated_installation_makes_the_update_the_primary_action()
+    {
+        // AC1, AC4: una instalación VÁLIDA cuya versión es anterior a la publicada hace
+        // «Actualizar» la primaria.
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.True(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Update, decision.PrimaryAction);
+    }
+
+    [Fact]
+    public void An_outdated_installation_keeps_the_action_of_playing_available()
+    {
+        // AC4: «Jugar» permanece disponible SOLO si la instalación sigue siendo válida, así
+        // que una instalación válida desactualizada NO bloquea «Jugar».
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.False(decision.IsBlocked);
+        Assert.True(decision.CanPlay);
+        Assert.Null(decision.ReasonText);
+        Assert.Null(decision.SecondaryAction);
+    }
+
+    [Fact]
+    public void An_outdated_installation_carries_the_published_version()
+    {
+        // AC1, AC3: la insignia necesita MOSTRAR la versión disponible junto a la
+        // instalada.
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.Equal("1.10.0", decision.PublishedVersion);
+    }
+
+    [Fact]
+    public void The_outdated_installation_is_derived_with_the_semantic_order_of_the_versions()
+    {
+        // AC2, AR-5: el orden LEXICOGRÁFICO diría que «1.10.0» es anterior a «1.9.0», así
+        // que con la regla del catálogo la instalación «1.9.0» es la que está desactualizada.
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.True(decision.IsOutdated);
+    }
+
+    [Fact]
+    public void An_up_to_date_installation_is_not_outdated()
+    {
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.10.0",
+            publishedVersion: "1.10.0");
+
+        Assert.False(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Play, decision.PrimaryAction);
+        Assert.False(decision.IsBlocked);
+    }
+
+    [Fact]
+    public void An_installation_that_is_newer_than_the_published_one_is_not_outdated()
+    {
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "2.0.0",
+            publishedVersion: "1.9.0");
+
+        Assert.False(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Play, decision.PrimaryAction);
+    }
+
+    [Fact]
+    public void An_invalid_installation_that_is_outdated_is_not_repairable()
+    {
+        // AC4: la INVALIDEZ MANDA sobre «Actualizar»: una instalación inválida es inválida y
+        // NO reparable por el hecho de estar desactualizada.
+        var decision = PlayabilityResolver.Resolve(
+            NotRepairable(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.False(decision.IsOutdated);
+        Assert.NotEqual(PlayabilityAction.Update, decision.PrimaryAction);
+        Assert.Equal(PlayabilityAction.Redownload, decision.PrimaryAction);
+        Assert.True(decision.IsBlocked);
+    }
+
+    [Fact]
+    public void A_repairable_installation_that_is_outdated_stays_repairable()
+    {
+        // AC4: una instalación reparable sigue siendo reparable, y «Actualizar» NO sustituye
+        // a «Reparar».
+        var decision = PlayabilityResolver.Resolve(
+            Repairable(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.False(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Repair, decision.PrimaryAction);
+        Assert.True(decision.IsBlocked);
+    }
+
+    [Fact]
+    public void An_outdated_installation_shows_its_reason_when_it_is_invalid()
+    {
+        // AC4: una instalación no válida lleva su MOTIVO VISIBLE, así que el jugador sabe
+        // por qué no puede jugar.
+        var decision = PlayabilityResolver.Resolve(
+            NotRepairable(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.NotNull(decision.ReasonText);
+        Assert.Equal(ErrorCatalog.Resolve(decision.ReasonCode!).Message, decision.ReasonText);
+    }
+
+    [Fact]
+    public void An_installation_without_a_known_published_version_is_not_outdated()
+    {
+        // El cliente que no conoce la versión publicada NO puede afirmar que la instalación
+        // está desactualizada (AC3).
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: null);
+
+        Assert.False(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Play, decision.PrimaryAction);
+    }
+
+    [Fact]
+    public void An_installation_without_a_known_installed_version_is_not_outdated()
+    {
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: null,
+            publishedVersion: "1.10.0");
+
+        Assert.False(decision.IsOutdated);
+        Assert.Equal(PlayabilityAction.Play, decision.PrimaryAction);
+    }
+
+    [Fact]
+    public void The_resolver_without_the_versions_keeps_the_previous_behaviour()
+    {
+        // La sobrecarga sin versiones NO cambia la regla de la instalación válida: la
+        // decisión es la MISMA que antes de esta historia (AC1, AC2).
+        var decision = PlayabilityResolver.Resolve(Certified());
+
+        Assert.False(decision.IsBlocked);
+        Assert.Equal(PlayabilityAction.Play, decision.PrimaryAction);
+        Assert.False(decision.IsOutdated);
+    }
+
     /// <summary>
     /// Builds a verdict of a certified installation (AC5).
     /// </summary>
@@ -204,7 +368,6 @@ public sealed class PlayabilityResolverTests
         manifestVerifyPassed: true,
         pathsConfinedToRoot: true,
         repairablePackageAvailable: false);
-
     /// <summary>
     /// Builds a verdict of an installation that is invalid and REPAIRABLE (AC6).
     /// </summary>
