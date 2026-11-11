@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -187,6 +188,25 @@ def load_legacy():
     spec = importlib.util.spec_from_file_location("build_loop_shared", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("cannot load tools/build-loop.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_hermes_adapter():
+    """Load the Hermes adapter without executing it.
+
+    The adapter is the piece that translates the Hermes event stream into the
+    contract the driver reads, so the driver verifies ITS output: the events
+    the adapter writes are the ones the probe and the transcript consume.
+    """
+    path = REPO_ROOT / "tools" / "build-lite-hermes.py"
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("build_lite_hermes_adapter", path)
+    if spec is None or spec.loader is None:
+        return None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -555,11 +575,32 @@ def classify_risk(paths: Sequence[str]) -> Risk:
     return Risk(required=bool(reasons), reasons=tuple(reasons))
 
 
+# El proveedor de las fases. Por defecto es opencode; BUILD_LITE_PROVIDER=hermes
+# enruta cada fase a Hermes a traves de tools/build-lite-hermes.py, que traduce el
+# JSONL de Hermes al stream de eventos que el driver ya sabe leer.
+PHASE_PROVIDER = os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower()
+
+
 def phase_command(agent: str, model: str, prompt: str) -> list[str]:
+    if PHASE_PROVIDER == "hermes":
+        # El prompt viaja por stdin: el comando no lo lleva incrustado, asi que no
+        # hay que escaparlo ni se pierde en el historial del proceso.
+        return [sys.executable, str(REPO_ROOT / "tools" / "build-lite-hermes.py")]
     return [
         "opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", agent,
         "--model", model, f"BUILD_LITE_WORKER:\n{prompt}",
     ]
+
+
+def phase_stdin(prompt: str) -> str | None:
+    """The prompt that the phase reads from stdin, or None when it does not.
+
+    The Hermes wrapper reads the prompt from stdin so that it never appears in
+    the process arguments. opencode carries it inside the command instead.
+    """
+    if PHASE_PROVIDER != "hermes":
+        return None
+    return f"BUILD_LITE_WORKER:\n{prompt}"
 
 
 def run_phase(
@@ -594,6 +635,7 @@ def run_phase(
             progress_window=progress_window_minutes * 60,
             poll_seconds=poll_seconds,
             artifact_path=artifact_path,
+            stdin_text=phase_stdin(prompt),
         )
         state = state_for_exit_code(code)
         if journal is not None:
@@ -632,6 +674,7 @@ def watch_process(
     progress_window: float = 0.0,
     poll_seconds: float = PHASE_POLL_SECONDS,
     artifact_path: Path | None = None,
+    stdin_text: str | None = None,
 ) -> tuple[int, float, list[dict]]:
     """Run a command and stop it when it stops making progress.
 
@@ -651,8 +694,12 @@ def watch_process(
             cwd=str(cwd),
             stdout=handle,
             stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+            text=True,
         )
+        if stdin_text is not None and process.stdin is not None:
+            process.stdin.write(stdin_text)
+            process.stdin.close()
         code = 0
         last_progress = time.time()
         while True:
@@ -2486,10 +2533,18 @@ def self_test() -> int:
     if not risk.required or "contrato compartido" not in risk.reasons:
         failures.append("shared contracts were not classified as sensitive")
     command = phase_command("build", PLAN_MODEL, "plan")
-    if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "build", "--model"]:
-        failures.append("phase command is malformed")
-    if command[-1] != "BUILD_LITE_WORKER:\nplan":
-        failures.append("phase command is missing the Build Lite worker marker")
+    if PHASE_PROVIDER == "hermes":
+        # El proveedor Hermes lleva el prompt por stdin, no dentro del comando: lo
+        # que se comprueba es que la fase lo recibe y que el marcador viaja con el.
+        if not command or "build-lite-hermes.py" not in command[-1]:
+            failures.append("phase command is malformed")
+        if phase_stdin("plan") != "BUILD_LITE_WORKER:\nplan":
+            failures.append("phase command is missing the Build Lite worker marker")
+    else:
+        if command[:8] != ["opencode", "run", "--format", "json", "--dangerously-skip-permissions", "--agent", "build", "--model"]:
+            failures.append("phase command is malformed")
+        if command[-1] != "BUILD_LITE_WORKER:\nplan":
+            failures.append("phase command is missing the Build Lite worker marker")
     if PHASE_MAX_ATTEMPTS != 2:
         failures.append("phase retry budget is not fixed at two technical attempts")
     if IMPLEMENTATION_MAX_ATTEMPTS != 1:
@@ -3243,6 +3298,68 @@ def self_test_phases() -> list[str]:
     for kind in MILESTONE_KINDS:
         if kind not in MILESTONE_KINDS:
             failures.append(f"the milestone {kind} is not a known milestone")
+
+    # The Hermes adapter must speak the shape the probe reads: the command
+    # travels in `state.input.command`, and only the COMPLETED event counts.
+    # Without it a phase that runs a test leaves no milestone and the driver
+    # declares it stalled while the worker is still working.
+    hermes_transcript = transcript_dir / "hermes-implementation-1.jsonl"
+    hermes_transcript.write_text("", encoding="utf-8")
+    hermes_progress = ImplementationProgress(root, hermes_transcript)
+    with hermes_transcript.open("a", encoding="utf-8") as handle:
+        handle.write(
+            '{"type":"tool","part":{"type":"tool","tool":"terminal",'
+            '"state":{"status":"completed","title":"$ dotnet test tests/UnitTests",'
+            '"input":{"command":"dotnet test tests/UnitTests"}}}}'
+            "\n"
+        )
+    milestone = hermes_progress.poll()
+    if milestone is None or milestone["kind"] != MILESTONE_TEST_EXECUTED:
+        failures.append("a Hermes tool event did not record the executed test as a milestone")
+    # The transcript builder reads the readable detail from `state.title`.
+    with hermes_transcript.open("a", encoding="utf-8") as handle:
+        handle.write(
+            '{"type":"tool","part":{"type":"tool","tool":"terminal",'
+            '"state":{"status":"completed","title":"the worker edited the plan",'
+            '"input":{"command":"git status"}}}}'
+            "\n"
+        )
+    _, transcript_text = legacy.parse_skill_output(hermes_transcript)
+    if "the worker edited the plan" not in transcript_text:
+        failures.append("a Hermes tool event did not reach the readable transcript")
+
+    # The ADAPTER ITSELF must produce that shape: the events it writes are
+    # what the driver reads, so the contract is checked on its output and not
+    # on a hand-written event that could drift from it.
+    adapter = load_hermes_adapter()
+    if adapter is None:
+        failures.append("the Hermes adapter could not be loaded")
+    else:
+        adapter_transcript = transcript_dir / "hermes-adapter-1.jsonl"
+        adapter_transcript.write_text("", encoding="utf-8")
+        stream = [
+            {"type": "system", "subtype": "init", "session_id": "s1"},
+            {"type": "tool_use", "name": "terminal", "tool_call_id": "c1",
+             "input": {"command": "dotnet test tests/UnitTests"}},
+            {"type": "tool_result", "name": "terminal", "tool_call_id": "c1",
+             "is_error": False, "output": "Superado: 1193"},
+        ]
+        state = {"session_id": "", "pending": {}}
+        original_stdout = sys.stdout
+        try:
+            sys.stdout = adapter_transcript.open("w", encoding="utf-8")
+            for event in stream:
+                adapter.translate(json.dumps(event), state)
+        finally:
+            sys.stdout.close()
+            sys.stdout = original_stdout
+        adapter_progress = ImplementationProgress(root, adapter_transcript)
+        milestone = adapter_progress.poll()
+        if milestone is None or milestone["kind"] != MILESTONE_TEST_EXECUTED:
+            failures.append("the Hermes adapter did not emit an event the probe reads as a test")
+        _, adapter_text = legacy.parse_skill_output(adapter_transcript)
+        if "Superado: 1193" not in adapter_text:
+            failures.append("the Hermes adapter did not emit a readable transcript")
 
     # A stalled phase is never retried.
     if phase_may_retry(PHASE_STALLED, 1, 2):
