@@ -1,0 +1,27 @@
+{
+  "story": "10-1-detecci\u00c3\u00b3n-de-versi\u00c3\u00b3n-desactualizada",
+  "base": "a7d244eef448f50fd2dd82831eefb905646d7403",
+  "risk": [
+    "red o host"
+  ],
+  "paths": [
+    "src/Client/Application/GameLauncher/PlayabilityDecision.cs",
+    "src/Client/Application/GameLauncher/PlayabilityIntentService.cs",
+    "src/Client/Application/GameLauncher/PlayabilityProjection.cs",
+    "src/Client/Application/GameLauncher/PlayabilityResolver.cs",
+    "src/Client/Host/GameLauncherComposition.cs",
+    "src/Client/Presentation/Catalog/GameDetailView.cs",
+    "src/Client/Presentation/Catalog/GameDetailViewModel.cs",
+    "src/Client/Presentation/GameLauncher/GamePlayActionsViewModel.cs",
+    "src/Client/Presentation/Library/LibrarySurface.cs",
+    "src/Client/Presentation/Library/LibrarySurfaceViewModel.cs",
+    "tests/IntegrationTests/CatalogSurfaceTests.cs",
+    "tests/IntegrationTests/GamePlayBlockingTests.cs",
+    "tests/UnitTests/CatalogViewStateResolverTests.cs",
+    "tests/UnitTests/GameDetailViewModelTests.cs",
+    "tests/UnitTests/LibrarySurfaceActionsTests.cs",
+    "tests/UnitTests/LibrarySurfaceViewModelTests.cs",
+    "tests/UnitTests/PlayabilityResolverTests.cs"
+  ],
+  "state": "complete"
+}
