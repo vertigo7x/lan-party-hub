@@ -279,6 +279,7 @@ public sealed class InstallationCoordinator
     private readonly IInstallPathResolver _paths;
     private readonly IInstallTreeWriter _tree;
     private readonly IClientStateStore _stateStore;
+    private readonly IInstallRootSwitcher _switcher;
     private readonly ActiveInstallations? _activeInstallations;
     private readonly RecordClientError? _errorRecorder;
     private readonly ILogger<InstallationCoordinator> _logger;
@@ -306,6 +307,11 @@ public sealed class InstallationCoordinator
     /// <param name="paths">Resolver of the paths of the installation.</param>
     /// <param name="tree">Port of the application of the typed operations of the manifest.</param>
     /// <param name="stateStore">Access to the database of the client.</param>
+    /// <param name="switcher">
+    /// Port of the PREPARATION and the SUSTITUTION of the installation root, que es lo
+    /// que permite que una ACTUALIZACIÓN no toque el árbol anterior hasta que la versión
+    /// nueva esté certificada (AD-9, AC4, FR-11).
+    /// </param>
     /// <param name="logger">Log of the coordinator.</param>
     /// <param name="activeInstallations">
     /// Tracker of the INSTALLATION operations in course, or <c>null</c> when the client
@@ -326,6 +332,7 @@ public sealed class InstallationCoordinator
         IInstallPathResolver paths,
         IInstallTreeWriter tree,
         IClientStateStore stateStore,
+        IInstallRootSwitcher switcher,
         ILogger<InstallationCoordinator> logger,
         ActiveInstallations? activeInstallations = null,
         RecordClientError? errorRecorder = null)
@@ -338,6 +345,7 @@ public sealed class InstallationCoordinator
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(tree);
         ArgumentNullException.ThrowIfNull(stateStore);
+        ArgumentNullException.ThrowIfNull(switcher);
         ArgumentNullException.ThrowIfNull(logger);
 
         _manifests = manifests;
@@ -348,6 +356,7 @@ public sealed class InstallationCoordinator
         _paths = paths;
         _tree = tree;
         _stateStore = stateStore;
+        _switcher = switcher;
         _logger = logger;
         _activeInstallations = activeInstallations;
         _errorRecorder = errorRecorder;
@@ -583,6 +592,14 @@ public sealed class InstallationCoordinator
         // PASO 4 (continuación): la aplicación del árbol por puerto (AD-7, AD-9). La
         // operación privilegiada pide CONFIRMACIÓN EXPLÍCITA dentro de esta llamada, y
         // la máquina pasa por `AwaitingConfirmation` mientras la espera (AC2, AD-10).
+        //
+        // AC4, FR-11: la ACTUALIZACIÓN NO escribe encima de la versión anterior: el
+        // árbol nuevo se PREPARA en una raíz aparte, se CERTIFICA allí y sólo después
+        // SUSTITUYE al anterior, que hasta ese momento sigue intacto y jugable.
+        var writeRoot = mode == InstallationMode.Update
+            ? _switcher.PrepareStagingRoot(rootPath)
+            : rootPath;
+
         InstallTreeOutcome tree;
 
         try
@@ -590,7 +607,7 @@ public sealed class InstallationCoordinator
             try
             {
                 tree = await _tree
-                    .ApplyAsync(manifest, rootPath, packagePath, sink, cancellationToken)
+                    .ApplyAsync(manifest, writeRoot, packagePath, sink, cancellationToken)
                     .ConfigureAwait(false);
             }
             finally
@@ -598,6 +615,14 @@ public sealed class InstallationCoordinator
                 // Esperar la fase antes del resultado terminal, incluso si falla el árbol.
                 await sink.FlushAsync().ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // AC4, FR-11: una CANCELACIÓN deja la instalación anterior intacta: la raíz
+            // de PREPARACIÓN se descarta y la activa conserva su contenido.
+            DiscardStagingRoot(rootPath, writeRoot);
+
+            throw;
         }
         catch (PrivilegedOperationDeclinedException exception)
         {
@@ -607,6 +632,10 @@ public sealed class InstallationCoordinator
             machine.TryTransitionTo(InstallationState.AwaitingConfirmation);
             machine.TryTransitionTo(InstallationState.Installing);
             machine.TryTransitionTo(InstallationState.Failed);
+
+            // AC4, FR-11: la raíz de PREPARACIÓN se descarta y la anterior conserva su
+            // contenido: el decline no puede invalidar lo que ya estaba instalado.
+            DiscardStagingRoot(rootPath, writeRoot);
 
             await PersistFailureAsync(
                 gameId,
@@ -646,6 +675,11 @@ public sealed class InstallationCoordinator
             // error PERSISTIDO, y la operación es REINTENTABLE sobre el paquete validado
             // (NFR-9).
             machine.TryTransitionTo(InstallationState.Failed);
+
+            // AC4, FR-11: la raíz de PREPARACIÓN se descarta y la anterior conserva su
+            // contenido: un fallo de la versión nueva no puede invalidar la instalación
+            // que ya era válida.
+            DiscardStagingRoot(rootPath, writeRoot);
 
             await PersistFailureAsync(
                 gameId,
@@ -711,6 +745,43 @@ public sealed class InstallationCoordinator
 
         machine.TryTransitionTo(InstallationState.ValidatingInstallation);
         machine.TryTransitionTo(verdict.State);
+
+        // AC4, FR-11: la SUSTITUCIÓN sólo ocurre con un árbol NUEVO que CERTIFICA. Un
+        // árbol que no verifica o que escribió fuera de la raíz NO se publica: se
+        // descarta y la instalación anterior conserva su contenido y su fila, así que
+        // el juego sigue siendo jugable con la versión que ya estaba (AC4, FR-11).
+        if (mode == InstallationMode.Update && !verdict.IsInstalled)
+        {
+            DiscardStagingRoot(rootPath, writeRoot);
+
+            _logger.LogWarning(
+                "La actualización del juego {GameId} a la versión {Version} NO certifica el árbol nuevo: {Reason} La instalación anterior conserva su versión y su validez.",
+                gameId,
+                installedVersion,
+                verdict.ReasonText);
+
+            await PublishAsync(
+                InstallPhase.Failed,
+                sink.LastBytesWritten,
+                sink.LastTotalBytes,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
+
+            return await RejectAsync(
+                ErrorCatalog.InstallOperationFailedCode,
+                $"La actualización del juego '{gameId}' a la versión '{installedVersion}' no se certificó: {verdict.ReasonText} La instalación anterior conserva su versión y su validez.",
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // AC1, FR-11: el árbol nuevo está CERTIFICADO, así que SUSTITUYE al anterior.
+        // El cambio de nombre es la operación que no deja la instalación a medias, así
+        // que a partir de aquí la versión nueva es la vigente (AD-9, AC4).
+        if (mode == InstallationMode.Update)
+        {
+            _switcher.CommitStagingRoot(rootPath, writeRoot);
+        }
 
         // El identificador de la raíz es ESTABLE: se deriva de su ruta canónica, así que
         // no cambia ante una reparación ni ante la reinstalación del binario (AC1).
@@ -923,6 +994,43 @@ public sealed class InstallationCoordinator
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// DISCARDS the root of PREPARATION, leaving the active one untouched (AD-9, AC4,
+    /// FR-11).
+    ///
+    /// <para>
+    /// El descarte sólo existe en el modo <see cref="InstallationMode.Update"/>: en el
+    /// flujo inicial no hay raíz de preparación, y el árbol se escribe directamente en la
+    /// raíz activa (AC1, AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="rootPath">Canonical absolute path of the active installation root.</param>
+    /// <param name="writeRoot">
+    /// Canonical absolute path of the root the tree was written into.
+    /// </param>
+    private void DiscardStagingRoot(string rootPath, string writeRoot)
+    {
+        if (string.Equals(rootPath, writeRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            _switcher.DiscardStagingRoot(rootPath, writeRoot);
+        }
+        catch (Exception exception)
+        {
+            // El descarte NUNCA puede impedir que la operación siga: lo que importa es
+            // que la raíz activa NO se toca (AC4, AD-1).
+            _logger.LogWarning(
+                exception,
+                "No se pudo descartar la raíz de preparación '{StagingRoot}': la raíz activa '{RootPath}' conserva su contenido.",
+                writeRoot,
+                rootPath);
+        }
     }
 
     /// <summary>

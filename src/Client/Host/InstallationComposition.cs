@@ -140,6 +140,13 @@ namespace LANPartyHub.Client.Host;
                 stateStore,
                 loggerFactory.CreateLogger<InstallationRepairService>());
 
+            // AC4, FR-11: la SUSTITUCIÓN de la raíz es la que permite que una
+            // ACTUALIZACIÓN no toque el árbol anterior hasta que la versión nueva esté
+            // certificada: el árbol nuevo se prepara en una raíz hermana y sólo ocupa
+            // el sitio de la activa cuando ya es válido (AD-9).
+            RootSwitcher = new InstallRootSwitcher(
+                loggerFactory.CreateLogger<InstallRootSwitcher>());
+
             Coordinator = new InstallationCoordinator(
                 manifests,
                 verifier,
@@ -149,6 +156,7 @@ namespace LANPartyHub.Client.Host;
                 paths,
                 Tree,
                 stateStore,
+                RootSwitcher,
                 loggerFactory.CreateLogger<InstallationCoordinator>(),
                 ActiveInstallations,
                 errorRecorder);
@@ -172,11 +180,18 @@ namespace LANPartyHub.Client.Host;
         /// </summary>
         public IInstallTreeWriter Tree { get; }
 
-        /// <summary>
-        /// Port of the confirmation of the privileged operations, que es el que decide si
-        /// la operación se ejecuta (AC2).
-        /// </summary>
-        public IPrivilegedOperationConfirmation Confirmation { get; }
+    /// <summary>
+    /// Port of the confirmation of the privileged operations, que es el que decide si
+    /// la operación se ejecuta (AC2).
+    /// </summary>
+    public IPrivilegedOperationConfirmation Confirmation { get; }
+
+    /// <summary>
+    /// Port of the PREPARATION and the SUSTITUTION of the installation root, que es lo
+    /// que deja la instalación anterior intacta durante una actualización (AD-9, AC4).
+    /// </summary>
+    public IInstallRootSwitcher RootSwitcher { get; }
+
 
     /// <summary>
     /// The coordinator of the installation operations of the client.
@@ -438,7 +453,7 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
             switch (operation)
             {
                 case InstallationManifest.CreateDirectory createDirectory:
-                    if (!TryResolve(createDirectory.Path, out var directoryPath, out var directoryRejection))
+                    if (!TryResolve(rootPath, createDirectory.Path, out var directoryPath, out var directoryRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= directoryRejection;
@@ -451,7 +466,7 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
                     break;
 
                 case InstallationManifest.WriteConfig writeConfig:
-                    if (!TryResolve(writeConfig.Path, out var configPath, out var configRejection))
+                    if (!TryResolve(rootPath, writeConfig.Path, out var configPath, out var configRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= configRejection;
@@ -467,7 +482,7 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
                     break;
 
                 case InstallationManifest.Verify verify:
-                    if (!TryResolve(verify.Path, out var verifiedPath, out var verifyRejection))
+                    if (!TryResolve(rootPath, verify.Path, out var verifiedPath, out var verifyRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= verifyRejection;
@@ -497,7 +512,7 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
                 case InstallationManifest.CopyFile:
                     // La extracción y la copia de archivos dentro de la raíz son de la
                     // historia de los confines de la extracción (AD-9).
-                    if (!TryResolve(ExtractDestination(operation), out _, out var copyRejection))
+                    if (!TryResolve(rootPath, ExtractDestination(operation), out _, out var copyRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= copyRejection;
@@ -552,14 +567,21 @@ public sealed class ManifestTreeWriter : IInstallTreeWriter
     /// <param name="resolved">Canonical absolute path that resolves inside the root.</param>
     /// <param name="rejection">The path that was rejected, or <c>null</c>.</param>
     /// <returns><c>true</c> when the path stays inside the root.</returns>
-    private bool TryResolve(string relativePath, out string resolved, out string? rejection)
+    private bool TryResolve(
+        string rootPath,
+        string relativePath,
+        out string resolved,
+        out string? rejection)
     {
         resolved = string.Empty;
         rejection = null;
 
         try
         {
-            resolved = _paths.ResolveInsideRoot(relativePath);
+            // AD-9: el confine se comprueba contra la raíz que esta llamada está
+            // ESCRIBIENDO, que durante una actualización es la raíz de PREPARACIÓN y no
+            // la que hay en el disco (AD-9, AC4, FR-11).
+            resolved = _paths.ResolveInside(rootPath, relativePath);
 
             return true;
         }

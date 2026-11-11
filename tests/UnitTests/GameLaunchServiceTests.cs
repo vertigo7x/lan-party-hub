@@ -513,23 +513,27 @@ public sealed class GameLaunchServiceTests : IDisposable
 
         public string RootPath { get; }
 
-        public string ResolveInsideRoot(string relativePath)
-        {
-            var candidate = Path.GetFullPath(Path.Combine(RootPath, relativePath));
+        public string ResolveInsideRoot(string relativePath) => ResolveInside(RootPath, relativePath);
 
-            if (!candidate.StartsWith(RootPath, StringComparison.OrdinalIgnoreCase))
+        public string ResolveInside(string rootPath, string relativePath)
+        {
+            var candidate = Path.GetFullPath(Path.Combine(rootPath, relativePath));
+
+            if (!candidate.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InstallPathOutsideRootException(relativePath, candidate, RootPath);
+                throw new InstallPathOutsideRootException(relativePath, candidate, rootPath);
             }
 
             return candidate;
         }
 
-        public bool IsInsideRoot(string relativePath)
+        public bool IsInsideRoot(string relativePath) => IsInside(RootPath, relativePath);
+
+        public bool IsInside(string rootPath, string relativePath)
         {
             try
             {
-                ResolveInsideRoot(relativePath);
+                ResolveInside(rootPath, relativePath);
 
                 return true;
             }

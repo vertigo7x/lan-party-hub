@@ -419,6 +419,7 @@ public sealed class InstallationRepairServiceTests : IDisposable
             paths,
             treeWriter,
             stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
             NullLogger<InstallationCoordinator>.Instance);
 
         return new UpdateFixture(

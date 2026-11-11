@@ -225,6 +225,7 @@ public sealed class InstallationTrackingPublicationTests : IDisposable
             paths,
             tree,
             stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
             NullLogger<InstallationCoordinator>.Instance,
             tracker);
 
