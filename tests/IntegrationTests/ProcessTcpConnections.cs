@@ -55,7 +55,20 @@ internal static class ProcessTcpConnections
     /// </summary>
     /// <param name="processId">Identifier of the process.</param>
     /// <returns>The connections of the process.</returns>
-    public static IReadOnlyList<ProcessTcpConnection> Get(int processId)    {
+    public static IReadOnlyList<ProcessTcpConnection> Get(int processId)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            // La tabla de Windows no existe fuera de Windows: la del núcleo da la
+            // MISMA atribución, con el inode del socket como dueño (AD-16, AD-17).
+            return ProcSocketTable.GetTcp(processId)
+                .Select(entry => new ProcessTcpConnection(
+                    entry.LocalEndPoint,
+                    entry.RemoteEndPoint,
+                    ProcSocketTable.TcpStateOf(entry.State)))
+                .ToArray();
+        }
+
         var connections = new List<ProcessTcpConnection>();
 
         var size = 0;

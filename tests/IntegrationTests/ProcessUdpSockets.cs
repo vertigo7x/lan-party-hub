@@ -49,6 +49,15 @@ internal static class ProcessUdpSockets
     /// <returns>The UDP sockets of the process.</returns>
     public static IReadOnlyList<ProcessUdpSocket> Get(int processId)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            // La tabla de Windows no existe fuera de Windows: la del núcleo da la
+            // MISMA atribución, con el inode del socket como dueño (AD-16, AD-17).
+            return ProcSocketTable.GetUdp(processId)
+                .Select(entry => new ProcessUdpSocket(entry.LocalEndPoint))
+                .ToArray();
+        }
+
         var sockets = new List<ProcessUdpSocket>();
 
         var size = 0;
