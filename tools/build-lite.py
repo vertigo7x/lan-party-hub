@@ -931,6 +931,28 @@ def plan_prompt(story, plan: Path) -> str:
             "tests/IntegrationTests/ClientProjectionTests.cs",
             "tests/UnitTests/ClientsTableTests.cs",
         ),
+        "9.4": (
+            "src/Shared/Contracts/ApiError.cs",
+            "src/Shared/Contracts/ErrorCatalog.cs",
+            "src/Client/Application/Ports/IClientStateStore.cs",
+            "src/Client/Application/Ports/IClientCorrelationScope.cs",
+            "src/Client/Application/Downloads/DownloadCoordinator.cs",
+            "src/Client/Application/Install/InstallationCoordinator.cs",
+            "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+            "src/Client/Infrastructure/Persistence/ClientStateDbContext.cs",
+            "src/Client/Infrastructure/Persistence/Entities/DownloadOperationEntity.cs",
+            "src/Client/Infrastructure/Persistence/Migrations/20261028075729_InitialClientStateSchema.cs",
+            "src/Client/Presentation/MainWindow.cs",
+            "src/Client/Presentation/Design/DesignTokens.cs",
+            "src/Client/Presentation/Errors/ErrorMessageViewModel.cs",
+            "src/Client/Presentation/Errors/ErrorToast.cs",
+            "src/Client/Presentation/Downloads/DownloadProgressViewModel.cs",
+            "src/Client/Presentation/Install/InstallProgressViewModel.cs",
+            "src/Client/Presentation/GameLauncher/GamePlayActionsViewModel.cs",
+            "src/Client/Program.cs",
+            "tests/IntegrationTests/ClientStateStoreConcurrencyTests.cs",
+            "tests/UnitTests/ClientRegistrationViewTests.cs",
+        ),
     }
     candidates = candidates_by_story.get(story.short_id, ())
     available = [path for path in candidates if (REPO_ROOT / path).is_file()]
