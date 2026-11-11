@@ -3214,11 +3214,6 @@ Todos sus criterios de aceptación están implementados y en verde, el nivel de 
 **Acceptance Criteria:**
 
 **Given** un cliente con dos juegos instalados,
-**When** se actualiza uno de ellos,
-**Then** el árbol del otro juego sigue en disco, en su raíz, y su instalación sigue siendo válida
-*(FR-8, FR-11, AD-9)*.
-
-**Given** un cliente con dos juegos instalados,
 **When** se inspecciona la biblioteca,
 **Then** cada instalación expone la raíz **propia** de su juego, y la raíz efectiva se deriva del
 juego y no de una única carpeta compartida
@@ -3236,6 +3231,37 @@ de otro
 **Then** se resuelve contra la raíz del juego que se está instalando, y el confine se comprueba
 contra ESA raíz, de modo que ningún juego puede escribir en la raíz de otro
 *(FR-8, NFR-5, AD-9)*.
+
+### Story 10.5: La fila de instalación guarda su propia raíz
+
+Como jugador de LAN,
+quiero que mi biblioteca guarde la raíz de cada juego por separado,
+so que el cliente sepa dónde está cada instalación sin adivinarlo.
+
+**Dependencias:**
+
+- **Story 10.4** — raíz de instalación por juego
+
+**Casos de error:**
+
+Borrar o reparar una instalación no puede tocar el árbol de otra: ninguna operación sobre la raíz
+de un juego alcanza la de otro, ni siquiera si comparten volumen.
+
+**Pruebas necesarias:**
+
+**Integración.** Dos juegos instalados en el mismo cliente exigen dos instalaciones reales en el
+mismo disco: una biblioteca con un solo juego no revela que el estado guardado es el de SU juego.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
+**Acceptance Criteria:**
+
+**Given** un cliente con dos juegos instalados,
+**When** se actualiza uno de ellos,
+**Then** el árbol del otro juego sigue en disco, en su raíz, y su instalación sigue siendo válida
+*(FR-8, FR-11, AD-9)*.
 
 **Given** un cliente con instalaciones de varios juegos,
 **When** se borra o repara una de ellas,
