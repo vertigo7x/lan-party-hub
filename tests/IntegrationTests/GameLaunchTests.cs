@@ -20,15 +20,21 @@ namespace LANPartyHub.IntegrationTests;
 /// (AD-19, FR-9, AC1, AC2, AC3).
 ///
 /// <para>
-/// El test NO usa dobles del disco ni del proceso: el ejecutable es una copia REAL de
-/// <c>cmd.exe</c> dentro de la raíz de instalación, y el <c>probe.cmd</c> que acompaña
+/// El test NO usa dobles del disco ni del proceso: el ejecutable es una copia REAL del
+/// INTÉRPRETE DEL HOST dentro de la raíz de instalación, y el <c>probe</c> que acompaña
 /// registra los argumentos que recibió y el directorio de trabajo en el que corrió. Así
 /// que lo que se observa es lo que de verdad pasa (AD-16).
 /// </para>
 /// <para>
-/// El <c>cmd.exe</c> copiado es un INTERPRETE REAL: por eso el <c>probe.cmd</c> existe,
-/// porque un <c>.cmd</c> necesita un intérprete que lo ejecute. La copia vive DENTRO de
-/// la raíz de instalación, así que el confine de AD-9 se respeta de verdad (AD-9).
+/// El intérprete copiado es REAL: por eso el <c>probe</c> existe, porque un script
+/// necesita un intérprete que lo ejecute. La copia vive DENTRO de la raíz de
+/// instalación, así que el confine de AD-9 se respeta de verdad (AD-9).
+/// </para>
+/// <para>
+/// El intérprete es el del HOST: <c>cmd.exe</c> en Windows, que es la plataforma del
+/// producto (AD-17), y <c>sh</c> en los demás. El probe escribe en el lenguaje de ese
+/// intérprete, así que lo que se observa es lo mismo en todas las plataformas: los
+/// argumentos LLEGARON y el directorio de trabajo es la raíz (AC1).
 /// </para>
 /// </summary>
 public sealed class GameLaunchTests : IDisposable
@@ -68,6 +74,23 @@ public sealed class GameLaunchTests : IDisposable
     }
 
     /// <summary>
+    /// The path of the probe is the one that the manifest declares, and it is FIXED per
+    /// platform (AD-16).
+    /// </summary>
+    /// <remarks>
+    /// La ruta la usan el fixture y la aserción, así que si cambia sin que nadie se
+    /// dé cuenta, el test seguiría comparando la ruta consigo mismo. Este caso la
+    /// fija contra el valor escrito a mano.
+    /// </remarks>
+    [Fact]
+    public void The_path_of_the_probe_is_the_one_that_the_manifest_declares()
+    {
+        Assert.Equal(
+            OperatingSystem.IsWindows() ? @"game\probe.cmd" : "game/probe.sh",
+            HostInterpreter.ProbeRelativePath);
+    }
+
+    /// <summary>
     /// AC1: the arguments of the launch reach the child process IN ORDER, and the
     /// working directory of the process is the ROOT of the installation (AD-19, AC1).
     /// </summary>
@@ -75,7 +98,7 @@ public sealed class GameLaunchTests : IDisposable
     public async Task The_arguments_reach_the_child_process_and_the_working_directory_is_the_root()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid", "-console", "mapa1"],
             runsProbe: true);
 
@@ -83,8 +106,14 @@ public sealed class GameLaunchTests : IDisposable
             .InspectAsync(GameId, TestContext.Current.CancellationToken);
 
         Assert.NotNull(inspection);
+
+        // Los argumentos del lanzamiento son los que declara el manifiesto, y el
+        // manifiesto los declara con el LENGUAJE del intérprete del host: `cmd.exe`
+        // ejecuta el probe con `/c` y `sh` lo ejecuta por su nombre (AD-16, AD-17).
         Assert.Equal(
-            ["/u", "/c", "game\\probe.cmd", "-novid", "-console", "mapa1"],
+            HostInterpreter.ProbeArguments(
+                HostInterpreter.ProbeRelativePath,
+                ["-novid", "-console", "mapa1"]),
             inspection.LaunchSettings.Arguments);
 
         var outcome = await fixture.Service
@@ -98,7 +127,7 @@ public sealed class GameLaunchTests : IDisposable
         // Los argumentos LLEGARON al hijo, en ORDEN (AC1).
         var arguments = await File.ReadAllTextAsync(
             Path.Combine(_installDirectory, "args.txt"),
-            Encoding.Unicode,
+            HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
         Assert.Contains("-novid", arguments, StringComparison.Ordinal);
@@ -118,7 +147,7 @@ public sealed class GameLaunchTests : IDisposable
         // El directorio de trabajo del proceso es la RAÍZ de la instalación (AC1, AD-9).
         var workingDirectory = await File.ReadAllTextAsync(
             Path.Combine(_installDirectory, "cwd.txt"),
-            Encoding.Unicode,
+            HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
         Assert.Contains(
@@ -161,7 +190,7 @@ public sealed class GameLaunchTests : IDisposable
     public async Task An_executable_outside_the_root_makes_the_installation_invalid_and_starts_no_process()
     {
         using var fixture = await CreateFixtureAsync(
-            "..\\fuera\\cmd.exe",
+            HostInterpreter.OutsideRootPath,
             ["-novid"],
             createsExecutable: false);
 
@@ -182,7 +211,11 @@ public sealed class GameLaunchTests : IDisposable
     [Fact]
     public async Task The_client_tells_whether_the_process_is_still_running()
     {
-        using var fixture = await CreateFixtureAsync("game\\cmd.exe", ["/c", "ping", "-n", "30", "127.0.0.1"]);
+        // El proceso tiene que SEGUIR VIVO: `ping` de Windows y `sleep` del host son
+        // procesos que duran, y la prueba comprueba lo mismo en ambos (AC2).
+        using var fixture = await CreateFixtureAsync(
+            HostInterpreter.ExecutablePath,
+            HostInterpreter.LongRunningArguments);
 
         var outcome = await fixture.Service
             .LaunchAsync(GameId, TestContext.Current.CancellationToken);
@@ -202,7 +235,7 @@ public sealed class GameLaunchTests : IDisposable
     public async Task An_installation_that_is_not_certified_starts_no_process()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid"],
             certificationFails: true);
 
@@ -228,9 +261,9 @@ public sealed class GameLaunchTests : IDisposable
     public async Task The_manifest_of_the_installed_version_is_the_one_that_is_inspected()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid"],
-            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])]);
+            otherPackages: [AnotherPackage(OtherVersion, HostInterpreter.ExecutablePath, ["-otra-version"])]);
 
         var inspection = await fixture.Inspector
             .InspectAsync(GameId, TestContext.Current.CancellationToken);
@@ -262,9 +295,9 @@ public sealed class GameLaunchTests : IDisposable
     public async Task The_manifest_of_another_version_is_not_the_one_that_is_inspected()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid"],
-            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])]);
+            otherPackages: [AnotherPackage(OtherVersion, HostInterpreter.ExecutablePath, ["-otra-version"])]);
 
         var inspection = await fixture.Inspector
             .InspectAsync(GameId, TestContext.Current.CancellationToken);
@@ -293,9 +326,9 @@ public sealed class GameLaunchTests : IDisposable
     public async Task The_installation_is_certified_when_the_manifest_of_the_other_version_is_not_cached()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid"],
-            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])],
+            otherPackages: [AnotherPackage(OtherVersion, HostInterpreter.ExecutablePath, ["-otra-version"])],
             cachesOtherManifests: false);
 
         var inspection = await fixture.Inspector
@@ -322,9 +355,9 @@ public sealed class GameLaunchTests : IDisposable
     public async Task The_launch_runs_the_installed_version_and_not_the_other_one()
     {
         using var fixture = await CreateFixtureAsync(
-            "game\\cmd.exe",
+            HostInterpreter.ExecutablePath,
             ["-novid"],
-            otherPackages: [AnotherPackage(OtherVersion, "game\\cmd.exe", ["-otra-version"])],
+            otherPackages: [AnotherPackage(OtherVersion, HostInterpreter.ExecutablePath, ["-otra-version"])],
             runsProbe: true);
 
         var outcome = await fixture.Service
@@ -338,7 +371,7 @@ public sealed class GameLaunchTests : IDisposable
         // de la otra versión (AC1).
         var arguments = await File.ReadAllTextAsync(
             Path.Combine(_installDirectory, "args.txt"),
-            Encoding.Unicode,
+            HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
         Assert.Contains("-novid", arguments, StringComparison.Ordinal);
@@ -403,9 +436,7 @@ public sealed class GameLaunchTests : IDisposable
 
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
 
-        var interpreter = Path.Combine(
-            Environment.SystemDirectory,
-            "cmd.exe");
+        var interpreter = HostInterpreter.Path;
 
         if (!File.Exists(interpreter))
         {
@@ -424,27 +455,18 @@ public sealed class GameLaunchTests : IDisposable
 
         if (runsProbe)
         {
-            var probe = Path.Combine(Path.GetDirectoryName(executable)!, "probe.cmd");
+            var probe = Path.Combine(_installDirectory, HostInterpreter.ProbeRelativePath);
 
             await File.WriteAllTextAsync(
                 probe,
-                new StringBuilder()
-                    // El script se interpreta con la página OEM de cmd.exe: escribir
-                    // rutas absolutas UTF-8 falla cuando el perfil de Windows contiene
-                    // caracteres no ASCII. El directorio de trabajo ya es la raíz que
-                    // se verifica, así que las salidas relativas son deliberadas.
-                    .AppendLine("echo %* > args.txt")
-                    .AppendLine("cd > cwd.txt")
-                .ToString(),
+                HostInterpreter.ProbeContent,
                 TestContext.Current.CancellationToken);
 
             probePath = Path.GetRelativePath(_installDirectory, probe);
         }
 
         IReadOnlyList<string> launchArguments = runsProbe
-            // `/u` hace que los redireccionamientos de cmd.exe conserven la ruta de
-            // trabajo Unicode; así la prueba no depende de la página OEM del perfil.
-            ? ["/u", "/c", probePath!, ..arguments]
+            ? HostInterpreter.ProbeArguments(probePath!, arguments)
             : arguments;
 
         var context = await OpenContextAsync();

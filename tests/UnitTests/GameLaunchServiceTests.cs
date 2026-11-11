@@ -76,7 +76,7 @@ public sealed class GameLaunchServiceTests : IDisposable
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
-            CreateInspection(InstallationState.Installed, "game\\bin\\ausente.exe", root: root));
+            CreateInspection(InstallationState.Installed, HostPath("game", "bin", "ausente.exe"), root: root));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -101,7 +101,7 @@ public sealed class GameLaunchServiceTests : IDisposable
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
-            CreateInspection(InstallationState.Installed, "..\\fuera\\juego.exe", root: root));
+            CreateInspection(InstallationState.Installed, HostPath("..", "fuera", "juego.exe"), root: root));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -118,16 +118,16 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task A_working_directory_outside_the_root_is_rejected()
     {
         var root = CreateTemporaryFolder();
-        CreateExecutable(root, "game\\juego.exe");
+        CreateExecutable(root, HostPath("game", "juego.exe"));
 
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
             CreateInstallation(
                 InstallationState.Installed,
-                "game\\juego.exe",
+                HostPath("game", "juego.exe"),
                 root,
-                workingDirectory: "..\\fuera"));
+                workingDirectory: HostPath("..", "fuera")));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -144,17 +144,17 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task The_arguments_arrive_in_order_with_the_working_directory()
     {
         var root = CreateTemporaryFolder();
-        var executable = CreateExecutable(root, "game\\juego.exe");
+        var executable = CreateExecutable(root, HostPath("game", "juego.exe"));
 
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
             CreateInspection(
                 InstallationState.Installed,
-                "game\\juego.exe",
+                HostPath("game", "juego.exe"),
                 root: root,
                 arguments: ["-novid", "-console", "mapa1"],
-                workingDirectory: "game\\bin"));
+                workingDirectory: HostPath("game", "bin")));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -174,12 +174,12 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task The_executable_is_resolved_against_the_installation_root()
     {
         var root = CreateTemporaryFolder();
-        var executable = CreateExecutable(root, "game\\juego.exe");
+        var executable = CreateExecutable(root, HostPath("game", "juego.exe"));
 
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
-            CreateInspection(InstallationState.Installed, "game\\juego.exe", root: root));
+            CreateInspection(InstallationState.Installed, HostPath("game", "juego.exe"), root: root));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -196,9 +196,9 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task The_installation_is_certified_before_the_process_is_started()
     {
         var root = CreateTemporaryFolder();
-        CreateExecutable(root, "game\\juego.exe");
+        CreateExecutable(root, HostPath("game", "juego.exe"));
 
-        var inspector = new RecordingInspector(CreateInspection(InstallationState.Installed, "game\\juego.exe", root: root));
+        var inspector = new RecordingInspector(CreateInspection(InstallationState.Installed, HostPath("game", "juego.exe"), root: root));
         var runner = new RecordingRunner();
         var service = new GameLaunchService(
             inspector,
@@ -220,12 +220,12 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task A_process_that_does_not_start_is_rejected()
     {
         var root = CreateTemporaryFolder();
-        CreateExecutable(root, "game\\juego.exe");
+        CreateExecutable(root, HostPath("game", "juego.exe"));
 
         var runner = new RecordingRunner { FailOnStart = true };
         var service = CreateService(
             runner,
-            CreateInstallation(InstallationState.Installed, "game\\juego.exe", root: root));
+            CreateInstallation(InstallationState.Installed, HostPath("game", "juego.exe"), root: root));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -242,12 +242,12 @@ public sealed class GameLaunchServiceTests : IDisposable
     public async Task A_launched_game_hands_over_the_handle_of_its_process()
     {
         var root = CreateTemporaryFolder();
-        CreateExecutable(root, "game\\juego.exe");
+        CreateExecutable(root, HostPath("game", "juego.exe"));
 
         var runner = new RecordingRunner();
         var service = CreateService(
             runner,
-            CreateInstallation(InstallationState.Installed, "game\\juego.exe", root: root));
+            CreateInstallation(InstallationState.Installed, HostPath("game", "juego.exe"), root: root));
 
         var outcome = await service.LaunchAsync(GameId, TestContext.Current.CancellationToken);
 
@@ -363,13 +363,13 @@ public sealed class GameLaunchServiceTests : IDisposable
     /// <returns>The inspection of the installation.</returns>
     private static InstallationInspection CreateInspection(
         InstallationState state,
-        string executablePath = "game\\juego.exe",
+        string executablePath = "",
         string? root = null,
         IReadOnlyList<string>? arguments = null,
         string workingDirectory = "") =>
         CreateInstallation(
             state,
-            executablePath,
+            executablePath.Length == 0 ? HostPath("game", "juego.exe") : executablePath,
             root ?? Path.GetTempPath(),
             arguments,
             workingDirectory);
@@ -398,6 +398,15 @@ public sealed class GameLaunchServiceTests : IDisposable
     /// <param name="root">Root of the installation.</param>
     /// <param name="relativePath">Path of the executable, relative to the root.</param>
     /// <returns>The absolute path of the executable.</returns>
+    /// <summary>
+    /// A relative path in the FORM of the host, so the rule is exercised the same
+    /// way everywhere (AD-9).
+    /// </summary>
+    /// <param name="segments">Segments of the path, separated by the host separator.</param>
+    /// <returns>The relative path, in the form of the host.</returns>
+    private static string HostPath(params string[] segments) =>
+        string.Join(Path.DirectorySeparatorChar, segments);
+
     private static string CreateExecutable(string root, string relativePath)
     {
         var path = Path.Combine(root, relativePath);

@@ -5,6 +5,8 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Configuration.Memory;
 
+using LANPartyHub.Server.Domain.Packages;
+
 namespace LANPartyHub.Server.Host;
 
 /// <summary>
@@ -159,7 +161,16 @@ public sealed class ServerConfiguration
 
         var directory = rawDirectory is null ? DefaultDataDirectory : rawDirectory.Trim();
 
-        return Path.IsPathRooted(directory)
+        // La ruta se reconoce como ABSOLUTA por su FORMA, no por la del host: la
+        // escribe el operador o la escribe el archivo de configuración, y una ruta
+        // de Windows es absoluta aunque la comprobación corra en otra plataforma
+        // (AD-12, AD-17).
+        //
+        // La resolución, en cambio, es la del host: en Windows, que es la plataforma
+        // del producto (AD-17), canonicalizar una ruta de Windows da esa misma ruta.
+        // En un host que NO es Windows, canonicalizar una ruta de Windows da una ruta
+        // relativa al directorio actual, y el producto no se usa ahí (AD-17).
+        return PathForm.IsAbsoluteByForm(directory)
             ? Path.GetFullPath(directory)
             : Path.GetFullPath(Path.Combine(baseDirectory, directory));
     }

@@ -24,6 +24,42 @@ namespace LANPartyHub.Client.Domain.Install;
 public static class InstallPathConfine
 {
     /// <summary>
+    /// Tells whether a path is ABSOLUTE by its own form, whatever the host is
+    /// (AD-9, AC2).
+    ///
+    /// <para>
+    /// La forma absoluta se reconoce por SUYO: una letra de unidad seguida de dos
+    /// puntos (<c>C:\</c>) o una ruta que empieza por separador (<c>/</c>), que
+    /// también cubre un UNC (<c>\\servidor\recurso</c>). La regla es la MISMA que
+    /// aplica Windows, para que una ruta sea absoluta en una plataforma y en la otra a
+    /// la vez: el manifiesto puede declarar rutas de Windows aunque la comprobación
+    /// corra en otra plataforma (AD-9).
+    /// </para>
+    /// </summary>
+    /// <param name="path">Path as it was written.</param>
+    /// <returns><c>true</c> when the path is absolute by its form.</returns>
+    public static bool IsAbsoluteByForm(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        // Una UNIDAD: `C:` o `C:\...`. La letra de la unidad tiene que ser una letra
+        // ASCII, que es lo que Windows acepta: `Path.IsPathRooted` de .NET exige una
+        // letra de unidad valida, así que `1:\x` NO es una ruta absoluta para Windows
+        // y esta regla tampoco lo trata como tal (AD-9).
+        if (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':')
+        {
+            return true;
+        }
+
+        // Una ruta que empieza por separador. Un UNC (`\\servidor\recurso`) empieza
+        // por dos, así que esta comprobación lo cubre tambien.
+        return path[0] == '/' || path[0] == '\\';
+    }
+
+    /// <summary>
     /// Tells whether a canonical path stays INSIDE a canonical root (AD-9).
     ///
     /// <para>

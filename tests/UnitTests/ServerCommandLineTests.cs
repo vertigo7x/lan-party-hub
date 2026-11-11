@@ -133,9 +133,15 @@ public sealed class ServerCommandLineTests
     [Fact]
     public void The_defaults_are_the_data_folder_next_to_the_binary_and_the_port_8080()
     {
-        var resolved = ServerConfiguration.Resolve(new ConfigurationBuilder().Build(), Path.Combine("C:", "servidor"));
+        // La carpeta base es una ruta ABSOLUTA del host: la resolución la canoniza,
+        // y el resultado tiene que ser comparable con ella (AD-12, AD-17).
+        var baseDirectory = Path.Combine(Path.GetTempPath(), "servidor");
 
-        Assert.Equal(Path.Combine(Path.Combine("C:", "servidor"), "data"), resolved.DataDirectory);
+        var resolved = ServerConfiguration.Resolve(new ConfigurationBuilder().Build(), baseDirectory);
+
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(baseDirectory, "data")),
+            resolved.DataDirectory);
         Assert.Equal(8080, resolved.HttpPort);
     }
 

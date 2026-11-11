@@ -84,8 +84,26 @@ public sealed class ProjectDependencyTests
         .Descendants()
         .Where(element => element.Name.LocalName == "ProjectReference")
         .Select(element => (string?)element.Attribute("Include") ?? string.Empty)
-        .Select(include => Path.GetFileNameWithoutExtension(include))
+        .Select(include => ProjectName(include))
         .ToArray();
+
+    /// <summary>
+    /// The NAME of the project a reference points at, whatever the separator the
+    /// reference uses.
+    /// </summary>
+    /// <remarks>
+    /// Las referencias del proyecto usan el separador de Windows, y el host puede no
+    /// reconocerlo: sin tomar el ultimo segmento a mano, el nombre del proyecto
+    /// seria la referencia ENTERA (AD-1, AD-18).
+    /// </remarks>
+    private static string ProjectName(string include)
+    {
+        var lastSeparator = include.LastIndexOfAny(['/', '\\']);
+
+        var name = lastSeparator >= 0 ? include[(lastSeparator + 1)..] : include;
+
+        return Path.GetFileNameWithoutExtension(name);
+    }
 
     private static IReadOnlyList<string> PackageReferences(XDocument project) => project
         .Descendants()

@@ -165,12 +165,16 @@ public sealed class ClientCommandLineTests : IDisposable
     [Fact]
     public void The_defaults_are_the_install_folder_of_the_data_folder_and_the_system_theme()
     {
-        var dataFolder = Path.Combine("C:", "datos", "LanPartyHub");
+        // La carpeta de datos es una ruta ABSOLUTA del host: la resolución la
+        // canoniza, y el resultado tiene que ser comparable con ella (AD-9, AD-12).
+        var dataFolder = Path.Combine(Path.GetTempPath(), "datos", "LanPartyHub");
 
         var resolved = ClientConfiguration.Resolve(new ConfigurationBuilder().Build(), dataFolder);
 
         Assert.Null(resolved.ServerAddress);
-        Assert.Equal(Path.Combine(dataFolder, "install"), resolved.InstallDirectory);
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(dataFolder, "install")),
+            resolved.InstallDirectory);
         Assert.Equal(ClientConfiguration.DefaultTheme, resolved.Theme);
     }
 

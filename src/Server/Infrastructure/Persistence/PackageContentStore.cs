@@ -1,5 +1,7 @@
 using LANPartyHub.Server.Application.Ports;
 
+using LANPartyHub.Server.Domain.Packages;
+
 namespace LANPartyHub.Server.Infrastructure.Persistence;
 
 /// <summary>
@@ -110,13 +112,18 @@ public sealed class PackageContentStore : IPackageContentStore
             return false;
         }
 
-        if (Path.IsPathRooted(value))
+        // La ruta se reconoce como ABSOLUTA por su FORMA, no por la del host: un
+        // valor con letra de unidad o con UNC es una ruta, y lo es aunque la
+        // comprobación corra en otra plataforma (AD-9).
+        if (PathForm.IsAbsoluteByForm(value))
         {
             return false;
         }
 
-        if (value.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || value.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+        // Un separador de ruta NO es un nombre de archivo, y lo es con cualquiera de
+        // los dos: un valor con `\\` es una ruta en Windows lo mismo que uno con `/`.
+        if (value.Contains('/', StringComparison.Ordinal)
+            || value.Contains('\\', StringComparison.Ordinal))
         {
             return false;
         }
