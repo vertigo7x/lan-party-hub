@@ -432,15 +432,15 @@ public sealed class DownloadRecoveryTests : IDisposable
     [Fact]
     public async Task A_transport_failure_leaves_the_operation_resumable()
     {
-        // AD-11, AD-24, SM-2: si el servidor NO estÃ¡, el fallo NO es una falla de la
-        // operaciÃ³n: la operaciÃ³n conserva su estado REANUDABLE, asÃ­ que el siguiente
+        // AD-11, AD-24, SM-2: si el servidor NO está, el fallo NO es una falla de la
+        // operación: la operación conserva su estado REANUDABLE, así que el siguiente
         // arranque la recupera y reintenta el Range desde el offset persistido.
         var store = new RecordingStateStore();
 
         var coordinator = CreateCoordinator(
             store,
             new RecordingIntentClient(),
-            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+            new FailingTransferEngine(new TransferTransportException("El servidor no está.")));
 
         var handle = await coordinator.StartAsync(
             "paquete-1",
@@ -449,26 +449,26 @@ public sealed class DownloadRecoveryTests : IDisposable
 
         await WaitUntilAsync(() => handle.StateMachine.Current != DownloadState.Downloading);
 
-        // El estado NO es terminal: <c>Failed</c> no se recuperaria nunca mÃ¡s.
+        // El estado NO es terminal: <c>Failed</c> no se recuperaria nunca más.
         Assert.Equal(DownloadState.Paused, handle.StateMachine.Current);
         Assert.False(handle.StateMachine.IsTerminal);
 
-        // El estado persistido es REANUDABLE, asÃ­ que la recuperaciÃ³n lo recoge.
+        // El estado persistido es REANUDABLE, así que la recuperación lo recoge.
         Assert.True(DownloadRecovery.IsResumableState(DownloadState.Paused));
     }
 
     [Fact]
     public async Task A_transport_failure_persists_a_resumable_state_and_not_a_failed_one()
     {
-        // AD-11, AD-24: lo que se persiste decide si la operaciÃ³n se recupera. Un
-        // <c>Failed</c> escrito en la fila deja el parcial huÃ©rfano, asÃ­ que un fallo de
+        // AD-11, AD-24: lo que se persiste decide si la operación se recupera. Un
+        // <c>Failed</c> escrito en la fila deja el parcial huérfano, así que un fallo de
         // transporte NO puede persistir ese estado.
         var store = new RecordingStateStore();
 
         var coordinator = CreateCoordinator(
             store,
             new RecordingIntentClient(),
-            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+            new FailingTransferEngine(new TransferTransportException("El servidor no está.")));
 
         var handle = await coordinator.StartAsync(
             "paquete-1",
@@ -484,14 +484,14 @@ public sealed class DownloadRecoveryTests : IDisposable
     public async Task A_transport_failure_leaves_the_operation_recoverable_after_a_restart()
     {
         // AC2, SM-2: el ciclo completo. La descarga falla por transporte, el estado
-        // persistido es reanudable, y el siguiente arranque RECUPERA la operaciÃ³n y pide
-        // el Range desde el offset persistido en vez de dejar el parcial huÃ©rfano.
+        // persistido es reanudable, y el siguiente arranque RECUPERA la operación y pide
+        // el Range desde el offset persistido en vez de dejar el parcial huérfano.
         var store = new RecordingStateStore();
 
         var coordinator = CreateCoordinator(
             store,
             new RecordingIntentClient(),
-            new FailingTransferEngine(new TransferTransportException("El servidor no estÃ¡.")));
+            new FailingTransferEngine(new TransferTransportException("El servidor no está.")));
 
         var handle = await coordinator.StartAsync(
             "paquete-1",
@@ -502,7 +502,7 @@ public sealed class DownloadRecoveryTests : IDisposable
 
         var persisted = store.SavedOperations.Last(saved => saved.State == DownloadState.Paused.ToString());
 
-        // El SIGUIENTE arranque: la operaciÃ³n persistida se recupera porque su estado es
+        // El SIGUIENTE arranque: la operación persistida se recupera porque su estado es
         // reanudable (AC2, AD-10).
         var nextBoot = new RecordingStateStore();
         nextBoot.PersistedOperations.Add(
@@ -529,15 +529,15 @@ public sealed class DownloadRecoveryTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count > 0);
 
-        // La reanudaciÃ³n pide el rango desde el offset persistido: NUNCA desde cero.
+        // La reanudación pide el rango desde el offset persistido: NUNCA desde cero.
         Assert.Equal(300, engine.RequestedStarts[0]);
     }
 
     [Fact]
     public async Task A_failure_that_is_not_a_transport_failure_still_fails_the_operation()
     {
-        // AC5: un fallo que NO es de transporte (un 416, un estado invÃ¡lido, un bug) sÃ­ es
-        // una falla de la operaciÃ³n: pasa a <c>Failed</c>, que es terminal.
+        // AC5: un fallo que NO es de transporte (un 416, un estado inválido, un bug) sí es
+        // una falla de la operación: pasa a <c>Failed</c>, que es terminal.
         var store = new RecordingStateStore();
 
         var coordinator = CreateCoordinator(
@@ -559,12 +559,12 @@ public sealed class DownloadRecoveryTests : IDisposable
     [Fact]
     public void The_transport_failures_are_the_ones_of_the_network()
     {
-        // AD-11, AD-24: la clasificaciÃ³n de un fallo de TRANSPORTE es explÃ­cita, asÃ­ que
-        // un fallo de la operaciÃ³n no se confunde con una red caÃ­da.
+        // AD-11, AD-24: la clasificación de un fallo de TRANSPORTE es explícita, así que
+        // un fallo de la operación no se confunde con una red caída.
         Assert.True(DownloadRecovery.IsTransportFailure(
             new TransferTransportException("El transporte no pudo traer los bytes.")));
 
-        Assert.False(DownloadRecovery.IsTransportFailure(new InvalidOperationException("El estado no es vÃ¡lido.")));
+        Assert.False(DownloadRecovery.IsTransportFailure(new InvalidOperationException("El estado no es válido.")));
         Assert.False(DownloadRecovery.IsTransportFailure(new TransferRangeNotSatisfiableException(0, 10)));
     }
 

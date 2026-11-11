@@ -20,7 +20,7 @@ namespace LANPartyHub.UnitTests;
 /// (AD-7, AD-8, AD-9, AD-10, AD-16, AC1, AC2, AC3, AC4).
 ///
 /// <para>
-/// El caso de uso se ejercita con dobles de los PUERTOS, asÃ­ que el orden de rechazo y
+/// El caso de uso se ejercita con dobles de los PUERTOS, así que el orden de rechazo y
 /// la AUSENCIA de escrituras son observables sin un servidor y sin un disco (AD-1,
 /// AD-16).
 /// </para>
@@ -35,8 +35,8 @@ public sealed class InstallationOrderTests : IDisposable
 
     /// <summary>
     /// A manifest whose signature does NOT validate against the fixed anchor is
-    /// REJECTED, and NOTHING is written on disk: ni el manifiesto en la cachÃ©
-    /// <c>manifests/</c>, ni el directorio de instalaciÃ³n, ni el parcial, ni la fila
+    /// REJECTED, and NOTHING is written on disk: ni el manifiesto en la caché
+    /// <c>manifests/</c>, ni el directorio de instalación, ni el parcial, ni la fila
     /// (AD-8, AC2, AC3).
     /// </summary>
     [Fact]
@@ -48,12 +48,12 @@ public sealed class InstallationOrderTests : IDisposable
             .InstallAsync(GameId, PackageId, Version, TestContext.Current.CancellationToken)
             ;
 
-        // AC2: la operaciÃ³n se rechaza con el cÃ³digo estable de la causa.
+        // AC2: la operación se rechaza con el código estable de la causa.
         Assert.True(result.IsRejected);
         Assert.Equal(ErrorCatalog.ManifestSignatureInvalidCode, result.Error!.Code);
         Assert.NotNull(result.Reason);
 
-        // AC3: NINGÃšN byte en disco antes del paso 2.
+        // AC3: NINGÚN byte en disco antes del paso 2.
         AssertNoBytesWereWritten(fixture);
     }
 
@@ -90,7 +90,7 @@ public sealed class InstallationOrderTests : IDisposable
             .InstallAsync(GameId, PackageId, Version, TestContext.Current.CancellationToken)
             ;
 
-        // AC2: el rechazo lleva la causa del catÃ¡logo, y la operaciÃ³n no se instala.
+        // AC2: el rechazo lleva la causa del catálogo, y la operación no se instala.
         Assert.True(result.IsRejected);
         Assert.Equal(ErrorCatalog.ManifestOperationNotAllowedCode, result.Error!.Code);
         Assert.NotNull(result.Reason);
@@ -110,15 +110,15 @@ public sealed class InstallationOrderTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        // Antes de la instalaciÃ³n, la raÃ­z NO existe: el layout no la crea todavÃ­a.
+        // Antes de la instalación, la raíz NO existe: el layout no la crea todavía.
         Assert.False(Directory.Exists(fixture.RootPath));
 
         await fixture.Coordinator
             .InstallAsync(GameId, PackageId, Version, TestContext.Current.CancellationToken)
             ;
 
-        // La raÃ­z se crea SOLO despuÃ©s de que el manifiesto haya pasado la verificaciÃ³n,
-        // asÃ­ que a partir de ese momento existe (AD-8, AC1).
+        // La raíz se crea SOLO después de que el manifiesto haya pasado la verificación,
+        // así que a partir de ese momento existe (AD-8, AC1).
         Assert.True(Directory.Exists(fixture.RootPath));
     }
 
@@ -168,7 +168,7 @@ public sealed class InstallationOrderTests : IDisposable
         var fixture = await CreateFixtureAsync();
 
         // El parcial que el coordinador encuentra NO es el que declara el manifiesto
-        // firmado, asÃ­ que su hash diverge (AD-8).
+        // firmado, así que su hash diverge (AD-8).
         await File.WriteAllBytesAsync(
             fixture.PartialPath,
             Encoding.UTF8.GetBytes("contenido alterado"),
@@ -181,10 +181,10 @@ public sealed class InstallationOrderTests : IDisposable
         Assert.True(result.IsRejected);
         Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, result.Error!.Code);
 
-        // AC1: el parcial se descarta y la operaciÃ³n no queda reparable por reanudaciÃ³n.
+        // AC1: el parcial se descarta y la operación no queda reparable por reanudación.
         Assert.False(File.Exists(fixture.PartialPath));
 
-        // Y no se persiste ninguna fila: la operaciÃ³n no se instalÃ³ (AD-27).
+        // Y no se persiste ninguna fila: la operación no se instaló (AD-27).
         Assert.Empty(fixture.StateStore.SavedInstallations);
     }
 
@@ -216,7 +216,7 @@ public sealed class InstallationOrderTests : IDisposable
         Assert.Equal(Version, installation.InstalledVersion);
         Assert.Equal(InstallationState.Installed, installation.ValidationState);
 
-        // AC1: el identificador de la raÃ­z es el que se deriva de su ruta canÃ³nica.
+        // AC1: el identificador de la raíz es el que se deriva de su ruta canónica.
         Assert.Equal(
             InstallationCertification.DeriveInstallDirectoryId(fixture.RootPath),
             installation.InstallDirectoryId);
@@ -240,8 +240,8 @@ public sealed class InstallationOrderTests : IDisposable
             .InstallAsync(GameId, PackageId, Version, TestContext.Current.CancellationToken)
             ;
 
-        // La mÃ¡quina de estados DECLARE la transiciÃ³n de `ValidatingInstallation` a
-        // `Installed`, asÃ­ que el estado final prueba que se pasÃ³ por el intermedio.
+        // La máquina de estados DECLARE la transición de `ValidatingInstallation` a
+        // `Installed`, así que el estado final prueba que se pasó por el intermedio.
         Assert.True(
             new LANPartyHub.Client.Domain.StateMachines.InstallationStateMachine(
                     InstallationState.ValidatingInstallation)
@@ -271,7 +271,7 @@ public sealed class InstallationOrderTests : IDisposable
         Assert.True(result.Verdict!.IsRepairable);
         Assert.Equal(InstallationState.Repairable, result.Verdict.State);
 
-        // AC6: el motivo y la acciÃ³n de reparaciÃ³n quedan registrados y visibles.
+        // AC6: el motivo y la acción de reparación quedan registrados y visibles.
         Assert.NotNull(result.Verdict.ReasonText);
         Assert.False(string.IsNullOrWhiteSpace(result.Verdict.ReasonText));
         Assert.NotNull(result.Verdict.RepairAction);
@@ -342,8 +342,8 @@ public sealed class InstallationOrderTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that NOTHING was written on disk: ni el manifiesto en la cachÃ©, ni el
-    /// directorio de instalaciÃ³n, ni el parcial, ni la fila (AD-8, AC3, AD-27).
+    /// Asserts that NOTHING was written on disk: ni el manifiesto en la caché, ni el
+    /// directorio de instalación, ni el parcial, ni la fila (AD-8, AC3, AD-27).
     /// </summary>
     /// <param name="fixture">Fixture of the installation.</param>
     private static void AssertNoBytesWereWritten(InstallationFixture fixture)
@@ -354,7 +354,7 @@ public sealed class InstallationOrderTests : IDisposable
         Assert.False(Directory.Exists(fixture.RootPath));
         Assert.False(File.Exists(fixture.PartialPath));
 
-        // La carpeta de la cachÃ© existe (la crea el layout), pero NO hay ningÃºn
+        // La carpeta de la caché existe (la crea el layout), pero NO hay ningún
         // manifiesto dentro (AC3).
         Assert.Empty(Directory.GetFiles(fixture.ManifestsDirectory));
     }
@@ -397,7 +397,7 @@ public sealed class InstallationOrderTests : IDisposable
             ? TamperedCanonical(manifest)
             : LANPartyHub.Server.Domain.Packages.ManifestCanonicalizer.Canonicalize(manifest);
 
-        // El manifiesto manipulado lo FIRMA el servidor: la firma es vÃ¡lida, asÃ­ que el
+        // El manifiesto manipulado lo FIRMA el servidor: la firma es válida, así que el
         // paso 2 del orden normativo pasa y lo que lo rechaza es el conjunto cerrado de
         // las operaciones (AD-7, AC2).
         var signature = tamperWithSignature
@@ -449,8 +449,8 @@ public sealed class InstallationOrderTests : IDisposable
     {
         var canonical = LANPartyHub.Server.Domain.Packages.ManifestCanonicalizer.Canonicalize(manifest);
 
-        // El discriminador de la operaciÃ³n polimÃ³rfica es el tipo de la operaciÃ³n, asÃ­
-        // que un discriminador que el contrato no reconoce es una operaciÃ³n fuera del
+        // El discriminador de la operación polimórfica es el tipo de la operación, así
+        // que un discriminador que el contrato no reconoce es una operación fuera del
         // conjunto cerrado (AD-7).
         return canonical.Replace("\"operation\":\"verify\"", "\"operation\":\"runCommand\"", StringComparison.Ordinal);
     }
@@ -527,7 +527,7 @@ public sealed class InstallationOrderTests : IDisposable
     }
 
     /// <summary>
-    /// Port of the cache of the signed manifests that RECUERDA lo que se le escribiÃ³
+    /// Port of the cache of the signed manifests that RECUERDA lo que se le escribió
     /// (AD-16).
     /// </summary>
     private sealed class RecordingManifestCache : IManifestCache
@@ -664,8 +664,8 @@ public sealed class InstallationOrderTests : IDisposable
     }
 
     /// <summary>
-    /// Layout of a folder temporal, para que la raÃ­z de instalaciÃ³n, el parcial y la
-    /// cachÃ© vivan en el sitio que declara el layout (AD-9).
+    /// Layout of a folder temporal, para que la raíz de instalación, el parcial y la
+    /// caché vivan en el sitio que declara el layout (AD-9).
     /// </summary>
     private sealed class TemporaryDataLayout : IClientDataLayout
     {

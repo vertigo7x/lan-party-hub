@@ -36,87 +36,87 @@ tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
   epic-1: done
-  1-1-estructura-de-soluciÃ³n-y-contratos-compartidos: done
-  1-2-arranque-del-servidor-con-superficie-de-red-mÃ­nima-y-datos-c: done
+  1-1-estructura-de-solución-y-contratos-compartidos: done
+  1-2-arranque-del-servidor-con-superficie-de-red-mínima-y-datos-c: done
   1-3-arranque-del-cliente-con-layout-en-disco-y-persistencia-prop: done
   1-4-observabilidad-correlacionada-desde-el-primer-arranque: done
   epic-1-retrospective: optional
 
   epic-2: done
-  2-1-alta-y-modificaciÃ³n-de-videojuegos-con-metadatos-completos: done
-  2-2-publicaciÃ³n-de-un-paquete-con-licencia-y-manifiesto-firmado: done
-  2-3-control-de-la-publicaciÃ³n-por-parte-del-organizador: done
+  2-1-alta-y-modificación-de-videojuegos-con-metadatos-completos: done
+  2-2-publicación-de-un-paquete-con-licencia-y-manifiesto-firmado: done
+  2-3-control-de-la-publicación-por-parte-del-organizador: done
   epic-2-retrospective: optional
 
   epic-3: done
-  3-1-sincronizaciÃ³n-del-catÃ¡logo-por-snapshot-completo: done
-  3-2-bÃºsqueda-filtrado-y-categorizaciÃ³n-del-catÃ¡logo: done
+  3-1-sincronización-del-catálogo-por-snapshot-completo: done
+  3-2-búsqueda-filtrado-y-categorización-del-catálogo: done
   3-3-ficha-del-videojuego-con-su-estado-de-vista: done
   epic-3-retrospective: optional
 
   epic-4: done
-  4-1-descubrimiento-automÃ¡tico-del-servidor-por-mdns: done
-  4-2-direcciÃ³n-manual-como-vÃ­a-permanente-y-equivalente: done
-  4-3-compatibilidad-de-versiÃ³n-de-clientes-sin-autenticaciÃ³n: done
-  4-4-fijaciÃ³n-del-ancla-de-confianza-fuera-de-banda: done
-  4-5-panel-de-conexiÃ³n-persistente-y-reconexiÃ³n: done
+  4-1-descubrimiento-automático-del-servidor-por-mdns: done
+  4-2-dirección-manual-como-vía-permanente-y-equivalente: done
+  4-3-compatibilidad-de-versión-de-clientes-sin-autenticación: done
+  4-4-fijación-del-ancla-de-confianza-fuera-de-banda: done
+  4-5-panel-de-conexión-persistente-y-reconexión: done
   epic-4-retrospective: optional
 
   epic-5: done
-  5-1-abstracciÃ³n-de-transferencia-con-un-Ãºnico-camino-http: done
-  5-2-descarga-del-paquete-con-progreso-pausa-y-reanudaciÃ³n: done
-  5-3-persistencia-del-progreso-y-recuperaciÃ³n-tras-reinicio: done
+  5-1-abstracción-de-transferencia-con-un-único-camino-http: done
+  5-2-descarga-del-paquete-con-progreso-pausa-y-reanudación: done
+  5-3-persistencia-del-progreso-y-recuperación-tras-reinicio: done
   epic-5-retrospective: optional
 
   epic-6: done
-  6-1-verificaciÃ³n-de-integridad-y-de-autenticidad-antes-de-instal: done
-  6-2-la-ui-diferencia-daÃ±ado-de-no-confiable: done
+  6-1-verificación-de-integridad-y-de-autenticidad-antes-de-instal: done
+  6-2-la-ui-diferencia-dañado-de-no-confiable: done
   epic-6-retrospective: optional
 
   epic-7: done
-  7-1-orden-normativo-de-la-instalaciÃ³n-y-rechazo-previo-a-persist: done
-  7-2-confines-de-la-extracciÃ³n-dentro-del-directorio-autorizado: done
-  7-3-instalaciÃ³n-portable-con-manifiesto-tipado-y-confirmaciÃ³n-de: done
+  7-1-orden-normativo-de-la-instalación-y-rechazo-previo-a-persist: done
+  7-2-confines-de-la-extracción-dentro-del-directorio-autorizado: done
+  7-3-instalación-portable-con-manifiesto-tipado-y-confirmación-de: done
   epic-7-retrospective: optional
 
   epic-8: done
-  8-1-detecciÃ³n-del-ejecutable-y-lanzamiento-con-argumentos-y-dire: done
+  8-1-detección-del-ejecutable-y-lanzamiento-con-argumentos-y-dire: done
   8-2-bloqueo-de-jugar-con-el-motivo-visible: done
   8-3-reparar-sin-volver-a-descargar: done
   epic-8-retrospective: optional
 
   epic-9: done
   9-1-tabla-densa-de-clientes-conectados: done
-  9-2-proyecciÃ³n-de-instalaciones-y-de-operaciones-en-curso: done
+  9-2-proyección-de-instalaciones-y-de-operaciones-en-curso: done
   9-3-errores-registrados-con-causa-y-siguiente-paso: done
-  9-4-diagnÃ³stico-correlacionado-en-el-cliente: done
+  9-4-diagnóstico-correlacionado-en-el-cliente: done
   epic-9-retrospective: optional
 
   epic-10: in-progress
-  10-1-detecciÃ³n-de-versiÃ³n-desactualizada: done
-  10-2-actualizaciÃ³n-a-versiÃ³n-completa: backlog
-  10-3-reparaciÃ³n-de-una-instalaciÃ³n-interrumpida: backlog
+  10-1-detección-de-versión-desactualizada: done
+  10-2-actualización-a-versión-completa: backlog
+  10-3-reparación-de-una-instalación-interrumpida: backlog
   epic-10-retrospective: optional
 
   epic-11: backlog
   11-1-sistema-de-tokens-y-tema: backlog
-  11-2-tipografÃ­a-y-datos-literales: backlog
-  11-3-regla-Ãºnica-de-tamaÃ±os-y-progreso: backlog
-  11-4-microcopia-de-estado-crÃ­tico: backlog
-  11-5-componentes-base-y-jerarquÃ­a-de-acciones: backlog
-  11-6-arquitectura-de-informaciÃ³n-y-navegaciÃ³n: backlog
+  11-2-tipografía-y-datos-literales: backlog
+  11-3-regla-única-de-tamaños-y-progreso: backlog
+  11-4-microcopia-de-estado-crítico: backlog
+  11-5-componentes-base-y-jerarquía-de-acciones: backlog
+  11-6-arquitectura-de-información-y-navegación: backlog
   11-7-accesibilidad: backlog
   11-8-comportamiento-de-escritorio-y-escalado: backlog
   epic-11-retrospective: optional
 
   epic-12: backlog
-  12-1-s-2-raÃ­z-de-confianza-validaciÃ³n-del-bootstrap-out-of-band-b: backlog
-  12-2-s-1-descubrimiento-validaciÃ³n-de-mdns-junto-a-la-direcciÃ³n-m: backlog
-  12-3-s-5-reanudaciÃ³n-de-paquetes-grandes-validaciÃ³n-del-offset-pe: backlog
-  12-4-s-4-rendimiento-y-recursos-mediciÃ³n-en-lugar-de-suposiciÃ³n-n: backlog
-  12-5-s-3-poc-p2p-decisiÃ³n-de-fase-posterior-no-bloqueante: backlog
+  12-1-s-2-raíz-de-confianza-validación-del-bootstrap-out-of-band-b: backlog
+  12-2-s-1-descubrimiento-validación-de-mdns-junto-a-la-dirección-m: backlog
+  12-3-s-5-reanudación-de-paquetes-grandes-validación-del-offset-pe: backlog
+  12-4-s-4-rendimiento-y-recursos-medición-en-lugar-de-suposición-n: backlog
+  12-5-s-3-poc-p2p-decisión-de-fase-posterior-no-bloqueante: backlog
   epic-12-retrospective: optional
 
   epic-13: backlog
-  13-1-demostraciÃ³n-reproducible-de-extremo-a-extremo-en-lan-real: backlog
+  13-1-demostración-reproducible-de-extremo-a-extremo-en-lan-real: backlog
   epic-13-retrospective: optional
