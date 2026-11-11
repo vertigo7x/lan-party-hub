@@ -45,6 +45,20 @@ public sealed class ClientDataLayout : IClientDataLayout
     public const string PartialFileExtension = ".part";
 
     /// <summary>
+    /// The characters that WINDOWS does not admit in a file name, and that the host may
+    /// admit (AD-17).
+    /// </summary>
+    /// <remarks>
+    /// El conjunto de Windows COMPLETO, con los caracteres de control del 0x00 al
+    /// 0x1F incluidos: en Linux el host solo rechaza el 0x00 y la barra, así que sin
+    /// ellos el conjunto de la regla no sería el de la plataforma del cliente.
+    /// </remarks>
+    private static readonly char[] WindowsInvalidFileNameChars =
+        new[] { '"', '<', '>', '|', ':', '*', '?', '\\', '/' }
+            .Concat(Enumerable.Range(0, 32).Select(index => (char)index))
+            .ToArray();
+
+    /// <summary>
     /// The characters that are NOT valid in a file name, for the host AND for WINDOWS
     /// (AD-17).
     /// </summary>
@@ -57,7 +71,7 @@ public sealed class ClientDataLayout : IClientDataLayout
     /// </remarks>
     private static readonly char[] InvalidFileNameChars =
         Path.GetInvalidFileNameChars()
-            .Concat(['"', '<', '>', '|', ':', '*', '?', '\\'])
+            .Concat(WindowsInvalidFileNameChars)
             .Distinct()
             .ToArray();
 

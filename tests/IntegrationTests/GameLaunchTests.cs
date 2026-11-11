@@ -74,6 +74,23 @@ public sealed class GameLaunchTests : IDisposable
     }
 
     /// <summary>
+    /// The path of the probe is the one that the manifest declares, and it is FIXED per
+    /// platform (AD-16).
+    /// </summary>
+    /// <remarks>
+    /// La ruta la usan el fixture y la aserción, así que si cambia sin que nadie se
+    /// dé cuenta, el test seguiría comparando la ruta consigo mismo. Este caso la
+    /// fija contra el valor escrito a mano.
+    /// </remarks>
+    [Fact]
+    public void The_path_of_the_probe_is_the_one_that_the_manifest_declares()
+    {
+        Assert.Equal(
+            OperatingSystem.IsWindows() ? @"game\probe.cmd" : "game/probe.sh",
+            HostInterpreter.ProbeRelativePath);
+    }
+
+    /// <summary>
     /// AC1: the arguments of the launch reach the child process IN ORDER, and the
     /// working directory of the process is the ROOT of the installation (AD-19, AC1).
     /// </summary>

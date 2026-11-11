@@ -103,4 +103,54 @@ public sealed class ClientDataLayoutTests : IDisposable
             // A file that the operating system still holds does not fail the test.
         }
     }
+
+    /// <summary>
+    /// The identifier of a package is used as a file name in TWO places: the partial file
+    /// of the download and the cached manifest. They have to reject the SAME
+    /// identifiers, or an identifier that one accepts travels until the other refuses
+    /// it (AD-9).
+    /// </summary>
+    /// <param name="packageId">Identifier of the package.</param>
+    /// <param name="admissible">Whether the identifier can be used as a file name.</param>
+    [Theory]
+    [InlineData("paquete-1", true)]
+    [InlineData("0193f2a1-b2c3-4d4e-5f60-718293a4b5c6", true)]
+    [InlineData("paquete.con.puntos", true)]
+    [InlineData("paquete con espacios", true)]
+    [InlineData("paquete*", false)]
+    [InlineData("paquete?", false)]
+    [InlineData("paquete:con", false)]
+    [InlineData("paquete\\con", false)]
+    [InlineData("paquete/con", false)]
+    [InlineData("paquete\u00e7con", true)]
+    public void The_layout_and_the_cache_reject_the_same_identifiers(
+        string packageId,
+        bool admissible)
+    {
+        var layout = ClientDataLayout.Create(_dataFolder, _installDirectory);
+
+        var cache = new ManifestCache(layout);
+
+        Assert.Equal(admissible, ClientDataLayout.IsValidPackageId(packageId));
+
+        if (admissible)
+        {
+            // El layout construye la ruta, y la cache la construye tambien: las dos
+            // tienen que salir dentro de su carpeta.
+            Assert.StartsWith(
+                Path.GetFullPath(Path.Combine(_dataFolder, ClientDataLayout.DownloadsFolderName)),
+                layout.PartialFilePath(packageId),
+                StringComparison.OrdinalIgnoreCase);
+
+            Assert.Null(Record.Exception(
+                () => cache.LoadAsync(packageId, TestContext.Current.CancellationToken).GetAwaiter().GetResult()));
+        }
+        else
+        {
+            Assert.Throws<ArgumentException>(() => layout.PartialFilePath(packageId));
+
+            Assert.Throws<ArgumentException>(
+                () => cache.LoadAsync(packageId, TestContext.Current.CancellationToken).GetAwaiter().GetResult());
+        }
+    }
 }
