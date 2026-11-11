@@ -109,6 +109,12 @@ PHASE_BUDGET_FACTOR = 3 if PHASE_PROVIDER == "hermes" else 1
 # El plazo del plan: el planificador tiene que escribir su artefacto dentro de el.
 PLAN_ARTIFACT_DEADLINE_SECONDS = 90 * PHASE_BUDGET_FACTOR
 
+# El fuente que viaja al prompt de la implementacion. El implementador lee UN
+# fichero por evento de herramienta, y cada lectura es un viaje: con las fuentes
+# delante, lee lo que necesita sin pagar el viaje, y escribe antes.
+IMPLEMENTATION_SOURCE_PER_FILE_CHARS = 7000
+IMPLEMENTATION_SOURCE_TOTAL_CHARS = 120000
+
 REVIEW_PACKET_MAX_CHARS = 140000
 
 
@@ -1132,10 +1138,53 @@ depende. Declara además `schema_changes` (booleano): true si cambia el esquema 
  {sources}"""
 
 
+def plan_reads_source(plan: Path) -> str:
+    """The source of the files the plan declares in `reads`, bounded.
+
+    El implementador recibe el codigo de los ficheros que el plan declara, con un
+    tope por fichero y otro global: sin ellos tiene que abrir cada fichero con un
+    evento de herramienta, y cada apertura es un viaje que se paga con el
+    presupuesto de la fase (AD-12).
+    """
+    metadata, _ = extract_plan_metadata(plan)
+    if metadata is None:
+        return ""
+
+    chunks: list[str] = []
+    used = 0
+
+    for path in metadata.reads:
+        if used >= IMPLEMENTATION_SOURCE_TOTAL_CHARS:
+            break
+
+        source = REPO_ROOT / path
+        try:
+            text = source.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+
+        if not text:
+            continue
+
+        if len(text) > IMPLEMENTATION_SOURCE_PER_FILE_CHARS:
+            text = text[:IMPLEMENTATION_SOURCE_PER_FILE_CHARS] + "\n\n(fichero truncado)"
+
+        chunk = f"--- {path} ---\n{text}\n"
+        chunks.append(chunk)
+        used += len(chunk)
+
+    return "\n".join(chunks)
+
+
 def implementation_prompt(story, plan: Path, context: Path) -> str:
+    sources = plan_reads_source(plan)
+
     return f"""Implementa exclusivamente la Story {story.short_id}: {story.title}.
 Lee primero {relative(plan)} y el paquete de contexto {relative(context)}. El paquete es la
 evidencia ya seleccionada de esta historia: úsalo y no explores el backlog por tu cuenta.
+El código de los ficheros que el plan declara te viene ABAJO, en bruto: úsalo y no lo vuelvas
+a abrir fichero por fichero. Cada apertura es un viaje que se paga con el presupuesto de la
+fase.
 Implementa el código y las pruebas que el plan y el paquete describen, ejecuta las pruebas más
 cercanas que existan y deja el árbol listo para commit.
 Lee solo lo que necesitas para la PIEZA que estás escribiendo: empieza por el cambio de
@@ -1146,7 +1195,11 @@ Limita tu exploración a las rutas que el plan y el paquete declaran. Si el paqu
 que necesitas, no amplíes el alcance: repórtalo como bloqueo demostrado con una línea que empiece
 por `{BLOCKER_MARKER}` (qué falta y en qué ruta), emitida mediante un comando `Write-Output` o
 `echo`, y detente. Solo ese evento de herramienta queda como evidencia del bloqueo.
-No replanifiques, no lances revisores, no abras PR y no cambies otras stories."""
+No replanifiques, no lances revisores, no abras PR y no cambies otras stories.
+
+--- CÓDIGO DE LOS FICHEROS QUE EL PLAN DECLARA ---
+{sources}
+"""
 
 
 # ---------------------------------------------------------------------------
