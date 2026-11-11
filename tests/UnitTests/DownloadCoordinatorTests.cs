@@ -1,10 +1,14 @@
-﻿using LANPartyHub.Client.Application;
+using System.Text;
+using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Downloads;
+using LANPartyHub.Client.Application.Integrity;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain;
+using LANPartyHub.Client.Domain.Integrity;
 using LANPartyHub.Client.Domain.StateMachines;
 using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Server.Domain.Packages;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -16,8 +20,8 @@ namespace LANPartyHub.UnitTests;
 /// AC1..AC10).
 ///
 /// <para>
-/// El coordinador se ejercita con dobles de los PUERTOS: así la secuencia de la
-/// descarga, la pausa, la reanudación y la cancelación son observables sin un servidor y
+/// El coordinador se ejercita con dobles de los PUERTOS: as� la secuencia de la
+/// descarga, la pausa, la reanudaci�n y la cancelaci�n son observables sin un servidor y
 /// sin un disco (AD-1, AD-16).
 /// </para>
 /// </summary>
@@ -28,7 +32,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task Starting_a_download_registers_the_intention_and_persists_the_operation()
     {
-        // AC1: el cliente registra la intención con el servidor y obtiene el operationId.
+        // AC1: el cliente registra la intenci�n con el servidor y obtiene el operationId.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -42,7 +46,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         Assert.Equal("operacion-1", handle.OperationId);
         Assert.Equal("paquete-1", intents.RegisteredPackageId);
 
-        // AD-10, AD-11: la operación y su estado se persisten, con el motor que la
+        // AD-10, AD-11: la operaci�n y su estado se persisten, con el motor que la
         // transfiere.
         var operation = Assert.Single(
             store.SavedOperations,
@@ -55,7 +59,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task A_download_in_course_reports_its_progress()
     {
-        // AC2: el cliente informa del porcentaje entero y del par de tamaños.
+        // AC2: el cliente informa del porcentaje entero y del par de tama�os.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -106,15 +110,15 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         Assert.Equal(DownloadState.Paused, handle.StateMachine.Current);
 
-        // AC4: el offset persistido se conserva, así que la reanudación continúa desde la
-        // misma posición.
+        // AC4: el offset persistido se conserva, as� que la reanudaci�n contin�a desde la
+        // misma posici�n.
         Assert.Equal(300, store.SavedProgresses.Last().BytesPersisted);
     }
 
     [Fact]
     public async Task Resuming_a_download_continues_from_the_persisted_offset()
     {
-        // AC3, AC4: al reanudar continúa DESDE LA MISMA POSICIÓN, sin volver a cero.
+        // AC3, AC4: al reanudar contin�a DESDE LA MISMA POSICI�N, sin volver a cero.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -141,7 +145,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 2);
 
-        // La reanudación pide el rango que empieza en el offset acumulado (AD-20, AD-24).
+        // La reanudaci�n pide el rango que empieza en el offset acumulado (AD-20, AD-24).
         Assert.Equal(300, engine.RequestedStarts[1]);
     }
 
@@ -173,7 +177,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         Assert.Equal(DownloadState.Cancelled, handle.StateMachine.Current);
 
-        // El archivo parcial está BORRADO.
+        // El archivo parcial est� BORRADO.
         Assert.False(File.Exists(partial));
 
         // El registro de progreso se REINICIA: bytesPersisted vuelve a cero.
@@ -184,7 +188,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task Cancelling_a_download_leaves_it_terminal_and_not_resumable()
     {
-        // AC5: «Cancelled» es un estado TERMINAL de DownloadState.
+        // AC5: �Cancelled� es un estado TERMINAL de DownloadState.
         var coordinator = CreateCoordinator(new RecordingIntentClient(), new RecordingStateStore());
 
         var handle = await coordinator.StartAsync(
@@ -197,7 +201,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         Assert.True(DownloadStateMachine.IsTerminalState(DownloadState.Cancelled));
         Assert.True(handle.StateMachine.IsTerminal);
 
-        // La operación NO queda reintentable por reanudación.
+        // La operaci�n NO queda reintentable por reanudaci�n.
         await coordinator.ResumeAsync(handle, TestContext.Current.CancellationToken);
 
         Assert.Equal(DownloadState.Cancelled, handle.StateMachine.Current);
@@ -206,7 +210,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task A_failed_download_keeps_its_partial_and_its_offset()
     {
-        // AC5: a diferencia de la cancelación, Failed CONSERVA el parcial y su offset.
+        // AC5: a diferencia de la cancelaci�n, Failed CONSERVA el parcial y su offset.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -259,7 +263,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
-        // La segunda operación del MISMO paquete espera su turno: la primera tiene el
+        // La segunda operaci�n del MISMO paquete espera su turno: la primera tiene el
         // recurso tomado.
         Assert.Single(engine.RequestedStarts);
 
@@ -304,7 +308,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public void The_limits_of_the_client_have_a_default_value()
     {
-        // AC10: los límites por cliente son configurables y tienen valor por defecto.
+        // AC10: los l�mites por cliente son configurables y tienen valor por defecto.
         var coordinator = CreateCoordinator(new RecordingIntentClient(), new RecordingStateStore());
 
         Assert.Equal(2, coordinator.MaxConcurrentDownloads);
@@ -314,7 +318,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public void The_limits_of_the_client_can_be_configured()
     {
-        // AC10: los límites por cliente son CONFIGURABLES.
+        // AC10: los l�mites por cliente son CONFIGURABLES.
         var coordinator = CreateCoordinator(
             new RecordingIntentClient(),
             new RecordingStateStore(),
@@ -342,7 +346,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task The_client_does_not_open_more_simultaneous_downloads_than_its_limit()
     {
-        // AD-14: el límite de descargas simultáneas es POR CLIENTE.
+        // AD-14: el l�mite de descargas simult�neas es POR CLIENTE.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -369,7 +373,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
-        // El límite de UNA descarga simultánea: la segunda espera.
+        // El l�mite de UNA descarga simult�nea: la segunda espera.
         Assert.Single(engine.RequestedStarts);
 
         gate.Release(100);
@@ -381,7 +385,8 @@ public sealed class DownloadCoordinatorTests : IDisposable
         ITransferEngine? engine = null,
         IClientDataLayout? layout = null,
         int maxConcurrentDownloads = DownloadCoordinator.DefaultMaxConcurrentDownloads,
-        int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections)
+        int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections,
+        ValidatePackage? validation = null)
     {
         var effectiveLayout = layout ?? new TemporaryDataLayout();
 
@@ -391,9 +396,188 @@ public sealed class DownloadCoordinatorTests : IDisposable
             store,
             effectiveLayout,
             NullLogger<DownloadCoordinator>.Instance,
-            validation: null,
+            validation,
             maxConcurrentDownloads,
             maxTotalConnections);
+    }
+
+    /// <summary>
+    /// AC1, AC2, FR-11: la descarga de la VERSI�N COMPLETA termina en �Completado� cuando
+    /// el <c>sha256</c> de los bytes coincide con el del manifiesto firmado.
+    /// </summary>
+    [Fact]
+    public async Task The_download_of_the_complete_package_completes_when_the_hash_matches()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var layout = ClientDataLayout.Create(folder, Path.Combine(folder, "install"));
+
+        layout.EnsureCreated();
+
+        var packageBytes = Encoding.UTF8.GetBytes("contenido del paquete completo");
+
+        var manifest = new InstallationManifest(
+            1,
+            "paquete-1",
+            "2.0",
+            packageBytes.LongLength,
+            PackageIntegrity.ComputeSha256(packageBytes),
+            new InstallationManifest.LaunchSettings("game.exe", ["-novid"], "game"),
+            [new InstallationManifest.Verify("game/game.exe")]);
+
+        var cache = new RecordingManifestCache();
+
+        var coordinator = CreateCoordinator(
+            new RecordingIntentClient(),
+            new RecordingStateStore(),
+            new WholeTransferEngine(packageBytes),
+            layout,
+            maxConcurrentDownloads: 1,
+            maxTotalConnections: 1,
+            CreateValidation(manifest, packageBytes, cache));
+
+        var handle = await coordinator.DownloadFullPackageAsync(
+            "paquete-1",
+            new Uri("http://192.168.1.10:5000/api/v1/packages/paquete-1/content"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadState.Completed, handle.StateMachine.Current);
+        Assert.Null(handle.ValidationError);
+    }
+
+    /// <summary>
+    /// AC1, AC2: la descarga de la versi�n completa NO deja nada escrito en disco cuando
+    /// el manifiesto firmado no valida contra el ancla fijada: ni manifiesto en la cach�,
+    /// ni parcial, ni operaci�n registrada (AD-2, AD-8, AD-27).
+    /// </summary>
+    [Fact]
+    public async Task The_download_of_the_complete_package_writes_nothing_when_the_manifest_is_not_trustworthy()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var layout = ClientDataLayout.Create(folder, Path.Combine(folder, "install"));
+
+        layout.EnsureCreated();
+
+        var store = new RecordingStateStore();
+
+        var cache = new RecordingManifestCache();
+
+        var coordinator = CreateCoordinator(
+            new RecordingIntentClient(),
+            store,
+            new WholeTransferEngine(Encoding.UTF8.GetBytes("contenido")),
+            layout,
+            maxConcurrentDownloads: 1,
+            maxTotalConnections: 1,
+            CreateValidation(
+                new InstallationManifest(
+                    1,
+                    "paquete-1",
+                    "2.0",
+                    8,
+                    PackageIntegrity.ComputeSha256(Encoding.UTF8.GetBytes("contenido")),
+                    new InstallationManifest.LaunchSettings("game.exe", ["-novid"], "game"),
+                    [new InstallationManifest.Verify("game/game.exe")]),
+                Encoding.UTF8.GetBytes("contenido"),
+                cache,
+                isTrustworthy: false));
+
+        await Assert.ThrowsAsync<PackageValidationFailedException>(() =>
+            coordinator.DownloadFullPackageAsync(
+                "paquete-1",
+                new Uri("http://192.168.1.10:5000/api/v1/packages/paquete-1/content"),
+                TestContext.Current.CancellationToken));
+
+        // NINGUNA escritura en disco (AD-2, AD-8, AD-27).
+        Assert.Empty(cache.Stored);
+
+        Assert.False(File.Exists(Path.Combine(
+            folder,
+            ClientDataLayout.ManifestsFolderName,
+            "paquete-1.json")));
+
+        Assert.False(File.Exists(Path.Combine(
+            folder,
+            ClientDataLayout.DownloadsFolderName,
+            "paquete-1" + ClientDataLayout.PartialFileExtension)));
+
+        // Y la operaci�n NO se registr� (AD-8).
+        Assert.Empty(store.SavedOperations);
+    }
+
+    /// <summary>
+    /// AC2, AD-8: la descarga de la versi�n completa DESCARTA el parcial y falla cuando el
+    /// <c>sha256</c> de los bytes NO coincide con el del manifiesto firmado.
+    /// </summary>
+    [Fact]
+    public async Task The_download_of_the_complete_package_is_rejected_when_the_hash_diverges()
+    {
+        var folder = CreateTemporaryFolder();
+
+        var layout = ClientDataLayout.Create(folder, Path.Combine(folder, "install"));
+
+        layout.EnsureCreated();
+
+        var packageBytes = Encoding.UTF8.GetBytes("contenido alterado");
+
+        var manifest = new InstallationManifest(
+            1,
+            "paquete-1",
+            "2.0",
+            packageBytes.LongLength,
+            PackageIntegrity.ComputeSha256(Encoding.UTF8.GetBytes("otro contenido")),
+            new InstallationManifest.LaunchSettings("game.exe", ["-novid"], "game"),
+            [new InstallationManifest.Verify("game/game.exe")]);
+
+        var coordinator = CreateCoordinator(
+            new RecordingIntentClient(),
+            new RecordingStateStore(),
+            new WholeTransferEngine(packageBytes),
+            layout,
+            maxConcurrentDownloads: 1,
+            maxTotalConnections: 1,
+            CreateValidation(manifest, packageBytes, new RecordingManifestCache()));
+
+        var handle = await coordinator.DownloadFullPackageAsync(
+            "paquete-1",
+            new Uri("http://192.168.1.10:5000/api/v1/packages/paquete-1/content"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadState.Failed, handle.StateMachine.Current);
+        Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, handle.ValidationError!.Code);
+
+        // El parcial se DESCARTA: la operaci�n no es reparable por reanudaci�n (AD-8).
+        Assert.False(File.Exists(Path.Combine(
+            folder,
+            ClientDataLayout.DownloadsFolderName,
+            "paquete-1" + ClientDataLayout.PartialFileExtension)));
+    }
+
+    /// <summary>
+    /// Builds the VALIDATION of the real package: the manifest is cached only when it is
+    /// trustworthy, and the integrity is checked against the <c>sha256</c> that the signed
+    /// manifest declares (AD-2, AD-8).
+    /// </summary>
+    /// <param name="manifest">Manifest of the package.</param>
+    /// <param name="packageBytes">Bytes that the server serves.</param>
+    /// <param name="cache">Cache of the signed manifests.</param>
+    /// <param name="isTrustworthy">Whether the signature validates against the anchor.</param>
+    /// <returns>The use case of the validation.</returns>
+    private static ValidatePackage CreateValidation(
+        InstallationManifest manifest,
+        byte[] packageBytes,
+        RecordingManifestCache cache,
+        bool isTrustworthy = true)
+    {
+        var canonical = ManifestCanonicalizer.Canonicalize(manifest);
+
+        return new ValidatePackage(
+            new FixedManifestClient(canonical),
+            new AcceptingManifestVerifier(isTrustworthy),
+            cache,
+            new FixedTrustAnchorReader(),
+            NullLogger<ValidatePackage>.Instance);
     }
 
     private string CreateTemporaryFolder()
@@ -419,7 +603,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         {
             if (DateTime.UtcNow > deadline)
             {
-                throw new TimeoutException("La condición no se cumplió dentro del plazo.");
+                throw new TimeoutException("La condici�n no se cumpli� dentro del plazo.");
             }
 
             await Task.Delay(10, TestContext.Current.CancellationToken);
@@ -444,7 +628,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
     /// <summary>
     /// Gate that holds the transfer until the test releases it, so el momento de la
-    /// pausa y el de la cancelación son observables (AD-16).
+    /// pausa y el de la cancelaci�n son observables (AD-16).
     /// </summary>
     private sealed class TransferGate : IDisposable
     {
@@ -560,7 +744,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Store of the client that RECUERDA lo que se le escribió, para que la persistencia
+    /// Store of the client that RECUERDA lo que se le escribi�, para que la persistencia
     /// sea observable sin un disco (AD-16).
     /// </summary>
     private sealed class RecordingStateStore : IClientStateStore
@@ -667,5 +851,98 @@ public sealed class DownloadCoordinatorTests : IDisposable
         public void SetInstallDirectory(string installDirectory)
         {
         }
+    }
+
+    /// <summary>
+    /// Engine that sirve el CONTENIDO COMPLETO del paquete de una vez, as� que la
+    /// descarga de la versi�n completa no necesita ninguna puerta (AD-4).
+    /// </summary>
+    private sealed class WholeTransferEngine : ITransferEngine
+    {
+        private readonly byte[] _content;
+
+        public WholeTransferEngine(byte[] content) => _content = content;
+
+        public async Task<TransferOutcome> TransferAsync(
+            Uri contentUri,
+            long startInclusive,
+            long endInclusive,
+            Stream destination,
+            CancellationToken cancellationToken)
+        {
+            await destination
+                .WriteAsync(_content.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+
+            return new TransferOutcome(_content.LongLength, _content.LongLength, RangeHonoured: true);
+        }
+    }
+
+    /// <summary>
+    /// Port of the read of the signed manifest que devuelve SIEMPRE el mismo sobre, as�
+    /// que la validaci�n de la autenticidad es observable sin un servidor (AD-16).
+    /// </summary>
+    private sealed class FixedManifestClient : ISignedManifestClient
+    {
+        private readonly string _canonical;
+
+        public FixedManifestClient(string canonical) => _canonical = canonical;
+
+        public Task<InstallationManifest.SignedEnvelope?> GetAsync(
+            string packageId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<InstallationManifest.SignedEnvelope?>(
+                new InstallationManifest.SignedEnvelope(_canonical, "firma", "clave"));
+    }
+
+    /// <summary>
+    /// Verificador de la firma que la ACEPTA o la RECHAZA, as� que el rechazo ANTES de
+    /// escribir es observable (AD-2, AD-8).
+    /// </summary>
+    private sealed class AcceptingManifestVerifier : IManifestSignatureVerifier
+    {
+        private readonly bool _accepts;
+
+        public AcceptingManifestVerifier(bool accepts = true) => _accepts = accepts;
+
+        public bool Verify(string canonicalManifest, string signature, byte[] publicKey) => _accepts;
+    }
+
+    /// <summary>
+    /// Port of the read of the ancla de confianza que siempre devuelve el mismo valor, as�
+    /// que la validaci�n contra el ancla fijado es observable (AD-27).
+    /// </summary>
+    private sealed class FixedTrustAnchorReader : ITrustAnchorReader
+    {
+        public Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<PinnedTrustAnchor?>(
+                new PinnedTrustAnchor(
+                    Convert.ToBase64String(new byte[32]),
+                    "fingerprint",
+                    "2026-10-26T00:00:00.0000000Z"));
+    }
+
+    /// <summary>
+    /// Port of the cache of the signed manifests que RECUERDA lo que se le escribi�, as�
+    /// que la ausencia de escritura en disco es observable (AD-2, AD-8).
+    /// </summary>
+    private sealed class RecordingManifestCache : IManifestCache
+    {
+        private readonly Dictionary<string, string> _stored = new(StringComparer.Ordinal);
+
+        public IReadOnlyDictionary<string, string> Stored => _stored;
+
+        public Task StoreAsync(
+            string packageId,
+            string canonicalManifest,
+            CancellationToken cancellationToken)
+        {
+            _stored[packageId] = canonicalManifest;
+
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> LoadAsync(string packageId, CancellationToken cancellationToken) =>
+            Task.FromResult(_stored.TryGetValue(packageId, out var canonical) ? canonical : null);
     }
 }

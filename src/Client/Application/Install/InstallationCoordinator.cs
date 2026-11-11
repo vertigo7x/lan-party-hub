@@ -205,11 +205,42 @@ public sealed record InstallationResult
 /// <param name="PackageId">Opaque identifier of the package that was being installed.</param>
 /// <param name="Version">Version of the videogame that is installed.</param>
 /// <param name="ErrorCode">Stable code of the error of the catalog that explains the failure.</param>
+/// <param name="Mode">
+/// Mode of the failed operation: initial installation or update. El reintento de una
+/// actualización NO invalida la instalación anterior si vuelve a fallar (AC4, FR-11).
+/// </param>
 public sealed record FailedInstallation(
     string GameId,
     string PackageId,
     string Version,
-    string ErrorCode);
+    string ErrorCode,
+    InstallationMode Mode = InstallationMode.Initial);
+
+/// <summary>
+/// The MODE of an installation operation of the client (AC1, AC2, FR-11).
+///
+/// <para>
+/// El modo NO cambia el ORDEN NORMATIVO ni la verificación de integridad: las dos son las
+/// del flujo inicial (AD-8, AC2). El modo dice sólo qué hacer con la fila de la
+/// instalación cuando la operación falla, así que la actualización NO duplica la
+/// verificación de integridad (AC2).
+/// </para>
+/// </summary>
+public enum InstallationMode
+{
+    /// <summary>
+    /// The FIRST installation of a videogame, así que un fallo deja la fila en el estado
+    /// terminal <c>Failed</c> y la acción «Reintentar» disponible (AC5, NFR-9).
+    /// </summary>
+    Initial,
+
+    /// <summary>
+    /// The UPDATE of a videogame that already has a VALID installation, así que un fallo
+    /// NO toca la fila que ya existe: la instalación anterior conserva su versión y su
+    /// validez (AC1, AC4, FR-11).
+    /// </summary>
+    Update,
+}
 
 /// <summary>
 /// Coordinator of the installation operations of the client (AD-7, AD-8, AD-9, AD-10,
@@ -326,15 +357,56 @@ public sealed class InstallationCoordinator
     /// Runs an installation in the NORMATIVE order and certifies its outcome (AD-8, AC1,
     /// AC2, AC4, AC5).
     ///
+    /// <para>
+    /// La ACTUALIZACIÓN reutiliza esta misma vía: el orden normativo, la verificación de
+    /// la firma y de la <c>schemaVersion</c> y la comprobación final del <c>sha256</c> son
+    /// LOS MISMOS que los del flujo inicial, así que no existe una segunda definición de
+    /// «instalar» (AC2, FR-11).
+    /// </para>
+    /// </summary>
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="packageId">Opaque identifier of the package that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    public Task<InstallationResult> InstallAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        CancellationToken cancellationToken) =>
+        InstallAsync(
+            gameId,
+            packageId,
+            installedVersion,
+            InstallationMode.Initial,
+            cancellationToken);
+
+    /// <summary>
+    /// Runs an installation in the NORMATIVE order and certifies its outcome, in the
+    /// MODE that the caller declares (AC1, AC2, AC4, AC5, FR-11).
+    ///
+    /// <para>
+    /// En el modo <see cref="InstallationMode.Update"/> la operación SUSTITUYE la versión
+    /// anterior: el manifiesto de la versión nueva se aplica dentro de la MISMA raíz y la
+    /// fila se actualiza con la versión nueva (AC1).
+    /// </para>
+    /// <para>
+    /// Un fallo de la actualización NO toca la fila que ya existe: la instalación
+    /// anterior conserva su versión y su validez, porque la retirada o el fallo de la
+    /// versión nueva no puede invalidar lo que ya estaba instalado (AC4, FR-11).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The result of the installation.</returns>
     public async Task<InstallationResult> InstallAsync(
         string gameId,
         string packageId,
         string installedVersion,
+        InstallationMode mode,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
@@ -353,6 +425,7 @@ public sealed class InstallationCoordinator
                 gameId,
                 packageId,
                 installedVersion,
+                mode,
                 trackedOperation,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -380,6 +453,7 @@ public sealed class InstallationCoordinator
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="packageId">Opaque identifier of the package that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="trackedOperation">
     /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
     /// the installation (AD-22).
@@ -390,6 +464,7 @@ public sealed class InstallationCoordinator
         string gameId,
         string packageId,
         string installedVersion,
+        InstallationMode mode,
         string? trackedOperation,
         CancellationToken cancellationToken)
     {
@@ -539,13 +614,15 @@ public sealed class InstallationCoordinator
                 rootPath,
                 ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
                 exception.Message,
+                mode,
                 cancellationToken).ConfigureAwait(false);
 
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
                 installedVersion,
-                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode);
+                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
+                mode);
 
             // AD-22: la fase REAL de la FALLA se publica antes de cerrar el seguimiento,
             // así que el servidor sabe que la operación terminó (AD-22, FR-10).
@@ -576,13 +653,15 @@ public sealed class InstallationCoordinator
                 rootPath,
                 ErrorCatalog.InstallOperationFailedCode,
                 exception.Message,
+                mode,
                 cancellationToken).ConfigureAwait(false);
 
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
                 installedVersion,
-                ErrorCatalog.InstallOperationFailedCode);
+                ErrorCatalog.InstallOperationFailedCode,
+                mode);
 
             _logger.LogError(
                 exception,
@@ -724,6 +803,40 @@ public sealed class InstallationCoordinator
     }
 
     /// <summary>
+    /// REINTENTA an installation that FAILED, reusing the package that was already
+    /// validated, in the MODE that the caller declares (AC1, AC5, FR-11).
+    ///
+    /// <para>
+    /// El reintento de una ACTUALIZACIÓN es una operación NUEVA sobre la versión
+    /// publicada, así que el modo es <see cref="InstallationMode.Update"/> y la
+    /// instalación anterior conserva su validez si el reintento también falla (AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    public Task<InstallationResult> RetryAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        InstallationMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installedVersion);
+
+        // El reintento es una operación NUEVA, así que el fallo anterior deja de ser el
+        // fallo vigente mientras la operación corre (AC5).
+        FailedOperation = null;
+
+        return InstallAsync(gameId, packageId, installedVersion, mode, cancellationToken);
+    }
+
+    /// <summary>
     /// Certifies the tree that is ALREADY installed, and tells whether it is a valid
     /// installation of the same version (AC1).
     ///
@@ -815,12 +928,20 @@ public sealed class InstallationCoordinator
     /// <summary>
     /// Persists the FAILURE of an installation, so the error queda registrado y la
     /// operación es REINTENTABLE sin reinstalar el cliente (AD-8, AD-11, AC5).
+    ///
+    /// <para>
+    /// En el modo <see cref="InstallationMode.Update"/> la fila que ya existe NO se toca:
+    /// la instalación anterior conserva su versión y su validez, porque el fallo de la
+    /// versión nueva no puede invalidar lo que ya estaba instalado (AC4, FR-11). El
+    /// error se REGISTRA igual, así que el diagnóstico conserva lo que pasó (AD-15).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
     /// <param name="rootPath">Canonical absolute path of the installation root.</param>
     /// <param name="errorCode">Stable code of the error of the catalog.</param>
     /// <param name="reason">Human readable reason of the failure.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes when the failure is persisted.</returns>
     private async Task PersistFailureAsync(
@@ -829,8 +950,24 @@ public sealed class InstallationCoordinator
         string rootPath,
         string errorCode,
         string reason,
+        InstallationMode mode,
         CancellationToken cancellationToken)
     {
+        if (mode == InstallationMode.Update)
+        {
+            // AC4, FR-11: la instalación anterior NO se invalida. La fila conserva su
+            // versión y su estado, así que lo que ya estaba instalado sigue siendo válido
+            // (AC4).
+            _logger.LogWarning(
+                "La actualización del juego {GameId} a la versión {Version} falla con el código {Code}: la instalación anterior conserva su versión y su validez. Detalle: {Reason}",
+                gameId,
+                installedVersion,
+                errorCode,
+                reason);
+
+            return;
+        }
+
         var installDirectoryId = InstallationCertification.DeriveInstallDirectoryId(rootPath);
 
         await _stateStore

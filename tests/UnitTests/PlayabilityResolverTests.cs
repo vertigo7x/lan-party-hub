@@ -360,6 +360,88 @@ public sealed class PlayabilityResolverTests
     }
 
     /// <summary>
+    /// AC1, FR-11: la intención de «Actualizar» se REGISTRA como la de RE-DESCARGAR, así
+    /// que la actualización deja constancia de lo que el jugador pidió (AC2).
+    /// </summary>
+    [Fact]
+    public async Task The_update_intent_is_registered_as_the_intent_of_re_downloading()
+    {
+        var intents = new RecordingIntentPort();
+
+        var service = new PlayabilityIntentService(intents);
+
+        await service.RecordPrimaryAsync(
+            GameId,
+            PlayabilityAction.Update,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([GameId], intents.Redownloaded);
+        Assert.Empty(intents.Repaired);
+        Assert.Empty(intents.Diagnosed);
+    }
+
+    /// <summary>
+    /// AC1, AC4: la intención de «Actualizar» aparece con la VERSIÓN DESACTUALIZADA, así
+    /// que la decisión que la produce lleva la versión publicada (AC1, AC3).
+    /// </summary>
+    [Fact]
+    public async Task The_update_intent_appears_with_the_outdated_version()
+    {
+        var intents = new RecordingIntentPort();
+
+        var service = new PlayabilityIntentService(intents);
+
+        var decision = PlayabilityResolver.Resolve(
+            Certified(),
+            installedVersion: "1.9.0",
+            publishedVersion: "1.10.0");
+
+        Assert.Equal(PlayabilityAction.Update, decision.PrimaryAction);
+        Assert.Equal("1.10.0", decision.PublishedVersion);
+
+        await service.RecordPrimaryAsync(
+            GameId,
+            decision.PrimaryAction,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([GameId], intents.Redownloaded);
+    }
+
+    /// <summary>
+    /// Port of the registry of the intentions que RECUERDA lo que se le pidió, así que la
+    /// ruta de la intención es observable sin un servidor (AD-16).
+    /// </summary>
+    private sealed class RecordingIntentPort : IPlayabilityIntentPort
+    {
+        public List<string> Repaired { get; } = [];
+
+        public List<string> Redownloaded { get; } = [];
+
+        public List<string> Diagnosed { get; } = [];
+
+        public Task RecordRepairAsync(string gameId, CancellationToken cancellationToken)
+        {
+            Repaired.Add(gameId);
+
+            return Task.CompletedTask;
+        }
+
+        public Task RecordRedownloadAsync(string gameId, CancellationToken cancellationToken)
+        {
+            Redownloaded.Add(gameId);
+
+            return Task.CompletedTask;
+        }
+
+        public Task RecordDiagnoseAsync(string gameId, CancellationToken cancellationToken)
+        {
+            Diagnosed.Add(gameId);
+
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
     /// Builds a verdict of a certified installation (AC5).
     /// </summary>
     /// <returns>The verdict of the certification.</returns>

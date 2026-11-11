@@ -5,6 +5,7 @@ using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Application.Connection;
 using LANPartyHub.Client.Application.GameLauncher;
+using LANPartyHub.Client.Application.Install;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Application.Trust;
 using LANPartyHub.Client.Host;
@@ -49,6 +50,8 @@ public sealed class App : Avalonia.Application
     private LibrarySurface? _librarySurface;
     private GameRunStatusViewModel? _gameRunStatus;
     private DiagnosticsLogViewModel? _diagnosticsViewModel;
+    private DownloadProgressViewModel? _downloadViewModel;
+    private InstallProgressViewModel? _installViewModel;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -209,6 +212,12 @@ public sealed class App : Avalonia.Application
             // porcentaje entero de los bytes REALES.
             var installViewModel = new InstallProgressViewModel();
             var installControl = new InstallProgressControl(installViewModel);
+
+            // AC1, FR-11: la ACTUALIZACIÓN presenta su descarga y su instalación en el
+            // MISMO panel persistente, así que el jugador ve el progreso de la versión
+            // COMPLETA que sustituye a la anterior (AC2).
+            _downloadViewModel = downloadViewModel;
+            _installViewModel = installViewModel;
 
             // AC2, UX-DR-6: el estado de ejecución del juego vive en el MISMO panel
             // persistente, con «En ejecución» o «Ningún juego en ejecución». El estado
@@ -867,6 +876,109 @@ public sealed class App : Avalonia.Application
         if (primary == PlayabilityAction.Repair)
         {
             await RepairInstallationAsync(gameId).ConfigureAwait(true);
+
+            return;
+        }
+
+        // AC1, FR-11: «Actualizar» se EJECUTA aquí también: la intención ya quedó
+        // registrada y ahora el cliente descarga el paquete COMPLETO de la versión
+        // publicada y lo instala encima de la versión anterior (AC1, AC2).
+        if (primary == PlayabilityAction.Update)
+        {
+            await UpdateInstallationAsync(gameId).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// UPDATES an outdated installation to the version that the catalog publishes, by
+    /// downloading the COMPLETE package and installing it over the previous one
+    /// (AC1, AC2, FR-11, R-MVP-4).
+    ///
+    /// <para>
+    /// La actualización NO tiene una vía propia de descarga ni de instalación: reutiliza el
+    /// coordinador de las descargas y el de las instalaciones, así que la verificación de la
+    /// firma y de la <c>schemaVersion</c> ANTES de escribir y la comprobación final del
+    /// <c>sha256</c> son las MISMAS que las del flujo inicial (AC2, AD-8).
+    /// </para>
+    /// <para>
+    /// El MVP resuelve SÓLO versiones completas: no hay descarga diferencial ni formato de
+    /// parche (R-MVP-4).
+    /// </para>
+    /// <para>
+    /// Un fallo de la actualización NO invalida la instalación anterior: lo que ya estaba
+    /// instalado conserva su versión y su validez (AC4, FR-11).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame whose installation is updated.</param>
+    /// <returns>A task that completes when the update has been attempted.</returns>
+    private async Task UpdateInstallationAsync(string gameId)
+    {
+        if (_downloads is null || _installations is null || _gameLauncher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // AC1, FR-11: el paquete es el de la VERSIÓN PUBLICADA, y se resuelve del
+            // snapshot LOCAL que el cliente ya sincronizó (AD-5, AD-26).
+            var published = await _gameLauncher
+                .ResolvePublishedPackageAsync(gameId, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (published is null)
+            {
+                return;
+            }
+
+            // AC1, AC2: la descarga es la del paquete COMPLETO y por la MISMA vía de
+            // transferencia del flujo inicial: la firma y la `schemaVersion` se verifican
+            // antes de escribir y el `sha256` se comprueba al final (AD-8, R-MVP-4).
+            _uiThread.Post(() => _downloadViewModel?.ApplyUpdating(true));
+
+            var handle = await _downloads.Coordinator
+                .DownloadFullPackageAsync(
+                    published.PackageId,
+                    _downloads.ContentUriResolver(published.PackageId),
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (handle.StateMachine.Current != DownloadState.Completed)
+            {
+                // AC2: la descarga NO dejó un paquete íntegro, así que no se escribe nada
+                // en la raíz de instalación y la versión anterior sigue vigente (AD-8).
+                return;
+            }
+
+            // AC1: la instalación aplica el manifiesto de la versión publicada dentro de la
+            // MISMA raíz y sustituye la versión anterior (FR-11).
+            _uiThread.Post(() => _installViewModel?.ApplyUpdating(true));
+
+            await _installations.Coordinator
+                .InstallAsync(
+                    published.GameId,
+                    published.PackageId,
+                    published.PublishedVersion,
+                    InstallationMode.Update,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La actualización NO puede impedir que el jugador use el cliente: el estado se
+            // REderiva y la instalación anterior conserva su validez (AD-1, AC4).
+        }
+        finally
+        {
+            // AC2: el estado de vista se REderiva de la certificación, así que la
+            // insignia y la primaria son las que la certificación declara (AC3, AD-11).
+            _uiThread.Post(() =>
+            {
+                _downloadViewModel?.ApplyUpdating(false);
+                _installViewModel?.ApplyUpdating(false);
+            });
+
+            await RefreshDecisionsAsync().ConfigureAwait(true);
         }
     }
 

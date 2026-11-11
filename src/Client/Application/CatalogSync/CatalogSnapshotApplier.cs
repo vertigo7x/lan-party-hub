@@ -211,11 +211,12 @@ public sealed class CatalogSnapshotApplier
             }
 
             // El juego ya no está en el catálogo, pero lo instalado sigue siendo válido:
-            // la instalación se conserva y se marca con el estado de vista derivado que
-            // le corresponde (AC5, AD-26).
+            // la instalación se conserva, con su MISMA validez, y se marca con el estado
+            // de vista derivado que le corresponde (AC5, AD-26).
             withdrawn.Add(new WithdrawnInstallation(
                 installation.GameId,
                 installation.InstalledVersion,
+                installation.ValidationState,
                 CatalogViewState.InstalledOutdatedVersion,
                 StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion)));
         }
@@ -271,9 +272,13 @@ public sealed record WithdrawnOperation(
 /// <summary>
 /// An installation that is conserved because its game was withdrawn from the catalog
 /// (AC5, AD-26).
-/// </summary>
+///
 /// <param name="GameId">Identifier of the game.</param>
 /// <param name="InstalledVersion">Version of the game that is installed.</param>
+/// <param name="ValidationState">
+/// State of the installation, con la MISMA validez que tenía antes de la retirada: la
+/// retirada del catálogo NO invalida lo que ya estaba instalado (AC4, AD-26).
+/// </param>
 /// <param name="ViewState">Derived view state of the installation.</param>
 /// <param name="ViewStateText">
 /// Text of the derived view state, taken from the single table of microcopy
@@ -282,5 +287,6 @@ public sealed record WithdrawnOperation(
 public sealed record WithdrawnInstallation(
     string GameId,
     string InstalledVersion,
+    InstallationState ValidationState,
     CatalogViewState ViewState,
     string ViewStateText);

@@ -79,6 +79,19 @@ public sealed class GamePlayActionsViewModel
     public const string RepairConsequence =
         "Se reparará la instalación; la descarga no se repite";
 
+    /// <summary>
+    /// Text that NAMES the CONSEQUENCE of the update, así que el jugador sabe lo que va a
+    /// pasar ANTES de que ocurra (AC1, FR-11).
+    ///
+    /// <para>
+    /// La consecuencia se NOMBRA y no se CONFIRMA: la actualización descarga el paquete
+    /// COMPLETO de la versión publicada y la instala encima de la anterior, así que el
+    /// aviso dice exactamente qué va a pasar (R-MVP-4, UX-DR-22).
+    /// </para>
+    /// </summary>
+    public const string UpdateConsequence =
+        "Se descargará la versión completa y sustituirá la versión instalada";
+
     private PlayabilityDecision _decision;
 
     /// <summary>
@@ -156,6 +169,26 @@ public sealed class GamePlayActionsViewModel
     /// </summary>
     public string? RepairConsequenceText =>
         IsPrimaryRepair ? RepairConsequence : null;
+
+    /// <summary>
+    /// The text that NAMES the CONSEQUENCE of the update, que se muestra JUNTO a la acción
+    /// «Actualizar» (AC1, FR-11).
+    ///
+    /// <para>
+    /// La consecuencia se nombra, NO se confirma: el aviso dice que se descarga la versión
+    /// COMPLETA y que sustituye a la instalada, así que el jugador sabe lo que va a pasar
+    /// antes de que ocurra (R-MVP-4, UX-DR-22).
+    /// </para>
+    /// </summary>
+    public string? UpdateConsequenceText =>
+        IsPrimaryUpdate ? UpdateConsequence : null;
+
+    /// <summary>
+    /// The CONSEQUENCE of the PRIMARY action, que nombra lo que va a pasar tanto si la
+    /// primaria es «Reparar» como si es «Actualizar» (AC1, FR-11, UX-DR-20, UX-DR-22).
+    /// </summary>
+    public string? ConsequenceText =>
+        RepairConsequenceText ?? UpdateConsequenceText;
 
     /// <summary>
     /// The three parts of the error of the block, or <c>null</c> when the action is

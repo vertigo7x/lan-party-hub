@@ -41,6 +41,7 @@ public sealed class GameLauncherComposition
     private readonly PlayabilityProjection _projection;
     private readonly IPlayabilityIntentPort _intents;
     private readonly PlayabilityIntentService _intentService;
+    private readonly ICatalogSnapshotStore _snapshots;
 
     /// <summary>
     /// Creates the composition of the launcher of the videogames.
@@ -108,6 +109,10 @@ public sealed class GameLauncherComposition
         // AC1, AC2: la regla de qué intención corresponde a qué acción primaria vive en
         // la CAPA DE APLICACIÓN, así que la composición sólo la entrega (AD-1).
         _intentService = new PlayabilityIntentService(_intents);
+
+        // AC1, FR-11: la ACTUALIZACIÓN necesita el paquete que el catálogo PUBLICA para
+        // el juego, así que la composición conserva el store del snapshot LOCAL (AD-5).
+        _snapshots = snapshots;
     }
 
     /// <summary>
@@ -145,4 +150,84 @@ public sealed class GameLauncherComposition
     /// AC2, AD-1).
     /// </summary>
     public PlayabilityIntentService IntentService => _intentService;
+
+    /// <summary>
+    /// Resolves the PUBLISHED package of a videogame from the snapshot that the client
+    /// already synchronized (AC1, FR-11, R-MVP-4).
+    ///
+    /// <para>
+    /// La lectura es LOCAL: el snapshot ya está en el cliente, así que la actualización no
+    /// va al servidor por el paquete que va a descargar (AD-5, AD-26).
+    /// </para>
+    /// <para>
+    /// El paquete resuelto es el de la VERSIÓN PUBLICADA, así que la actualización
+    /// descarga el paquete COMPLETO de esa versión: no hay ninguna vía diferencial (AC1,
+    /// R-MVP-4).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The published package of the videogame, or <c>null</c> when the client does not
+    /// know any.
+    /// </returns>
+    public async Task<PublishedPackage?> ResolvePublishedPackageAsync(
+        string gameId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+
+        var snapshot = await _snapshots.LoadAsync(cancellationToken).ConfigureAwait(false);
+
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var game = snapshot.Games
+            .GroupBy(candidate => candidate.GameId, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.GameId, gameId, StringComparison.Ordinal));
+
+        if (game is null)
+        {
+            return null;
+        }
+
+        var package = snapshot.Packages
+            .Where(candidate =>
+                string.Equals(candidate.GameId, gameId, StringComparison.Ordinal)
+                && string.Equals(candidate.Version, game.Version, StringComparison.Ordinal))
+            .OrderBy(candidate => candidate.PackageId, StringComparer.Ordinal)
+            .LastOrDefault();
+
+        if (package is null)
+        {
+            return null;
+        }
+
+        return new PublishedPackage(
+            gameId,
+            game.Version,
+            package.PackageId,
+            package.SizeBytes,
+            package.Sha256);
+    }
 }
+
+/// <summary>
+/// The package that the catalog PUBLICA for a videogame, as the update consumes it
+/// (AC1, FR-11, R-MVP-4).
+///
+/// <param name="GameId">Identifier of the videogame.</param>
+/// <param name="PublishedVersion">Version that the catalog publishes for the videogame.</param>
+/// <param name="PackageId">Opaque identifier of the published package.</param>
+/// <param name="SizeBytes">Exact size of the published package.</param>
+/// <param name="Sha256">Hexadecimal sha256 that the signed manifest declares.</param>
+public sealed record PublishedPackage(
+    string GameId,
+    string PublishedVersion,
+    string PackageId,
+    long SizeBytes,
+    string Sha256);

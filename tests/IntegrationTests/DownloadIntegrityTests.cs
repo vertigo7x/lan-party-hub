@@ -3,10 +3,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LANPartyHub.Client.Application.Downloads;
+using LANPartyHub.Client.Application.Install;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.Trust;
 using LANPartyHub.Client.Host;
+using LANPartyHub.Client.Infrastructure.Filesystem;
 using LANPartyHub.Client.Infrastructure.Persistence;
+using LANPartyHub.Client.Infrastructure.Trust;
 using LANPartyHub.Server.Application.Packages;
 using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Infrastructure.Persistence;
@@ -344,6 +347,150 @@ public sealed class DownloadIntegrityTests : IDisposable
     }
 
     /// <summary>
+    /// AC1, AC2, FR-11: la actualización descarga el PAQUETE COMPLETO de la versión
+    /// publicada y lo instala encima de la anterior, con la MISMA verificación previa —la
+    /// firma del manifiesto contra el ancla fijada y su <c>schemaVersion</c>— que el
+    /// flujo inicial (AD-8).
+    ///
+    /// <para>
+    /// La prueba arranca el host real, publica dos versiones del MISMO juego, monta la
+    /// composición REAL de las descargas sobre la base de datos REAL del cliente con el
+    /// ancla YA FIJADA y descarga e instala las dos versiones, así que lo que se observa
+    /// es el camino entero (AD-16).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_update_installs_the_complete_package_of_the_published_version()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+        var clientFolder = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        const string firstPackageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5f11";
+        const string secondPackageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5f12";
+
+        var firstBytes = WritePackageBytes(dataDirectory, firstPackageId, "la versión anterior");
+        var secondBytes = WritePackageBytes(dataDirectory, secondPackageId, "la versión nueva");
+
+        using var hostClient = host.CreateClient();
+
+        var gameId = await RegisterGameAsync(hostClient, "1.0.0");
+
+        await PublishAsync(host, dataDirectory, gameId, firstPackageId, "1.0.0", firstBytes.LongLength);
+
+        // El catálogo publica la SEGUNDA versión del juego, así que la actualización
+        // descarga su paquete COMPLETO (AC1, FR-11).
+        await ModifyGameAsync(host, gameId, "2.0.0");
+
+        await PublishAsync(host, dataDirectory, gameId, secondPackageId, "2.0.0", secondBytes.LongLength);
+
+        await FixAnchorAsync(clientFolder);
+
+        using var harness = CreateComposition(host, clientFolder);
+
+        // La PRIMERA versión se instala con el flujo inicial (AC1).
+        var first = await harness.Coordinator.DownloadFullPackageAsync(
+            firstPackageId,
+            BuildContentUri(host, firstPackageId),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadState.Completed, first.StateMachine.Current);
+
+        var firstInstall = await harness.Installations.Coordinator.InstallAsync(
+            gameId,
+            firstPackageId,
+            "1.0.0",
+            TestContext.Current.CancellationToken);
+
+        Assert.True(firstInstall.IsCertified);
+
+        // La versión PUBLICADA es la segunda, así que la actualización descarga su
+        // PAQUETE COMPLETO por la MISMA vía de transferencia (AC1, R-MVP-4).
+        var second = await harness.Coordinator.DownloadFullPackageAsync(
+            secondPackageId,
+            BuildContentUri(host, secondPackageId),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadState.Completed, second.StateMachine.Current);
+
+        // Y la instalación en modo ACTUALIZACIÓN la sustituye dentro de la MISMA raíz
+        // (AC1, FR-11).
+        var secondInstall = await harness.Installations.Coordinator.InstallAsync(
+            gameId,
+            secondPackageId,
+            "2.0.0",
+            InstallationMode.Update,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(secondInstall.IsCertified);
+        Assert.True(secondInstall.Verdict!.IsInstalled);
+
+        await using var context = new ClientStateDbContext(
+            new DbContextOptionsBuilder<ClientStateDbContext>()
+                .UseSqlite($"Data Source={Path.Combine(clientFolder, ClientDataLayout.StateDatabaseFileName)};Pooling=False")
+                .Options);
+
+        var store = new ClientStateStore(context);
+
+        var installation = await store.LoadInstallationAsync(
+            gameId,
+            TestContext.Current.CancellationToken);
+
+        // La fila del cliente lleva la VERSIÓN NUEVA: la anterior fue sustituida (AC1).
+        Assert.NotNull(installation);
+        Assert.Equal("2.0.0", installation!.InstalledVersion);
+        Assert.Equal(InstallationState.Installed, installation.ValidationState);
+    }
+
+    /// <summary>
+    /// AC1, AC2, AD-8: la descarga de la versión completa NO escribe nada en disco cuando
+    /// el manifiesto firmado no valida contra el ancla fijada, así que la instalación
+    /// anterior NO se toca (AC4).
+    /// </summary>
+    [Fact]
+    public async Task The_update_writes_nothing_when_the_manifest_does_not_validate()
+    {
+        var dataDirectory = CreateTemporaryDataDirectory();
+        var clientFolder = CreateTemporaryDataDirectory();
+
+        await using var host = await TestServer.StartAsync(dataDirectory, TestContext.Current.CancellationToken);
+
+        const string packageId = "0195f3b2-4c8a-7c1e-9d33-2f6b8a1c5f13";
+
+        var bytes = WritePackageBytes(dataDirectory, packageId, "el contenido del paquete");
+
+        using var hostClient = host.CreateClient();
+
+        var gameId = await RegisterGameAsync(hostClient, "1.0.0");
+
+        await PublishAsync(host, dataDirectory, gameId, packageId, "1.0.0", bytes.LongLength);
+
+        // El ancla fijada es la de OTRO equipo: la firma NO valida contra ella (AD-27).
+        await FixAnchorAsync(clientFolder, useForeignKey: true);
+
+        using var harness = CreateComposition(host, clientFolder);
+
+        await Assert.ThrowsAsync<PackageValidationFailedException>(() =>
+            harness.Coordinator.DownloadFullPackageAsync(
+                packageId,
+                BuildContentUri(host, packageId),
+                TestContext.Current.CancellationToken));
+
+        // NINGUNA escritura en disco: ni el manifiesto en la caché, ni el parcial
+        // (AD-2, AD-8, AD-27).
+        Assert.False(File.Exists(Path.Combine(
+            clientFolder,
+            ClientDataLayout.ManifestsFolderName,
+            packageId + ".json")));
+
+        Assert.False(File.Exists(Path.Combine(
+            clientFolder,
+            ClientDataLayout.DownloadsFolderName,
+            packageId + ClientDataLayout.PartialFileExtension)));
+    }
+
+    /// <summary>
     /// Builds the composition of the downloads over the real host, with the real layout of
     /// the client and the real store of su base de datos (AD-16).
     /// </summary>
@@ -392,7 +539,38 @@ public sealed class DownloadIntegrityTests : IDisposable
             factory ?? NullLoggerFactory.Instance,
             stateStore);
 
-        return new ClientHarness(composition, transfer, correlation, context);
+        // La composición REAL de las instalaciones, sobre el MISMO archivo de estado del
+        // cliente, así que la actualización instala lo que la descarga validó (AD-16).
+        var installations = InstallationComposition.Create(
+            new Uri($"http://{host.BoundAddress}:{host.Port}"),
+            correlation,
+            layout,
+            stateStore,
+            stateStore,
+            factory ?? NullLoggerFactory.Instance,
+            confirmation: new ConfirmingPrivilegedOperationConfirmation(),
+            snapshots: new CatalogSnapshotStore(
+                new ClientStateDbContext(
+                    new DbContextOptionsBuilder<ClientStateDbContext>()
+                        .UseSqlite(
+                            $"Data Source={layout.StateDatabasePath};Pooling=False",
+                            sqlite => sqlite.MigrationsAssembly(typeof(ClientStateDbContext).Assembly.GetName().Name))
+                        .Options)));
+
+        return new ClientHarness(composition, installations, transfer, correlation, context);
+    }
+
+    /// <summary>
+    /// Port de la confirmación de la operación privilegiada que CONFIRMA, así que la
+    /// instalación real se aplica sin que la prueba tenga que responder (AC2, AD-16).
+    /// </summary>
+    private sealed class ConfirmingPrivilegedOperationConfirmation : IPrivilegedOperationConfirmation
+    {
+        public Task<bool> ConfirmAsync(
+            string operation,
+            string detail,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(true);
     }
 
     /// <summary>
@@ -460,7 +638,7 @@ public sealed class DownloadIntegrityTests : IDisposable
     {
         using var client = host.CreateClient();
 
-        var gameId = await RegisterGameAsync(client);
+        var gameId = await RegisterGameAsync(client, "1.0.0");
 
         var request = new PackageRequest
         {
@@ -496,11 +674,71 @@ public sealed class DownloadIntegrityTests : IDisposable
     }
 
     /// <summary>
-    /// Registers a videogame in the catalog of the event.
+    /// Publishes a package of a videogame in the catalog of the event, con la VERSIÓN que
+    /// el catálogo publica, así que el servidor firma un manifiesto real de bytes reales
+    /// (AD-2, AD-8).
+    /// </summary>
+    /// <param name="host">The real host of the event.</param>
+    /// <param name="dataDirectory">Folder of the data of the host.</param>
+    /// <param name="gameId">Identifier of the videogame that owns the package.</param>
+    /// <param name="packageId">Identifier of the package.</param>
+    /// <param name="version">Version that the package publishes.</param>
+    /// <param name="sizeBytes">Exact size of the package.</param>
+    /// <returns>A task that completes when the package is published.</returns>
+    private static async Task PublishAsync(
+        TestServer host,
+        string dataDirectory,
+        string gameId,
+        string packageId,
+        string version,
+        long sizeBytes)
+    {
+        using var client = host.CreateClient();
+
+        var request = new PackageRequest
+        {
+            SchemaVersion = PackagesEndpoint.SupportedSchemaVersion,
+            GameId = gameId,
+            Package = new PackageDescriptor(
+                packageId,
+                gameId,
+                version,
+                sizeBytes,
+                0,
+                string.Empty,
+                string.Empty),
+            Manifest = new InstallationManifest(
+                InstallationManifestSchema.Version,
+                packageId,
+                version,
+                sizeBytes,
+                string.Empty,
+                new InstallationManifest.LaunchSettings("game\\game.exe", ["-novid"], "game"),
+                [
+                    new InstallationManifest.CreateDirectory("game"),
+                    new InstallationManifest.WriteConfig("game\\config.ini", "[game]\nversion=" + version),
+                ]),
+        };
+
+        using var response = await client.PostAsync(
+            PackagesEndpoint.Route,
+            new StringContent(
+                JsonSerializer.Serialize(request, SerializerOptions),
+                Encoding.UTF8,
+                "application/json"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Registers a videogame in the catalog of the event, con la VERSIÓN que el catálogo
+    /// publica para ella (AD-34).
     /// </summary>
     /// <param name="client">Client of the host.</param>
+    /// <param name="version">Version that the catalog publishes for it.</param>
     /// <returns>The identifier of the videogame.</returns>
-    private static async Task<string> RegisterGameAsync(HttpClient client)
+    private static async Task<string> RegisterGameAsync(HttpClient client, string version)
     {
         var request = new GameRequest
         {
@@ -513,7 +751,7 @@ public sealed class DownloadIntegrityTests : IDisposable
                 ["fps"],
                 "cover.png",
                 ["captura-1.png"],
-                "1.41.3",
+                version,
                 7_600_000_000,
                 1,
                 10,
@@ -541,6 +779,56 @@ public sealed class DownloadIntegrityTests : IDisposable
         using var document = JsonDocument.Parse(payload);
 
         return document.RootElement.GetProperty("gameId").GetString() ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Registers a videogame with the VERSION that the test declara, así que el catálogo
+    /// publica esa versión (AD-34).
+    /// </summary>
+    /// <param name="host">The real host of the event.</param>
+    /// <param name="gameId">Identifier of the videogame that is already registered.</param>
+    /// <param name="version">Version that the catalog publishes for it.</param>
+    /// <returns>A task that completes when the videogame is modified.</returns>
+    private static async Task ModifyGameAsync(
+        TestServer host,
+        string gameId,
+        string version)
+    {
+        using var client = host.CreateClient();
+
+        var request = new GameRequest
+        {
+            SchemaVersion = GamesEndpoint.SupportedSchemaVersion,
+            Game = new GameDescriptor(
+                gameId,
+                "Counter-Strike 2",
+                "Disparadores en primera persona.",
+                ["Shooter"],
+                ["fps"],
+                "cover.png",
+                ["captura-1.png"],
+                version,
+                7_600_000_000,
+                1,
+                10,
+                "Windows",
+                "Servidor",
+                "Portable",
+                new InstallationManifest.LaunchSettings("bin\\cs2.exe", ["-novid"], "game\\bin"),
+                ["DirectX 12"],
+                "Propietaria",
+                "Solo para el evento"),
+        };
+
+        using var response = await client.PostAsync(
+            GamesEndpoint.Route,
+            new StringContent(
+                JsonSerializer.Serialize(request, SerializerOptions),
+                Encoding.UTF8,
+                "application/json"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     /// <summary>
@@ -690,14 +978,17 @@ public sealed class DownloadIntegrityTests : IDisposable
         private readonly TransferComposition _transfer;
         private readonly ClientCorrelationFactory _correlation;
         private readonly ClientStateDbContext _context;
+        private readonly InstallationComposition _installations;
 
         public ClientHarness(
             DownloadComposition composition,
+            InstallationComposition installations,
             TransferComposition transfer,
             ClientCorrelationFactory correlation,
             ClientStateDbContext context)
         {
             Composition = composition;
+            _installations = installations;
             _transfer = transfer;
             _correlation = correlation;
             _context = context;
@@ -706,6 +997,9 @@ public sealed class DownloadIntegrityTests : IDisposable
         /// <summary>The composition of the downloads of the client.</summary>
         public DownloadComposition Composition { get; }
 
+        /// <summary>The composition of the installations of the client.</summary>
+        public InstallationComposition Installations => _installations;
+
         /// <summary>The coordinator of the download operations of the client.</summary>
         public DownloadCoordinator Coordinator => Composition.Coordinator;
 
@@ -713,6 +1007,7 @@ public sealed class DownloadIntegrityTests : IDisposable
         public void Dispose()
         {
             Composition.Dispose();
+            _installations.Dispose();
             _transfer.Dispose();
             _correlation.Dispose();
             _context.Dispose();

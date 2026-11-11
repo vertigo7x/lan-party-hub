@@ -316,8 +316,8 @@ public sealed class DownloadCoordinator
     }
 
     /// <summary>
-    /// Recovers the download operations that survived a restart of the machine
-    /// (AC2, AC3, AD-11, AD-20, AD-24, SM-2).
+    /// Downloads the COMPLETE package of a published version and waits until the
+    /// operation ends (AC1, AC2, FR-11, R-MVP-4).
     ///
     /// <para>
     /// La recuperación REHIDRATA las operaciones persistidas en operaciones VIVAS: cada
@@ -335,6 +335,47 @@ public sealed class DownloadCoordinator
     /// Una operación TERMINAL no se recupera: una descarga completada, cancelada o fallida
     /// no se reanuda (AD-10, AC5). Su registro queda en la base de datos (AD-24).
     /// </para>
+    /// <para>
+    /// La actualización de 10.2 NO tiene una vía diferencial: descarga el paquete COMPLETO
+    /// de la versión publicada, y lo hace por la MISMA vía de transferencia del flujo
+    /// inicial —una sola puerta, el mismo offset persistido y la misma reanudación—, así
+    /// que no existe una segunda definición de «descargar» (AD-5, AD-8, R-MVP-4).
+    /// </para>
+    /// <para>
+    /// Las reglas son las del flujo inicial y en el MISMO orden: la firma y la
+    /// <c>schemaVersion</c> del manifiesto se verifican ANTES de escribir nada, y el
+    /// <c>sha256</c> de los bytes se comprueba al final (AD-8, AC2).
+    /// </para>
+    /// </summary>
+    /// <param name="packageId">Opaque identifier of the package of the published version.</param>
+    /// <param name="contentUri">Absolute URL of the content of the package.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>
+    /// The handle of the finished operation, whose state is terminal.
+    /// </returns>
+    /// <exception cref="PackageValidationFailedException">
+    /// The signed manifest of the package is not trustworthy, or it declares a schema
+    /// version that the client does not support. Nothing was written on disk.
+    /// </exception>
+    public async Task<DownloadOperationHandle> DownloadFullPackageAsync(
+        string packageId,
+        Uri contentUri,
+        CancellationToken cancellationToken)
+    {
+        var handle = await StartAsync(packageId, contentUri, cancellationToken)
+            .ConfigureAwait(false);
+
+        // La operación corre en segundo plano, así que la actualización ESPERA a que
+        // llegue a su estado terminal: el instalador sólo puede leer los bytes cuando la
+        // descarga terminó y su `sha256` coincidió (AD-8, AC1).
+        await handle.WaitForActiveRunAsync().ConfigureAwait(false);
+
+        return handle;
+    }
+
+    /// <summary>
+    /// Recovers the download operations that survived a restart of the machine
+    /// (AC2, AC3, AD-11, AD-20, AD-24, SM-2).
     /// </summary>
     /// <param name="contentUriResolver">
     /// Resolver of the absolute URL of the content of a package, because the url NO vive en
