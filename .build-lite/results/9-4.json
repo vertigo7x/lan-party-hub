@@ -1,0 +1,42 @@
+{
+  "story": "9-4-diagn\u00c3\u00b3stico-correlacionado-en-el-cliente",
+  "base": "597b51776fe3b4ee30a70ebe32cf2f0c04c7bbca",
+  "risk": [
+    "instalaci\u00f3n",
+    "red o host",
+    "persistencia",
+    "contrato compartido"
+  ],
+  "paths": [
+    "_bmad-output/implementation-artifacts/deferred-work.md",
+    "_bmad-output/planning-artifacts/architecture/architecture-lan-party-hub-2026-10-26/ARCHITECTURE-SPINE.md",
+    "src/Client/App.cs",
+    "src/Client/Application/Diagnostics/RecordClientError.cs",
+    "src/Client/Application/Downloads/DownloadCoordinator.cs",
+    "src/Client/Application/GameLauncher/GameLaunchService.cs",
+    "src/Client/Application/Install/InstallationCoordinator.cs",
+    "src/Client/Application/PersistedClientError.cs",
+    "src/Client/Application/Ports/IClientStatePublisher.cs",
+    "src/Client/Application/Ports/IClientStateStore.cs",
+    "src/Client/Host/ClientRegistrationComposition.cs",
+    "src/Client/Host/DownloadComposition.cs",
+    "src/Client/Host/GameLauncherComposition.cs",
+    "src/Client/Host/InstallationComposition.cs",
+    "src/Client/Infrastructure/Networking/ClientStateHubPublisher.cs",
+    "src/Client/Infrastructure/Persistence/ClientStateDbContext.cs",
+    "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+    "src/Client/Infrastructure/Persistence/Entities/ClientErrorEntity.cs",
+    "src/Client/Infrastructure/Persistence/Migrations/20261111081500_ClientErrorRegister.Designer.cs",
+    "src/Client/Infrastructure/Persistence/Migrations/20261111081500_ClientErrorRegister.cs",
+    "src/Client/Infrastructure/Persistence/Migrations/ClientStateDbContextModelSnapshot.cs",
+    "src/Client/Presentation/Design/DesignTokens.cs",
+    "src/Client/Presentation/Diagnostics/DiagnosticsLogView.cs",
+    "src/Client/Presentation/Diagnostics/DiagnosticsLogViewModel.cs",
+    "src/Client/Presentation/MainWindow.cs",
+    "src/Client/Program.cs",
+    "src/Shared/Contracts/OperationTypeNames.cs",
+    "tests/IntegrationTests/ClientDiagnosticsCorrelationTests.cs",
+    "tests/UnitTests/DiagnosticsLogViewModelTests.cs"
+  ],
+  "state": "complete"
+}

@@ -7,6 +7,7 @@ using LANPartyHub.Client.Application.CatalogSync;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.Diagnostics;
 using LANPartyHub.Client.Presentation.Library;
 using LANPartyHub.Client.Presentation.Status;
 
@@ -38,6 +39,7 @@ public sealed class MainWindow : Window
     private readonly CatalogSurface? _catalogSurface;
     private readonly LibrarySurface? _librarySurface;
     private readonly ConnectionStatusPanel? _statusPanel;
+    private readonly DiagnosticsLogView? _diagnosticsView;
 
     /// <summary>
     /// Creates the main window of the client.
@@ -65,13 +67,18 @@ public sealed class MainWindow : Window
     /// Surface of the Biblioteca of the player, or <c>null</c> when the window is built
     /// without it (AC8).
     /// </param>
+    /// <param name="diagnosticsView">
+    /// The VISOR de diagnóstico del cliente, or <c>null</c> when the window is built
+    /// without it (AC1, NFR-7).
+    /// </param>
     public MainWindow(
         ClientSettings? settings = null,
         Func<Task>? onSynchronizeNow = null,
         CatalogSurface? catalogSurface = null,
         ConnectionSurface? connectionSurface = null,
         ConnectionStatusPanel? statusPanel = null,
-        LibrarySurface? librarySurface = null)
+        LibrarySurface? librarySurface = null,
+        DiagnosticsLogView? diagnosticsView = null)
     {
         Title = "LAN Party Hub";
         Width = 1280;
@@ -124,6 +131,7 @@ public sealed class MainWindow : Window
         _catalogSurface = catalogSurface;
         _librarySurface = librarySurface;
         _statusPanel = statusPanel;
+        _diagnosticsView = diagnosticsView;
 
         var content = new StackPanel
         {
@@ -147,6 +155,27 @@ public sealed class MainWindow : Window
         }
 
         layout.Children.Add(content);
+
+        // AC1, NFR-7: el VISOR de diagnóstico vive en la sección de «Configuración y
+        // diagnóstico» de la ventana, junto al directorio de instalación, así que el
+        // equipo ve los errores que su cliente registró sin salir de la aplicación.
+        if (diagnosticsView is not null)
+        {
+            layout.Children.Add(new StackPanel
+            {
+                Spacing = 4,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Configuración y diagnóstico",
+                        FontSize = DesignTokens.TitleFontSize,
+                        FontWeight = FontWeight.SemiBold,
+                    },
+                    diagnosticsView,
+                },
+            });
+        }
 
         // La superficie del catálogo vive DEBAJO del aviso de sincronización: el aviso no
         // bloquea la navegación y la superficie del catálogo tampoco (AC3, UX-DR-32).
@@ -232,6 +261,12 @@ public sealed class MainWindow : Window
     /// built without it (AC8).
     /// </summary>
     public LibrarySurface? LibrarySurface => _librarySurface;
+
+    /// <summary>
+    /// The VISOR de diagnóstico del cliente, or <c>null</c> when the window is built
+    /// without it (AC1, NFR-7).
+    /// </summary>
+    public DiagnosticsLogView? DiagnosticsView => _diagnosticsView;
 
     /// <summary>
     /// The notice of the pending synchronization of the catalog, or <c>null</c> when the

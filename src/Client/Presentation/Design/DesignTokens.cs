@@ -119,6 +119,72 @@ public static class DesignTokens
     public static readonly Color BorderHairline = Color.FromRgb(0x28, 0x2C, 0x37);
 
     /// <summary>
+    /// Variante CLARA del fondo de la ventana, para las pocas superficies que la
+    /// necesitan —el visor de logs y el detalle de un juego en modo claro— (DESIGN,
+    /// UX-DR-41).
+    /// </summary>
+    public static readonly Color SurfaceBaseLight = Color.FromRgb(0xF7, 0xF8, 0xFA);
+
+    /// <summary>
+    /// Variante CLARA de la superficie elevada, para las pocas superficies que la
+    /// necesitan (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color SurfaceRaisedLight = Color.FromRgb(0xFF, 0xFF, 0xFF);
+
+    /// <summary>
+    /// Variante CLARA de la tinta principal, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color InkPrimaryLight = Color.FromRgb(0x14, 0x16, 0x1C);
+
+    /// <summary>
+    /// Variante CLARA de la tinta secundaria, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color InkSecondaryLight = Color.FromRgb(0x5A, 0x61, 0x72);
+
+    /// <summary>
+    /// Variante CLARA del verde de la LAN, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color StateSuccessLight = Color.FromRgb(0x12, 0x7A, 0x57);
+
+    /// <summary>
+    /// Variante CLARA del azul de la acción, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color AccentActionLight = Color.FromRgb(0x2F, 0x5F, 0xE0);
+
+    /// <summary>
+    /// Variante CLARA del borde de hairline, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color BorderHairlineLight = Color.FromRgb(0xE2, 0xE5, 0xEB);
+
+    /// <summary>
+    /// Variante CLARA del ámbar de la advertencia, para las pocas superficies que la
+    /// necesitan (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color StateWarningLight = Color.FromRgb(0x8A, 0x5A, 0x00);
+
+    /// <summary>
+    /// Variante CLARA del rojo de peligro, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color StateDangerLight = Color.FromRgb(0xC0, 0x26, 0x2E);
+
+    /// <summary>
+    /// Whether the DEFAULT theme of the client is the DARK one (DESIGN, UX-DR-1, UX-DR-41).
+    ///
+    /// <para>
+    /// El modo oscuro es el PREDETERMINADO del cliente: la variante clara existe para las
+    /// pocas superficies que la necesitan, así que no se aplica por defecto a ninguna
+    /// (UX-DR-41).
+    /// </para>
+    /// </summary>
+    public const bool IsDarkThemeTheDefault = true;
+
+    /// <summary>
     /// Color of the badge of a derived view state (AC3).
     ///
     /// <para>

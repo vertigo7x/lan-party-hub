@@ -21,4 +21,15 @@ public static class OperationTypeNames
 
     /// <summary>Name of the kind of operation of an INSTALLATION of a package.</summary>
     public const string Installation = "installation";
+
+    /// <summary>
+    /// Name of the kind of operation of a LAUNCH of an installed videogame (AC2).
+    ///
+    /// <para>
+    /// El lanzamiento es una UNIDAD DE TRABAJO del cliente, así que su error lleva el
+    /// mismo identificador de operación que las demás, y el visor de diagnóstico puede
+    /// ASOCIARLO al tipo de operación que lo produjo (AD-23).
+    /// </para>
+    /// </summary>
+    public const string Launch = "launch";
 }

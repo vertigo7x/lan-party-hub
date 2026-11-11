@@ -1,6 +1,7 @@
 using Avalonia;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.Clients;
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Host;
 using LANPartyHub.Client.Infrastructure.Configuration;
@@ -51,6 +52,7 @@ public static class Program
         DialogPrivilegedOperationConfirmation? privilegedConfirmation = null;
         ClientStateHubPublisher? statePublisher = null;
         ClientStateStoreLease? stateStoreLease = null;
+        RecordClientError? errorRecorder = null;
 
         try
         {
@@ -94,6 +96,25 @@ public static class Program
             // complemento del cliente y no su motivo de vida (AD-1).
             statePublisher = OpenStatePublisher(startup, loggerFactory);
 
+            // AD-11: el alquiler del store se abre AQUÍ y se dispone al final de la
+            // sesión, así que el contexto sobre `state.sqlite` no queda retenido (AD-11).
+            //
+            // El store se abre ANTES que las instalaciones, las descargas y el lanzador,
+            // porque el REGISTRADOR de errores necesita escribir en él y el registrador es
+            // COMPARTIDO por las tres composiciones (AD-1, AD-11, NFR-7).
+            stateStoreLease = OpenClientStateStore(startup);
+
+            // AD-1, AD-11, AD-15, NFR-7: el REGISTRADOR de errores del cliente es el
+            // ÚNICO dueño del orden del diagnóstico: primero PERSISTE el error en la base
+            // de datos del cliente y después lo PUBLICA al servidor como
+            // `ClientErrorReported`. Un fallo del hub NO puede impedir la persistencia
+            // (AD-15).
+            //
+            // El registrador es COMPARTIDO por las descargas, las instalaciones y el
+            // lanzador, así que los tres registran sus errores con la misma regla y el
+            // mismo orden, y con los MISMOS identificadores de correlación (AD-23).
+            errorRecorder = OpenErrorRecorder(startup, stateStoreLease?.Store, statePublisher, loggerFactory);
+
             // AD-7, AD-8, AD-9, AC1: la composición de las instalaciones. El manifiesto
             // firmado se pide al servidor, su firma se valida contra el ancla ya fijada y
             // SOLO después se crea el directorio de instalación (AC1, AC3).
@@ -113,7 +134,8 @@ public static class Program
                 correlationScope,
                 loggerFactory,
                 privilegedConfirmation,
-                statePublisher);
+                statePublisher,
+                errorRecorder);
 
             // AD-5, AD-26: la composición de la sincronización del catálogo vive mientras
             // vive la ventana del jugador, porque la sincronización tiene que reaccionar al
@@ -135,11 +157,6 @@ public static class Program
             // AD-22: el registro publica el estado REAL del cliente —las instalaciones
             // que tiene y las operaciones en curso—, así que recibe el store local y la
             // fuente de las instalaciones en curso (AD-18, AD-22).
-            //
-            // AD-11: el alquiler del store se abre AQUÍ y se dispone al final de la
-            // sesión, así que el contexto sobre `state.sqlite` no queda retenido (AD-11).
-            stateStoreLease = OpenClientStateStore(startup);
-
             registration = OpenRegistration(
                 startup,
                 correlationScope,
@@ -147,7 +164,8 @@ public static class Program
                 statePublisher: statePublisher,
                 stateStore: stateStoreLease?.Store,
                 activeInstallations: installations?.ActiveInstallations,
-                connectionPublisher: statePublisher);
+                connectionPublisher: statePublisher,
+                errorRecorder: errorRecorder);
 
             // AD-22, FR-10: la publicación del estado COMPLETO se ENLAZA TARDE, después de
             // que existan las dos composiciones. El registro necesita al tracker como
@@ -187,7 +205,8 @@ public static class Program
                 correlationScope,
                 loggerFactory,
                 connection,
-                statePublisher);
+                statePublisher,
+                errorRecorder);
 
             // AD-22, FR-10: la publicación del estado COMPLETO se ENLAZA TARDE al
             // coordinador de las descargas, así que una descarga que EMPIEZA o que
@@ -208,7 +227,7 @@ public static class Program
             // servidor para arrancar: lee la instalación que el cliente ya registró y el
             // manifiesto firmado que ya está en la caché local, así que un cliente sin
             // servidor puede lanzar lo que ya tiene instalado (AD-3, AD-19).
-            gameLauncher = OpenGameLauncher(startup, loggerFactory);
+            gameLauncher = OpenGameLauncher(startup, loggerFactory, errorRecorder);
 
             BuildAvaloniaApp(
                 startup.Settings,
@@ -399,7 +418,58 @@ public static class Program
             registration: registration)).UsePlatformDetect();
 
     /// <summary>
-    /// Runs the startup of the client and returns its outcome.
+    /// Opens the REGISTRADOR de errores del cliente (AD-1, AD-11, AD-15, AD-23, NFR-7).
+    ///
+    /// <para>
+    /// El registrador es el ÚNICO dueño del orden del diagnóstico: PERSISTE el error en la
+    /// base de datos del cliente y lo PUBLICA al servidor como
+    /// <c>ClientErrorReported</c>. La publicación NUNCA impide la persistencia, así que un
+    /// hub que no está no se lleva el diagnóstico (AD-15, AD-1).
+    /// </para>
+    /// <para>
+    /// El identificador del equipo lo emite el cliente una sola vez y lo persistió, así que
+    /// el registrador lo toma de ahí y no lo inventa (AD-23).
+    /// </para>
+    /// <para>
+    /// Sin store local NO hay registrador: el error se quedaría sin persistir, así que el
+    /// registro del diagnóstico es un complemento del cliente y no su motivo de vida
+    /// (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="startup">Outcome of the startup of the client.</param>
+    /// <param name="store">Access to the local database of the client.</param>
+    /// <param name="publisher">
+    /// Port of the publication of the ERROR al servidor, or <c>null</c> when the client
+    /// could not open it.
+    /// </param>
+    /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <returns>The recorder, or <c>null</c> when the client has no local database.</returns>
+    private static RecordClientError? OpenErrorRecorder(
+        ClientStartupResult startup,
+        IClientStateStore? store,
+        IClientErrorPublisher? publisher,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        if (store is null)
+        {
+            // Sin store local el error no se puede persistir, así que el registro del
+            // diagnóstico no puede existir: el cliente sigue operando (AD-1, AD-11).
+            return null;
+        }
+
+        return new RecordClientError(
+            store,
+            publisher,
+            new StartupClientIdentity(startup.Identity),
+            loggerFactory.CreateLogger<RecordClientError>());
+    }
+
+    /// <summary>
+    /// Builds the two columns of the window: the content and the persistent panel of the
+    /// connection (AC1).
     /// </summary>
     /// <param name="args">Command line arguments of the process; only <c>--server-address</c>, <c>--install-directory</c> and <c>--theme</c> are accepted.</param>
     /// <param name="correlationScope">
@@ -683,6 +753,12 @@ public static class Program
     /// Port of the publication of the CONNECTION state ALONE, para el cliente que no
     /// puede sostener una instantánea completa de su estado (AD-18, AD-22, AD-29).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors del cliente, or <c>null</c> when the client
+    /// does not register them. Sin registrador el error queda PERSISTIDO en la base de
+    /// datos del cliente y no se publica: la proyección es un complemento y no su
+    /// motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static ClientRegistrationComposition? OpenRegistration(
         ClientStartupResult startup,
@@ -692,7 +768,8 @@ public static class Program
         IClientStatePublisher? statePublisher = null,
         IClientStateStore? stateStore = null,
         IActiveInstallationSource? activeInstallations = null,
-        IClientConnectionPublisher? connectionPublisher = null)
+        IClientConnectionPublisher? connectionPublisher = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -747,7 +824,8 @@ public static class Program
                 stateStore,
                 activeInstallations,
                 connectionPublisher ?? ownedPublisher,
-                ownedPublisher);
+                ownedPublisher,
+                errorRecorder);
         }
         catch (Exception exception)
         {
@@ -798,6 +876,11 @@ public static class Program
     /// COMPARTIDO del estado del cliente, así que el progreso y el estado salen por la
     /// MISMA conexión con el hub y no pueden reordenarse (AD-22).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors de la descarga, or <c>null</c> when the client
+    /// does not register them. Sin registrador la descarga SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static DownloadComposition? OpenDownloads(
         ClientStartupResult startup,
@@ -805,7 +888,8 @@ public static class Program
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
         ConnectionComposition? connection = null,
-        ClientStateHubPublisher? progressReporter = null)
+        ClientStateHubPublisher? progressReporter = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(transfer);
@@ -857,7 +941,8 @@ public static class Program
                 startup.MaxConcurrentDownloads,
                 startup.MaxTotalConnections,
                 connection?.VersionProbe,
-                progressReporter);
+                progressReporter,
+                errorRecorder);
         }
         catch (Exception exception)
         {
@@ -901,13 +986,19 @@ public static class Program
     /// the client cannot publish it. Sin publicador la instalación SIGUE: la proyección
     /// es un complemento y no su motivo de vida (AD-1, AD-22).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors de la instalación, or <c>null</c> when the
+    /// client does not register them. Sin registrador la instalación SIGUE: el
+    /// diagnóstico es un complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static InstallationComposition? OpenInstallations(
         ClientStartupResult startup,
         IClientCorrelationScope correlationScope,
         ILoggerFactory loggerFactory,
         IPrivilegedOperationConfirmation? confirmation = null,
-        IInstallationProgressReporter? progressReporter = null)
+        IInstallationProgressReporter? progressReporter = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(correlationScope);
@@ -966,7 +1057,8 @@ public static class Program
                 loggerFactory,
                 confirmation,
                 snapshotStore,
-                progressReporter);
+                progressReporter,
+                errorRecorder);
         }
         catch (Exception exception)
         {
@@ -1001,10 +1093,16 @@ public static class Program
     /// </summary>
     /// <param name="startup">Outcome of the startup of the client.</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors del lanzamiento, or <c>null</c> when the client
+    /// does not register them. Sin registrador el lanzamiento SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     /// <returns>The composition, or <c>null</c> when it could not be opened.</returns>
     private static GameLauncherComposition? OpenGameLauncher(
         ClientStartupResult startup,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(startup);
         ArgumentNullException.ThrowIfNull(loggerFactory);
@@ -1039,7 +1137,8 @@ public static class Program
                 new CatalogSnapshotStore(context),
                 new ManifestCache(layout),
                 new InstallPathResolver(layout),
-                loggerFactory);
+                loggerFactory,
+                errorRecorder);
         }
         catch (Exception exception)
         {
@@ -1129,6 +1228,33 @@ public static class Program
             // There is no desktop to draw the window on, so the message stays in the log.
         }
     }
+}
+
+/// <summary>
+/// Source of the canonical identifier of the client, sobre la identidad que el ARRANQUE
+/// ya conoce (AD-23).
+///
+/// <para>
+/// El identificador lo emitió el cliente una sola vez y lo persistió, así que la raíz de
+/// composición lo entrega ya resuelto y ningún caso de uso lo inventa (AD-23).
+/// </para>
+/// </summary>
+internal sealed class StartupClientIdentity : ClientIdentityProvider
+{
+    /// <summary>Creates the source over the identity of the startup.</summary>
+    /// <param name="identity">Identity of the team.</param>
+    public StartupClientIdentity(LANPartyHub.Client.Domain.ClientIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        Identity = identity;
+    }
+
+    /// <summary>Identity of the team.</summary>
+    public LANPartyHub.Client.Domain.ClientIdentity Identity { get; }
+
+    /// <inheritdoc />
+    public string CanonicalId => Identity.CanonicalId;
 }
 
 /// <summary>

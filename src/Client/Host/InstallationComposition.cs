@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.CatalogSync;
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Install;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.Install;
@@ -60,9 +61,14 @@ namespace LANPartyHub.Client.Host;
         /// when the caller does.
         /// </param>
         /// <param name="progressReporter">
-        /// Port of the publication of the progress of the installation, or <c>null</c>
-        /// when the composition cannot publish it. Sin publicador la instalación SIGUE:
-        /// la proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+        /// Port of the publication of the progress of the installation, or <c>null</c> when
+        /// the client cannot publish it. Sin publicador la instalación SIGUE: la
+        /// proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+        /// </param>
+        /// <param name="errorRecorder">
+        /// Use case that REGISTERS the errors de la instalación, or <c>null</c> when the
+        /// client does not register them. Sin registrador la instalación SIGUE: el
+        /// diagnóstico es un complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
         /// </param>
         public InstallationComposition(
             ISignedManifestClient manifests,
@@ -76,7 +82,8 @@ namespace LANPartyHub.Client.Host;
             IPrivilegedOperationConfirmation? confirmation = null,
             ICatalogSnapshotStore? snapshots = null,
             HttpClient? httpClient = null,
-            IInstallationProgressReporter? progressReporter = null)
+            IInstallationProgressReporter? progressReporter = null,
+            RecordClientError? errorRecorder = null)
         {
             ArgumentNullException.ThrowIfNull(manifests);
             ArgumentNullException.ThrowIfNull(verifier);
@@ -143,7 +150,8 @@ namespace LANPartyHub.Client.Host;
                 Tree,
                 stateStore,
                 loggerFactory.CreateLogger<InstallationCoordinator>(),
-                ActiveInstallations);
+                ActiveInstallations,
+                errorRecorder);
         }
 
         /// <summary>
@@ -216,8 +224,13 @@ namespace LANPartyHub.Client.Host;
     /// </param>
     /// <param name="progressReporter">
     /// Port of the publication of the progress of the installation, or <c>null</c> when
-    /// the composition cannot publish it. Sin publicador la instalación SIGUE: la
-    /// proyección es un complemento y no su motivo de vida (AD-1, AD-22).
+    /// the client cannot publish it. Sin publicador la instalación SIGUE: la proyección
+    /// es un complemento y no su motivo de vida (AD-1, AD-22).
+    /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors de la instalación, or <c>null</c> when the
+    /// client does not register them. Sin registrador la instalación SIGUE: el
+    /// diagnóstico es un complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
     /// </param>
     /// <returns>The composition of the installations.</returns>
     public static InstallationComposition Create(
@@ -229,7 +242,8 @@ namespace LANPartyHub.Client.Host;
         ILoggerFactory loggerFactory,
         IPrivilegedOperationConfirmation? confirmation = null,
         ICatalogSnapshotStore? snapshots = null,
-        IInstallationProgressReporter? progressReporter = null)
+        IInstallationProgressReporter? progressReporter = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -263,7 +277,8 @@ namespace LANPartyHub.Client.Host;
             confirmation,
             snapshots,
             httpClient,
-            progressReporter);
+            progressReporter,
+            errorRecorder);
     }
 
     /// <inheritdoc />

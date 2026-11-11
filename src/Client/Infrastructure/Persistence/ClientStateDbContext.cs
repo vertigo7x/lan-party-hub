@@ -46,6 +46,9 @@ public sealed class ClientStateDbContext : DbContext
     /// <summary>Rows of the <c>TRUST_ANCHOR</c> table.</summary>
     public DbSet<TrustAnchorEntity> TrustAnchors => Set<TrustAnchorEntity>();
 
+    /// <summary>Rows of the <c>CLIENT_ERROR</c> table.</summary>
+    public DbSet<ClientErrorEntity> Errors => Set<ClientErrorEntity>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -121,6 +124,30 @@ public sealed class ClientStateDbContext : DbContext
             entity.Property(e => e.PublicKey).HasColumnName("publicKey").IsRequired();
             entity.Property(e => e.Fingerprint).HasColumnName("fingerprint").IsRequired();
             entity.Property(e => e.FixedAt).HasColumnName("fixedAt").IsRequired();
+        });
+
+        // AD-11, AD-15, AD-22, NFR-7: la tabla del REGISTRO de diagnóstico del cliente.
+        // La fila guarda el error COMPLETO —código, mensaje, causa y siguiente paso— junto
+        // con el <c>clientId</c> y el <c>operationId</c> que lo correlacionan con el log
+        // del servidor (AD-23).
+        //
+        // AD-22: la tabla NO se llama igual que ninguna del servidor: el servidor tiene
+        // su propia tabla de errores y el cliente tiene la SUYA, así que las dos bases de
+        // datos NO replican ninguna tabla la una de la otra.
+        modelBuilder.Entity<ClientErrorEntity>(entity =>
+        {
+            entity.ToTable("CLIENT_ERROR_REGISTER");
+            entity.HasKey(e => e.ErrorId);
+
+            entity.Property(e => e.ErrorId).HasColumnName("errorId").IsRequired();
+            entity.Property(e => e.ClientId).HasColumnName("clientId").IsRequired();
+            entity.Property(e => e.OperationId).HasColumnName("operationId").IsRequired();
+            entity.Property(e => e.OperationType).HasColumnName("operationType").IsRequired();
+            entity.Property(e => e.Code).HasColumnName("code").IsRequired();
+            entity.Property(e => e.Message).HasColumnName("message").IsRequired();
+            entity.Property(e => e.Cause).HasColumnName("cause").IsRequired();
+            entity.Property(e => e.NextStep).HasColumnName("nextStep").IsRequired();
+            entity.Property(e => e.OccurredAt).HasColumnName("occurredAt").IsRequired();
         });
     }
 }

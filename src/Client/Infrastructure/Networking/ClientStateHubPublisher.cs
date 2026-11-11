@@ -35,6 +35,7 @@ public sealed class ClientStateHubPublisher :
     IDownloadProgressReporter,
     IClientStatePublisher,
     IClientConnectionPublisher,
+    IClientErrorPublisher,
     IInstallationProgressReporter,
     IOperationOutcomeReporter,
     IAsyncDisposable
@@ -70,6 +71,12 @@ public sealed class ClientStateHubPublisher :
     /// (AD-18, AD-29).
     /// </summary>
     public const string ClientConnectionChangedMethodName = nameof(ClientConnectionChanged);
+
+    /// <summary>
+    /// Name of the method of the hub that receives the ERROR that the client registers
+    /// (AD-15, AD-18, AD-22).
+    /// </summary>
+    public const string ClientErrorReportedMethodName = nameof(ClientErrorReported);
 
     private readonly HubConnection _connection;
     private readonly ILogger<ClientStateHubPublisher> _logger;
@@ -221,6 +228,21 @@ public sealed class ClientStateHubPublisher :
             reported.ClientId,
             "el resultado de la operación",
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task PublishErrorAsync(
+        ClientErrorReported reported,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reported);
+
+        return InvokeAsync(
+            ClientErrorReportedMethodName,
+            reported,
+            reported.ClientId,
+            "el error del cliente",
+            cancellationToken);
     }
 
     /// <summary>

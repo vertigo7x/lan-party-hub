@@ -568,4 +568,107 @@ public sealed class ClientStateStore : IClientStateStore, ITrustAnchorReader
             InstallationFailuresDirectoryName,
             gameId + ".error");
     }
+
+    /// <inheritdoc />
+    public async Task SaveErrorAsync(PersistedClientError error, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentException.ThrowIfNullOrWhiteSpace(error.ErrorId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(error.ClientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(error.Code);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // AD-22: la escritura es IDEMPOTENTE por identificador, así que un reintento
+            // de la operación NO duplica el diagnóstico que el jugador ve.
+            var row = await _context.Errors
+                .FirstOrDefaultAsync(entity => entity.ErrorId == error.ErrorId, cancellationToken);
+
+            if (row is null)
+            {
+                _context.Errors.Add(new ClientErrorEntity
+                {
+                    ErrorId = error.ErrorId,
+                    ClientId = error.ClientId,
+                    OperationId = error.OperationId,
+                    OperationType = error.OperationType,
+                    Code = error.Code,
+                    Message = error.Message,
+                    Cause = error.Cause,
+                    NextStep = error.NextStep,
+                    OccurredAt = error.OccurredAt.ToUniversalTime().ToString("O"),
+                });
+            }
+            else
+            {
+                row.ClientId = error.ClientId;
+                row.OperationId = error.OperationId;
+                row.OperationType = error.OperationType;
+                row.Code = error.Code;
+                row.Message = error.Message;
+                row.Cause = error.Cause;
+                row.NextStep = error.NextStep;
+                row.OccurredAt = error.OccurredAt.ToUniversalTime().ToString("O");
+            }
+
+            await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PersistedClientError>> LoadErrorsAsync(
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var rows = await _context.Errors
+                .AsNoTracking()
+                .OrderBy(entity => entity.OccurredAt)
+                .ThenBy(entity => entity.ErrorId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var errors = new List<PersistedClientError>(rows.Count);
+
+            foreach (var row in rows)
+            {
+                // El instante persistido es ISO-8601 en UTC: una fila cuyo instante no se
+                // puede leer NO se inventa, así que el visor la salta en lugar de mostrar
+                // una fecha falsa (AD-25).
+                if (!DateTimeOffset.TryParse(
+                        row.OccurredAt,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.RoundtripKind,
+                        out var occurredAt))
+                {
+                    continue;
+                }
+
+                errors.Add(new PersistedClientError(
+                    row.ErrorId,
+                    row.ClientId,
+                    row.OperationId,
+                    row.OperationType,
+                    row.Code,
+                    row.Message,
+                    row.Cause,
+                    row.NextStep,
+                    occurredAt));
+            }
+
+            return errors;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 }

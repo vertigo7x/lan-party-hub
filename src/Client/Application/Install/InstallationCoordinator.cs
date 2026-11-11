@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.Install;
 using LANPartyHub.Client.Domain.StateMachines;
@@ -248,6 +249,7 @@ public sealed class InstallationCoordinator
     private readonly IInstallTreeWriter _tree;
     private readonly IClientStateStore _stateStore;
     private readonly ActiveInstallations? _activeInstallations;
+    private readonly RecordClientError? _errorRecorder;
     private readonly ILogger<InstallationCoordinator> _logger;
 
     /// <summary>Raised when the progress of an installation changes (AC4).</summary>
@@ -279,6 +281,11 @@ public sealed class InstallationCoordinator
     /// does not track them. Con tracker, la FASE REAL de la operación se publica al
     /// servidor y la tabla del organizador la muestra (AD-22, FR-10).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors de la instalación, or <c>null</c> when the
+    /// client does not register them. Sin registrador la instalación SIGUE: el
+    /// diagnóstico es un complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public InstallationCoordinator(
         ISignedManifestClient manifests,
         IManifestSignatureVerifier verifier,
@@ -289,7 +296,8 @@ public sealed class InstallationCoordinator
         IInstallTreeWriter tree,
         IClientStateStore stateStore,
         ILogger<InstallationCoordinator> logger,
-        ActiveInstallations? activeInstallations = null)
+        ActiveInstallations? activeInstallations = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(manifests);
         ArgumentNullException.ThrowIfNull(verifier);
@@ -311,6 +319,7 @@ public sealed class InstallationCoordinator
         _stateStore = stateStore;
         _logger = logger;
         _activeInstallations = activeInstallations;
+        _errorRecorder = errorRecorder;
     }
 
     /// <summary>
@@ -393,10 +402,12 @@ public sealed class InstallationCoordinator
         {
             await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
 
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.ManifestSignatureInvalidCode,
                 $"El servidor no sirvió un manifiesto firmado para el paquete '{packageId}'.",
-                packageId);
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // PASO 2: verificar la firma y la versión del esquema (AD-8).
@@ -409,10 +420,12 @@ public sealed class InstallationCoordinator
             // instalación, ni parcial, ni fila (AD-8, AC3, AD-27).
             await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
 
-            return Reject(
+            return await RejectAsync(
                 verification.Error.Code,
                 verification.Reason!,
-                packageId);
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
         }
 
         var manifest = verification.Manifest!;
@@ -451,10 +464,12 @@ public sealed class InstallationCoordinator
 
             await PublishFailurePhaseAsync(trackedOperation).ConfigureAwait(false);
 
-            return Reject(
+            return await RejectAsync(
                 integrity.Error!.Code,
                 $"{integrity.Reason} El archivo parcial se descarta y la operación no se puede reanudar.",
-                packageId);
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // AC1: una instalación YA VÁLIDA de la MISMA versión NO repite operaciones. La
@@ -541,10 +556,12 @@ public sealed class InstallationCoordinator
                 trackedOperation,
                 cancellationToken).ConfigureAwait(false);
 
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
                 exception.Message,
-                packageId);
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -581,10 +598,12 @@ public sealed class InstallationCoordinator
                 trackedOperation,
                 cancellationToken).ConfigureAwait(false);
 
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.InstallOperationFailedCode,
                 $"La instalación del juego '{gameId}' falló al aplicar el manifiesto: {exception.Message}",
-                packageId);
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // AD-9: la ruta que salió de la raíz se registra con su forma CANÓNICA, que es
@@ -1435,11 +1454,27 @@ public sealed class InstallationCoordinator
     /// <summary>
     /// Builds the rejection of an operation, with its cause (AC2, NFR-5).
     ///
+    /// <para>
+    /// El rechazo queda REGISTRADO en el registro de diagnóstico del cliente, con su
+    /// código y sus tres partes, y ASOCIADO a la operación que lo produjo (AD-11, AD-15,
+    /// AC2, NFR-7).
+    /// </para>
+    /// </summary>
     /// <param name="code">Stable code of the error of the catalog.</param>
     /// <param name="reason">Human readable reason of the rejection.</param>
     /// <param name="packageId">Opaque identifier of the package.</param>
-    /// <returns>The result of the rejection.</returns>
-    private InstallationResult Reject(string code, string reason, string packageId)
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the result of the rejection.</returns>
+    private async Task<InstallationResult> RejectAsync(
+        string code,
+        string reason,
+        string packageId,
+        string? trackedOperation,
+        CancellationToken cancellationToken)
     {
         var error = ErrorCatalog.Resolve(code);
 
@@ -1449,7 +1484,55 @@ public sealed class InstallationCoordinator
             code,
             reason);
 
+        // AD-1, AD-11: el registro del diagnóstico NUNCA impide que la instalación
+        // siga: el error queda persistido en el cliente y un fallo del registrador se
+        // anota y se continúa (NFR-7).
+        await RecordErrorAsync(error, trackedOperation, cancellationToken).ConfigureAwait(false);
+
         return InstallationResult.Rejected(error, reason);
+    }
+
+    /// <summary>
+    /// REGISTERS an error de la instalación en el registro de diagnóstico del cliente
+    /// (AD-11, AD-15, NFR-7, AC2).
+    ///
+    /// <para>
+    /// El registro NUNCA impide que la instalación siga: el diagnóstico es un complemento
+    /// y no su motivo de vida, así que un fallo del registrador se anota y la operación
+    /// continúa (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="error">Error of the catalog that explains the failure.</param>
+    /// <param name="trackedOperation">
+    /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
+    /// the installation (AD-22).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the error has been registered, or has failed.</returns>
+    private async Task RecordErrorAsync(
+        ApiError error,
+        string? trackedOperation,
+        CancellationToken cancellationToken)
+    {
+        if (_errorRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _errorRecorder
+                .RecordAsync(error, trackedOperation, OperationTypeNames.Installation, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "No se pudo registrar el error {Code} de la operación {OperationId} en el registro de diagnóstico del cliente.",
+                error.Code,
+                trackedOperation);
+        }
     }
 
     /// <summary>

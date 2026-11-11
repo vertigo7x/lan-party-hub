@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Integrity;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.StateMachines;
@@ -61,6 +62,7 @@ public sealed class DownloadCoordinator
     private readonly IDownloadProgressReporter? _reporter;
     private readonly IServerVersionProbe? _versionProbe;
     private readonly ValidatePackage? _validation;
+    private readonly RecordClientError? _errorRecorder;
     private IClientStateChangeNotifier? _stateNotifier;
     private readonly ILogger<DownloadCoordinator> _logger;
     private readonly int _maxConcurrentDownloads;
@@ -116,6 +118,11 @@ public sealed class DownloadCoordinator
     /// client does not publish it. Sin avisador la descarga SIGUE: la proyección es un
     /// complemento y no su motivo de vida (AD-1, AD-22).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors of la descarga, or <c>null</c> when the client
+    /// does not register them. Sin registrador la descarga SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public DownloadCoordinator(
         ITransferEngine engine,
         IDownloadIntentClient intents,
@@ -127,7 +134,8 @@ public sealed class DownloadCoordinator
         int maxTotalConnections = DefaultMaxTotalConnections,
         IDownloadProgressReporter? reporter = null,
         IServerVersionProbe? versionProbe = null,
-        IClientStateChangeNotifier? stateNotifier = null)
+        IClientStateChangeNotifier? stateNotifier = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(intents);
@@ -157,6 +165,7 @@ public sealed class DownloadCoordinator
         _versionProbe = versionProbe;
         _validation = validation;
         _stateNotifier = stateNotifier;
+        _errorRecorder = errorRecorder;
         _logger = logger;
         _maxConcurrentDownloads = maxConcurrentDownloads;
         _maxTotalConnections = maxTotalConnections;
@@ -249,6 +258,16 @@ public sealed class DownloadCoordinator
                 _logger.LogWarning(
                     "El manifiesto firmado del paquete {PackageId} no ha superado la validación de autenticidad: no se registra ninguna operación y no se escribe nada en disco.",
                     packageId);
+
+                // AD-11, NFR-7, AC2: el fallo queda REGISTRADO en el registro de
+                // diagnóstico del cliente. La operación todavía NO existe, así que el
+                // error no va asociado a un `operationId`: lo que se conserva es el
+                // código y sus tres partes (AD-23).
+                await RecordErrorAsync(
+                    authenticity.Error ?? ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode),
+                    null,
+                    OperationTypeNames.Download,
+                    cancellationToken).ConfigureAwait(false);
 
                 throw new PackageValidationFailedException(packageId, authenticity);
             }
@@ -843,6 +862,15 @@ public sealed class DownloadCoordinator
                 handle.OperationId,
                 handle.PackageId);
 
+            // AD-11, NFR-7, AC2: el fallo queda REGISTRADO en el registro de diagnóstico
+            // del cliente, con su código y sus tres partes, y ASOCIADO a la operación
+            // que lo produjo (AD-23).
+            await RecordErrorAsync(
+                ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode),
+                handle.OperationId,
+                OperationTypeNames.Download,
+                cancellationToken).ConfigureAwait(false);
+
             handle.StateMachine.TryTransitionTo(DownloadState.Failed);
 
             await PersistStateAsync(handle).ConfigureAwait(false);
@@ -950,6 +978,14 @@ public sealed class DownloadCoordinator
 
             handle.SetValidationError(ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode));
 
+            // AD-11, NFR-7, AC2: el fallo queda REGISTRADO en el registro de diagnóstico
+            // del cliente, con su código y sus tres partes (AD-15, AD-23).
+            await RecordErrorAsync(
+                ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode),
+                handle.OperationId,
+                OperationTypeNames.Download,
+                cancellationToken).ConfigureAwait(false);
+
             handle.StateMachine.TryTransitionTo(DownloadState.Failed);
 
             await PersistStateAsync(handle).ConfigureAwait(false);
@@ -983,6 +1019,15 @@ public sealed class DownloadCoordinator
         // diferenciada sin adivinar y el alta de la instalación queda bloqueada con un
         // motivo visible (AC1, AC3).
         handle.SetValidationError(result.Error ?? ErrorCatalog.Resolve(ErrorCatalog.UnknownErrorCode));
+
+        // AD-11, NFR-7, AC2: el fallo queda REGISTRADO en el registro de diagnóstico del
+        // cliente, con su código y sus tres partes, y ASOCIADO a la operación que lo
+        // produjo (AD-15, AD-23).
+        await RecordErrorAsync(
+            handle.ValidationError!,
+            handle.OperationId,
+            OperationTypeNames.Download,
+            cancellationToken).ConfigureAwait(false);
 
         if (result.IsCorrupted)
         {
@@ -1079,6 +1124,51 @@ public sealed class DownloadCoordinator
                 exception,
                 "No se pudo persistir el estado de la operaciÃ³n {OperationId}.",
                 handle.OperationId);
+        }
+    }
+
+    /// <summary>
+    /// REGISTERS an error of la descarga en el registro de diagnóstico del cliente
+    /// (AD-11, AD-15, NFR-7, AC2).
+    ///
+    /// <para>
+    /// El registro NUNCA impide que la descarga siga: el diagnóstico es un complemento y
+    /// no su motivo de vida, así que un fallo del registrador se anota y la operación
+    /// continúa (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="error">Error of the catalog that explains the failure.</param>
+    /// <param name="operationId">
+    /// Identifier of the operation that failed, or <c>null</c> when the error is not bound
+    /// to one (AD-23).
+    /// </param>
+    /// <param name="operationType">Kind of operation that produced the error (AC2).</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the error has been registered, or has failed.</returns>
+    private async Task RecordErrorAsync(
+        ApiError error,
+        string? operationId,
+        string operationType,
+        CancellationToken cancellationToken)
+    {
+        if (_errorRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _errorRecorder
+                .RecordAsync(error, operationId, operationType, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "No se pudo registrar el error {Code} de la operación {OperationId} en el registro de diagnóstico del cliente.",
+                error.Code,
+                operationId);
         }
     }
 

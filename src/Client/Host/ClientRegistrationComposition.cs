@@ -1,5 +1,6 @@
 using LANPartyHub.Client.Application.Clients;
 using LANPartyHub.Client.Application.Connection;
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain;
 using LANPartyHub.Client.Infrastructure;
@@ -40,6 +41,7 @@ public sealed class ClientRegistrationComposition : IDisposable
     private readonly ClientStateHubPublisher? _ownedPublisher;
     private readonly IClientStateStore? _stateStore;
     private readonly IActiveInstallationSource? _activeInstallations;
+    private readonly RecordClientError? _errorRecorder;
     private readonly Lock _connectionStateGate = new();
 
     private ConnectionState _lastConnectionState = ConnectionState.Disconnected;
@@ -73,6 +75,12 @@ public sealed class ClientRegistrationComposition : IDisposable
     /// client cannot publish it. Sin publicador la conexión NO se comunica por separado:
     /// el servidor la conoce por la vía del REGISTRO (AD-29, AD-32).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors del cliente, or <c>null</c> when the client
+    /// does not register them. Sin registrador el error queda PERSISTIDO en la base de
+    /// datos del cliente y no se publica: la proyección es un complemento y no su
+    /// motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public ClientRegistrationComposition(
         Uri serverAddress,
         IClientRequestHeaders headers,
@@ -83,7 +91,8 @@ public sealed class ClientRegistrationComposition : IDisposable
         IClientStateStore? stateStore = null,
         IActiveInstallationSource? activeInstallations = null,
         IClientConnectionPublisher? connectionPublisher = null,
-        ClientStateHubPublisher? ownedPublisher = null)
+        ClientStateHubPublisher? ownedPublisher = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -99,6 +108,14 @@ public sealed class ClientRegistrationComposition : IDisposable
         _ownedPublisher = ownedPublisher;
         _stateStore = stateStore;
         _activeInstallations = activeInstallations;
+
+        // AD-1, AD-11, NFR-7: el registrador de errores del cliente es COMPARTIDO por las
+        // descargas, las instalaciones y el lanzador, así que los tres registran sus
+        // errores con la MISMA regla y el mismo orden. La composición lo recibe ya
+        // construido por la raíz de composición, que es la que tiene la identidad del
+        // equipo y el publicador del hub (AD-15).
+        _errorRecorder = errorRecorder;
+
         // AD-6: la versión del cliente es la del binario que se está ejecutando y la
         // versión del protocolo es la constante del contrato compartido.
         var versions = new ClientBuildVersion();
@@ -133,6 +150,29 @@ public sealed class ClientRegistrationComposition : IDisposable
 
     /// <summary>Log of the registration of the client.</summary>
     public ILogger Logger { get; }
+
+    /// <summary>
+    /// The use case that REGISTERS the errors del cliente, or <c>null</c> when the
+    /// client has no access to its local database (AD-11, NFR-7).
+    ///
+    /// <para>
+    /// El registrador es COMPARTIDO por las descargas, las instalaciones y el lanzador,
+    /// así que los tres registran sus errores con la misma regla y el mismo orden
+    /// (AD-1, AD-15).
+    /// </para>
+    /// </summary>
+    public RecordClientError? ErrorRecorder => _errorRecorder;
+
+    /// <summary>
+    /// The access to the local database of the client, or <c>null</c> when the client
+    /// could not open it (AD-11).
+    ///
+    /// <para>
+    /// El visor de diagnóstico LEE el registro de errores de este store, así que la
+    /// lectura es LOCAL y nunca va al servidor (AD-22, NFR-7).
+    /// </para>
+    /// </summary>
+    public IClientStateStore? StateStore => _stateStore;
 
     /// <summary>
     /// The LAST connection state that the client DECLARED, así que una publicación que
