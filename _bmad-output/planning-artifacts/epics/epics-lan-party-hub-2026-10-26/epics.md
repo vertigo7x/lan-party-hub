@@ -3185,6 +3185,70 @@ cero
 progreso persistido
 *(FR-8, NFR-9, UX-DR-34)*.
 
+### Story 10.4: Raíz de instalación por juego
+
+Como jugador de LAN,
+quiero que la instalación de cada juego tenga su propia raíz en disco,
+so que actualizar un juego no arrase las demás instalaciones de mi biblioteca.
+
+**Dependencias:**
+
+- **Story 7.1** — reglas de reparabilidad `Repairable` y su condición de no reparabilidad
+- **Story 10.2** — actualización a versión completa (sustitución de la raíz por cambio de nombre)
+
+**Casos de error:**
+
+Una raíz por juego que se mueve o que se sustituye no puede arrastrar a las demás: la sustitución
+de un juego **no** puede tocar el árbol de otro, ni siquiera si comparten volumen.
+
+**Pruebas necesarias:**
+
+**Integración.** La coexistencia de dos juegos en el mismo cliente, y la actualización de uno de
+ellos, exigen dos instalaciones reales en el mismo disco: una biblioteca con un solo juego no
+revela que la sustitución es de raíz y no de juego.
+
+**Condiciones de finalización:**
+
+Todos sus criterios de aceptación están implementados y en verde, el nivel de prueba indicado en «Pruebas necesarias» pasa, y no queda abierto ningún hallazgo S0 ni S1 de esta historia (docs/plan.md §8).
+
+**Acceptance Criteria:**
+
+**Given** un cliente con dos juegos instalados,
+**When** se actualiza uno de ellos,
+**Then** el árbol del otro juego sigue en disco, en su raíz, y su instalación sigue siendo válida
+*(FR-8, FR-11, AD-9)*.
+
+**Given** un cliente con dos juegos instalados,
+**When** se inspecciona la biblioteca,
+**Then** cada instalación expone la raíz **propia** de su juego, y la raíz efectiva se deriva del
+juego y no de una única carpeta compartida
+*(FR-8, AD-9, AD-10)*.
+
+**Given** una instalación de un juego,
+**When** se sustituye su raíz por una versión nueva,
+**Then** la sustitución por cambio de nombre ocurre **dentro** de la raíz de ese juego, y la raíz
+hermana de preparación y la de sustitución viven al lado de la de ese juego, nunca al lado de la
+de otro
+*(FR-11, AD-9, AC4)*.
+
+**Given** una escritura de instalación,
+**When** se resuelve su ruta,
+**Then** se resuelve contra la raíz del juego que se está instalando, y el confine se comprueba
+contra ESA raíz, de modo que ningún juego puede escribir en la raíz de otro
+*(FR-8, NFR-5, AD-9)*.
+
+**Given** un cliente con instalaciones de varios juegos,
+**When** se borra o repara una de ellas,
+**Then** las demás instalaciones no se ven afectadas: no hay ninguna operación sobre la raíz de un
+juego que toque el árbol de otro
+*(FR-8, FR-11)*.
+
+**Given** el modelo de datos de las instalaciones del cliente,
+**When** se persiste el estado de dos juegos distintos,
+**Then** cada fila guarda la raíz **de su juego**, y el identificador del directorio de instalación
+deja de ser el mismo para todos los juegos del cliente
+*(FR-8, AD-10, AD-22)*.
+
 ## Epic 11: La interfaz cumple su contrato visual, de accesibilidad y de escritorio
 
 La interfaz del cliente y del servidor es coherente con el contrato visual aprobado, es operable

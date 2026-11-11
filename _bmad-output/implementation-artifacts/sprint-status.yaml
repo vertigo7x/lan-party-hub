@@ -96,6 +96,7 @@ development_status:
   10-1-detección-de-versión-desactualizada: done
   10-2-actualización-a-versión-completa: backlog
   10-3-reparación-de-una-instalación-interrumpida: backlog
+  10-4-raíz-de-instalación-por-juego: backlog
   epic-10-retrospective: optional
 
   epic-11: backlog

@@ -146,10 +146,11 @@ Los módulos se comunican por **contratos en `Shared` y casos de uso publicados*
 ### AD-9 — Confines de extracción dentro del directorio autorizado
 
 - **Binds:** FR-8, NFR-5, AD-7
-- **Prevents:** path traversal; escritura o extracción fuera del directorio de instalación configurado.
-- **Rule:** Toda escritura de instalación se resuelve contra la **raíz del directorio de instalación configurado** y se verifica que la ruta resultante quede dentro. La comprobación se hace sobre la **ruta canónica resuelta** (tras resolver enlaces simbólicos) y se repite **antes de cada escritura**, no solo al inicio. El manifiesto **no admite rutas absolutas**; toda ruta es relativa a la raíz de instalación. Un destino fuera de la raíz se rechaza y se registra.
+- **Prevents:** path traversal; escritura o extracción fuera del directorio de instalación del juego; que la instalación de un juego afecte a la de otro.
+- **Rule:** Toda escritura de instalación se resuelve contra la **raíz del directorio de instalación del JUEGO que se instala**, y se verifica que la ruta resultante quede dentro de ESA raíz. La raíz efectiva se **deriva del juego**: un cliente con varios juegos tiene una raíz por juego, de modo que la instalación de un juego nunca puede escribir en la raíz de otro. La comprobación se hace sobre la **ruta canónica resuelta** (tras resolver enlaces simbólicos) y se repite **antes de cada escritura**, no solo al inicio. El manifiesto **no admite rutas absolutas**; toda ruta es relativa a la raíz del juego. Un destino fuera de la raíz se rechaza y se registra.
   - **Layout en disco del cliente (directorios con nombre y propósito).** Bajo `%LOCALAPPDATA%\LanPartyHub` (AD-17):
     - `install/` — **raíz de instalación** configurable por el usuario. Es el **único** directorio confinado por esta regla.
+      - `install/<gameId>/` — **raíz de instalación de un juego**: cada juego instalado tiene la suya, dentro de `install/`, y es la única raíz contra la que se resuelve y se confina lo que se escribe de ese juego.
     - `downloads/` — **directorio de descargas parciales**: ruta fija, persistente y **fuera** de la raíz de instalación. Nunca se escribe dentro de `install/`.
     - `manifests/` — **caché de manifiestos** firmados descargados.
     - `state.sqlite` — **base de datos del cliente** (AD-11).
