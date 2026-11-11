@@ -1,3 +1,4 @@
+// encoding-guard: exempt — este test usa ideogramas CJK a proposito: mide puntos de codigo, no caracteres (AD-30).
 using LANPartyHub.Server.Domain.Clients;
 using System.Text;
 using Xunit;
