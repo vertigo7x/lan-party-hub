@@ -13,17 +13,17 @@ namespace LANPartyHub.Server.Presentation.Trust;
 ///
 /// <para>
 /// AD-27: el panel muestra el fingerprint del ancla EN PANTALLA, agrupado en bloques de 4
-/// caracteres, y lo exporta como cÃ³digo QR que lleva el fingerprint y la direcciÃ³n del
+/// caracteres, y lo exporta como código QR que lleva el fingerprint y la dirección del
 /// servidor. El organizador puede imprimir la hoja o exportarla para repartirla por un
 /// canal que no pase por la LAN (AC1, AD-27).
 /// </para>
 /// <para>
-/// La exportaciÃ³n escribe un fichero que el organizador elige, asÃ­ que el fingerprint sale
-/// de la mÃ¡quina del servidor por una decisiÃ³n explÃ­cita y no por un efecto secundario
+/// La exportación escribe un fichero que el organizador elige, así que el fingerprint sale
+/// de la máquina del servidor por una decisión explícita y no por un efecto secundario
 /// (AD-27).
 /// </para>
 /// <para>
-/// El panel se construye en cÃ³digo, como el resto de la interfaz del producto: el
+/// El panel se construye en código, como el resto de la interfaz del producto: el
 /// repositorio no tiene ficheros XAML (AD-1).
 /// </para>
 /// </summary>
@@ -104,7 +104,7 @@ public sealed class TrustAnchorPanel : UserControl
                 },
                 new TextBlock { Text = "Fingerprint" },
                 _fingerprint,
-                new TextBlock { Text = "DirecciÃ³n del servidor" },
+                new TextBlock { Text = "Dirección del servidor" },
                 _address,
                 _qrCode,
                 new StackPanel
@@ -129,7 +129,7 @@ public sealed class TrustAnchorPanel : UserControl
     public string GroupedFingerprint => _fingerprint.Text ?? string.Empty;
 
     /// <summary>
-    /// The image of the cÃ³digo QR that the panel shows (AC1, AD-27).
+    /// The image of the código QR that the panel shows (AC1, AD-27).
     /// </summary>
     public Image QrCode => _qrCode;
 
@@ -139,7 +139,7 @@ public sealed class TrustAnchorPanel : UserControl
     public string StatusText => _status.Text ?? string.Empty;
 
     /// <summary>
-    /// Loads the image of the cÃ³digo QR from the bytes that the exporter produces. A
+    /// Loads the image of the código QR from the bytes that the exporter produces. A
     /// failure NEVER takes the panel down: el fingerprint en texto sigue visible y el
     /// organizador puede repartirlo igual (AD-27).
     /// </summary>
@@ -161,7 +161,7 @@ public sealed class TrustAnchorPanel : UserControl
     }
 
     /// <summary>
-    /// Exports the cÃ³digo QR to a file that the organizer chooses (AD-27).
+    /// Exports the código QR to a file that the organizer chooses (AD-27).
     /// </summary>
     /// <param name="extension">Extension of the file: <c>svg</c> or <c>png</c>.</param>
     /// <returns>A task that completes when the export has been attempted.</returns>
@@ -180,7 +180,7 @@ public sealed class TrustAnchorPanel : UserControl
 
             var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = "Exportar el cÃ³digo QR del ancla de confianza",
+                Title = "Exportar el código QR del ancla de confianza",
                 SuggestedFileName = $"{DefaultFileName}.{extension}",
                 DefaultExtension = extension,
                 FileTypeChoices = new[]
@@ -193,7 +193,7 @@ public sealed class TrustAnchorPanel : UserControl
 
             if (file is null)
             {
-                _status.Text = "No se exportÃ³ el cÃ³digo QR.";
+                _status.Text = "No se exportó el código QR.";
 
                 return;
             }
@@ -214,19 +214,19 @@ public sealed class TrustAnchorPanel : UserControl
                 await stream.WriteAsync(bytes).ConfigureAwait(true);
             }
 
-            _status.Text = $"CÃ³digo QR exportado a {file.Name}.";
+            _status.Text = $"Código QR exportado a {file.Name}.";
         }
         catch (Exception exception)
         {
-            // La excepciÃ³n nunca llega a la interfaz como una traza: el organizador ve una
-            // lÃ­nea y el detalle queda en el log (AD-15).
-            _status.Text = $"No se pudo exportar el cÃ³digo QR: {exception.Message}";
+            // La excepción nunca llega a la interfaz como una traza: el organizador ve una
+            // línea y el detalle queda en el log (AD-15).
+            _status.Text = $"No se pudo exportar el código QR: {exception.Message}";
         }
     }
 
     /// <summary>
     /// Exports the hoja imprimible del ancla de confianza: el fingerprint agrupado, la
-    /// direcciÃ³n del servidor y el cÃ³digo QR, listos para el papel de la mesa de
+    /// dirección del servidor y el código QR, listos para el papel de la mesa de
     /// registro (AC1, AD-27).
     /// </summary>
     /// <returns>A task that completes when the export has been attempted.</returns>
@@ -256,7 +256,7 @@ public sealed class TrustAnchorPanel : UserControl
 
             if (file is null)
             {
-                _status.Text = "No se exportÃ³ la hoja imprimible.";
+                _status.Text = "No se exportó la hoja imprimible.";
 
                 return;
             }
@@ -269,7 +269,7 @@ public sealed class TrustAnchorPanel : UserControl
 
             await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(sheet)).ConfigureAwait(true);
 
-            _status.Text = $"Hoja del ancla exportada a {file.Name}. Ãbrela e imprÃ­mela para la mesa de registro.";
+            _status.Text = $"Hoja del ancla exportada a {file.Name}. Ábrela e imprímela para la mesa de registro.";
         }
         catch (Exception exception)
         {

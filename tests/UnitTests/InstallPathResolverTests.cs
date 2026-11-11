@@ -9,12 +9,12 @@ namespace LANPartyHub.UnitTests;
 /// The resolution of the paths of the installation (AD-9, AC5).
 ///
 /// <para>
-/// La resoluciÃ³n canÃ³nica y el confine se ejercitan contra el SISTEMA DE FICHEROS REAL,
+/// La resolución canónica y el confine se ejercitan contra el SISTEMA DE FICHEROS REAL,
 /// sin LAN y sin servidor (AD-16).
 /// </para>
 /// <para>
-/// Este nivel es la BASE de los confines de la extracciÃ³n de la historia 7.2: aquÃ­ se
-/// comprueba que la ruta canÃ³nica resuelta queda DENTRO de la raÃ­z configurada (AD-9).
+/// Este nivel es la BASE de los confines de la extracción de la historia 7.2: aquí se
+/// comprueba que la ruta canónica resuelta queda DENTRO de la raíz configurada (AD-9).
 /// </para>
 /// </summary>
 public sealed class InstallPathResolverTests : IDisposable
@@ -65,7 +65,7 @@ public sealed class InstallPathResolverTests : IDisposable
         var exception = Assert.Throws<InstallPathOutsideRootException>(
             () => resolver.ResolveInsideRoot("../fuera.txt"));
 
-        // El rechazo nombra la ruta CANÃ“NICA que lo intentÃ³ (AD-9).
+        // El rechazo nombra la ruta CANÓNICA que lo intentó (AD-9).
         Assert.Equal("../fuera.txt", exception.RelativePath);
         Assert.Equal(root, exception.RootPath);
         Assert.False(exception.CanonicalPath.StartsWith(root, StringComparison.OrdinalIgnoreCase));
@@ -139,8 +139,8 @@ public sealed class InstallPathResolverTests : IDisposable
     }
 
     /// <summary>
-    /// A path that escapes the root through a SYMBOLIC LINK is rejected: la comprobaciÃ³n
-    /// se hace sobre la ruta canÃ³nica, tras resolver los enlaces simbÃ³licos (AD-9).
+    /// A path that escapes the root through a SYMBOLIC LINK is rejected: la comprobación
+    /// se hace sobre la ruta canónica, tras resolver los enlaces simbólicos (AD-9).
     /// </summary>
     [Fact]
     public void A_path_that_escapes_the_root_through_a_symbolic_link_is_rejected()

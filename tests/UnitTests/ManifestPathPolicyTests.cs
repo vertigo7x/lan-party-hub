@@ -9,8 +9,8 @@ namespace LANPartyHub.UnitTests;
 ///
 /// <para>
 /// El manifiesto NO admite rutas absolutas y NO admite un <c>..</c> que sale de la
-/// raÃ­z. El rechazo ocurre ANTES de tocar el disco, y su causa es el cÃ³digo estable
-/// del catÃ¡logo (AD-15, AD-25, AD-27).
+/// raíz. El rechazo ocurre ANTES de tocar el disco, y su causa es el código estable
+/// del catálogo (AD-15, AD-25, AD-27).
 /// </para>
 /// </summary>
 public sealed class ManifestPathPolicyTests
@@ -44,7 +44,7 @@ public sealed class ManifestPathPolicyTests
     [Fact]
     public void A_relative_path_that_stays_inside_the_root_with_a_dot_dot_is_admissible()
     {
-        // Un `..` que sube y baja DENTRO de la raÃ­z no es una escapada.
+        // Un `..` que sube y baja DENTRO de la raíz no es una escapada.
         Assert.True(ManifestPathPolicy.IsAdmissible("game/sub/../data.bin"));
         Assert.True(ManifestPathPolicy.IsAdmissible("game/../data.bin"));
     }
@@ -90,8 +90,8 @@ public sealed class ManifestPathPolicyTests
     [Fact]
     public void The_manifest_with_an_absolute_path_is_rejected_before_any_write()
     {
-        // AD-9, AC2: la evaluaciÃ³n del manifiesto entero ocurre ANTES de la primera
-        // escritura, asÃ­ que el rechazo no deja nada escrito (AD-27).
+        // AD-9, AC2: la evaluación del manifiesto entero ocurre ANTES de la primera
+        // escritura, así que el rechazo no deja nada escrito (AD-27).
         var manifest = ManifestWith(
             new InstallationManifest.CreateDirectory("game"),
             new InstallationManifest.CopyFile("data.bin", @"C:\fuera\data.bin"));

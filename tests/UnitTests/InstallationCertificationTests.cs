@@ -9,11 +9,11 @@ namespace LANPartyHub.UnitTests;
 /// (AD-7, AD-9, AD-10, AC5, AC6, AC7).
 ///
 /// <para>
-/// La certificaciÃ³n es una REGLA PURA del dominio, asÃ­ que se ejercita sin disco, sin red
+/// La certificación es una REGLA PURA del dominio, así que se ejercita sin disco, sin red
 /// y sin servidor (AD-1, AD-16).
 /// </para>
 /// <para>
-/// El nivel mÃ­nimo donde Â«ninguna condiciÃ³n sustituye a otraÂ» es observable es
+/// El nivel mínimo donde «ninguna condición sustituye a otra» es observable es
 /// justamente este (AD-16).
 /// </para>
 /// </summary>
@@ -131,7 +131,7 @@ public sealed class InstallationCertificationTests
         Assert.True(verdict.IsRepairable);
         Assert.Equal(InstallationState.Repairable, verdict.State);
 
-        // El motivo y la acciÃ³n quedan REGISTRADOS y son VISIBLES (AC6, UX-DR-17, UX-DR-20).
+        // El motivo y la acción quedan REGISTRADOS y son VISIBLES (AC6, UX-DR-17, UX-DR-20).
         Assert.NotNull(verdict.ReasonText);
         Assert.False(string.IsNullOrWhiteSpace(verdict.ReasonText));
         Assert.NotNull(verdict.RepairAction);
@@ -156,7 +156,7 @@ public sealed class InstallationCertificationTests
         Assert.False(verdict.IsInstalled);
         Assert.Equal(InstallationState.Failed, verdict.State);
 
-        // El motivo es visible, y NO hay acciÃ³n de reparaciÃ³n (AC6, UX-DR-18).
+        // El motivo es visible, y NO hay acción de reparación (AC6, UX-DR-18).
         Assert.NotNull(verdict.ReasonText);
         Assert.False(string.IsNullOrWhiteSpace(verdict.ReasonText));
         Assert.Null(verdict.RepairAction);
@@ -170,8 +170,8 @@ public sealed class InstallationCertificationTests
     [Fact]
     public void A_failed_certification_with_a_diverging_package_is_not_repairable()
     {
-        // El hash que diverge es la razÃ³n por la que el paquete ya validado NO estÃ¡
-        // disponible para la reparaciÃ³n (AC6).
+        // El hash que diverge es la razón por la que el paquete ya validado NO está
+        // disponible para la reparación (AC6).
         var verdict = InstallationCertification.Certify(
             packageValidatedAgainstAnchor: false,
             manifestVerifyPassed: true,
