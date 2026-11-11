@@ -33,10 +33,6 @@ import os
 import shlex
 import subprocess
 import sys
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
 
 def emit(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -175,9 +171,12 @@ def main() -> int:
         sys.stderr.write("la fase llego sin prompt\n")
         return 2
 
+    # El proceso de Hermes hereda el DIRECTORIO de la fase, que es el worktree de la
+    # historia: forzar el del repositorio canonico lo haria escribir fuera del
+    # aislamiento, y en el camino de una sola historia el plan acabaria en un sitio
+    # que el driver no vigila (AD-12).
     process = subprocess.Popen(
         hermes_argv(prompt),
-        cwd=str(REPO_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,

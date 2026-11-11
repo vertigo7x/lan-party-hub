@@ -92,7 +92,14 @@ CONTEXT_PROMPT_MAX_CHARS = 24000
 EPIC_CONTEXT_MAX_CHARS = 12000
 CONTEXT_PLAN_DIGEST_PREFIX = "<!-- build-lite-plan-sha256: "
 PLAN_SOURCE_MAX_CHARS = 18000
-PLAN_ARTIFACT_DEADLINE_SECONDS = 90
+# El plazo del plan depende del PROVEEDOR: Hermes tarda mas en arrancar y en
+# pensar que opencode, y con el plazo de opencode su planificador no llega a
+# escribir el artefacto. El resto del presupuesto de la fase no cambia.
+PLAN_ARTIFACT_DEADLINE_SECONDS = (
+    240
+    if os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower() == "hermes"
+    else 90
+)
 REVIEW_PACKET_MAX_CHARS = 140000
 
 # ---------------------------------------------------------------------------
@@ -1048,6 +1055,34 @@ def plan_prompt(story, plan: Path) -> str:
             "tests/UnitTests/DownloadCoordinatorTests.cs",
             "tests/UnitTests/LibrarySurfaceActionsTests.cs",
             "tests/UnitTests/PlayabilityResolverTests.cs",
+        ),
+        # La 10.4 falla por lo mismo que la 9.3: el planificador explorar el arbol
+        # en vez de escribir el artefacto dentro de su presupuesto, asi que sus
+        # rutas se precargan tambien (AD-12).
+        "10.4": (
+            "src/Client/Infrastructure/Persistence/ClientDataLayout.cs",
+            "src/Client/Application/Ports/IClientDataLayout.cs",
+            "src/Client/Infrastructure/Filesystem/InstallPathResolver.cs",
+            "src/Client/Application/Ports/IInstallPathResolver.cs",
+            "src/Client/Infrastructure/Filesystem/InstallRootSwitcher.cs",
+            "src/Client/Application/Ports/IInstallRootSwitcher.cs",
+            "src/Client/Domain/Install/InstallPathConfine.cs",
+            "src/Client/Domain/Install/InstallationCertification.cs",
+            "src/Client/Application/Install/InstallationCoordinator.cs",
+            "src/Client/Application/Install/InstallationRepairService.cs",
+            "src/Client/Application/Install/ManifestPathPolicy.cs",
+            "src/Client/Application/Install/ActiveInstallations.cs",
+            "src/Client/Host/InstallationComposition.cs",
+            "src/Client/Infrastructure/Persistence/ClientStateStore.cs",
+            "src/Client/Infrastructure/Persistence/Entities/ClientInstallationEntity.cs",
+            "tests/UnitTests/InstallRootSwitcherTests.cs",
+            "tests/UnitTests/InstallPathResolverTests.cs",
+            "tests/UnitTests/ClientDataLayoutTests.cs",
+            "tests/UnitTests/InstallationCertificationTests.cs",
+            "tests/IntegrationTests/InstallationPersistenceTests.cs",
+            "tests/IntegrationTests/PortableInstallationTests.cs",
+            "tests/IntegrationTests/InstallationRepairTests.cs",
+            "tests/IntegrationTests/InstallLayoutTests.cs",
         ),
     }
     candidates = candidates_by_story.get(story.short_id, ())
