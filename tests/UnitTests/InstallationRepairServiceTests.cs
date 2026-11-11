@@ -364,8 +364,19 @@ public sealed class InstallationRepairServiceTests : IDisposable
         Assert.True(outcome.IsCertified);
         Assert.True(outcome.Verdict!.IsInstalled);
 
-        // El manifiesto se aplicó dentro de la MISMA raíz (AC1).
-        Assert.Equal(fixture.RootPath, fixture.TreeWriter.LastRootPath);
+        // AC1, AD-9: el árbol nuevo se PREPARA en una raíz HERMANA de la activa, se
+        // CERTIFICA allí y sólo después SUSTITUYE a la anterior por cambio de nombre.
+        // Por eso lo escrito NO está en la raíz activa, y por eso la raíz activa
+        // conserva su contenido si la certificación falla (AC4, FR-11).
+        Assert.NotNull(fixture.TreeWriter.LastRootPath);
+        Assert.NotEqual(fixture.RootPath, fixture.TreeWriter.LastRootPath);
+        Assert.Equal(
+            fixture.RootPath + InstallRootSwitcher.StagingSuffix,
+            fixture.TreeWriter.LastRootPath);
+
+        // La SUSTITUCIÓN es lo que deja la versión nueva en la raíz activa: tras la
+        // operación, la raíz activa es la que contiene el árbol nuevo (AC1).
+        Assert.True(Directory.Exists(fixture.RootPath));
 
         var installation = Assert.Single(fixture.StateStore.SavedInstallations);
 
