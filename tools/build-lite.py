@@ -92,15 +92,26 @@ CONTEXT_PROMPT_MAX_CHARS = 24000
 EPIC_CONTEXT_MAX_CHARS = 12000
 CONTEXT_PLAN_DIGEST_PREFIX = "<!-- build-lite-plan-sha256: "
 PLAN_SOURCE_MAX_CHARS = 18000
-# El plazo del plan depende del PROVEEDOR: Hermes tarda mas en arrancar y en
-# pensar que opencode, y con el plazo de opencode su planificador no llega a
-# escribir el artefacto. El resto del presupuesto de la fase no cambia.
-PLAN_ARTIFACT_DEADLINE_SECONDS = (
-    240
-    if os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower() == "hermes"
-    else 90
-)
+# El PRESUPUESTO de las fases depende del PROVEEDOR: Hermes tarda mas en arrancar,
+# en pensar y en explorar antes de escribir que opencode, y con el presupuesto de
+# opencode su planificador y su implementador se quedan sin tiempo y el driver los
+# da por parados.
+#
+# El factor es UNO, para que todos los presupuestos de una fase hablen el mismo
+# idioma: el plazo del artefacto del plan, el presupuesto de cada fase y la ventana
+# de progreso son el mismo calculo.
+PHASE_PROVIDER = os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower()
+PHASE_BUDGET_FACTOR = 2 if PHASE_PROVIDER == "hermes" else 1
+
+# El plazo del plan: el planificador tiene que escribir su artefacto dentro de el.
+PLAN_ARTIFACT_DEADLINE_SECONDS = 90 * PHASE_BUDGET_FACTOR
+
 REVIEW_PACKET_MAX_CHARS = 140000
+
+
+def phase_budget(minutes: int) -> int:
+    """The budget of a phase, in minutes, for the provider of this run."""
+    return minutes * PHASE_BUDGET_FACTOR
 
 # ---------------------------------------------------------------------------
 # The structured state of a phase
@@ -134,7 +145,11 @@ PHASE_POLL_SECONDS = 15
 # The window without a milestone that turns an implementation into a stalled
 # one. It is shorter than the timeout of the phase, so a worker that only
 # explores stops while there is still budget left to act on the evidence.
-IMPLEMENTATION_PROGRESS_WINDOW_MINUTES = 15
+# La ventana sin progreso. El probe NO cuenta la lectura de ficheros como avance, a
+# proposito: una implementacion que solo explora no produce nada. El proveedor
+# Hermes explora mas antes de escribir, asi que la ventana se escala con el
+# presupuesto de la fase.
+IMPLEMENTATION_PROGRESS_WINDOW_MINUTES = 15 * PHASE_BUDGET_FACTOR
 
 # The marker written through a real command when the worker reports a
 # demonstrated blocker. It is never inferred from prompts or tool output.
@@ -585,8 +600,6 @@ def classify_risk(paths: Sequence[str]) -> Risk:
 # El proveedor de las fases. Por defecto es opencode; BUILD_LITE_PROVIDER=hermes
 # enruta cada fase a Hermes a traves de tools/build-lite-hermes.py, que traduce el
 # JSONL de Hermes al stream de eventos que el driver ya sabe leer.
-PHASE_PROVIDER = os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower()
-
 
 def phase_command(agent: str, model: str, prompt: str) -> list[str]:
     if PHASE_PROVIDER == "hermes":
@@ -1356,7 +1369,7 @@ def prepare_context(
             CONTEXT_MODEL,
             context_prompt(story, plan, context),
             log_dir,
-            timeout_minutes=CONTEXT_TIMEOUT_MINUTES,
+            timeout_minutes=phase_budget(CONTEXT_TIMEOUT_MINUTES),
             retries=CONTEXT_MAX_ATTEMPTS,
             cwd=tree.path if tree is not None else None,
             journal=journal,
@@ -1762,7 +1775,7 @@ def verify_or_repair(
         IMPLEMENT_MODEL,
         repair_prompt(story, failures),
         log_dir,
-        timeout_minutes=30,
+        timeout_minutes=phase_budget(30),
         cwd=cwd,
         journal=journal,
     )
@@ -1939,7 +1952,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
                 IMPLEMENT_MODEL,
                 implementation_prompt(story, plan, context),
                 log_dir,
-                timeout_minutes=30,
+                timeout_minutes=phase_budget(30),
                 retries=IMPLEMENTATION_MAX_ATTEMPTS,
                 cwd=tree.path,
                 journal=journal,
@@ -1963,7 +1976,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
         shutil.copy2(diff_file, worker_diff_file)
         if risk.required:
             outcome = run_phase(
-                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=5,
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=phase_budget(5),
                 retries=1,
                 cwd=tree.path, journal=journal,
             )
@@ -1975,7 +1988,7 @@ def run_worker(story, tree: Worktree, metadata: PlanMetadata | None) -> WorkerRe
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=15,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=phase_budget(15),
                     retries=1,
                     cwd=tree.path, journal=journal,
                 )
@@ -2267,7 +2280,7 @@ def process_story(story, args: argparse.Namespace) -> None:
     if not plan.exists():
         try:
             run_phase(
-                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
+                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=phase_budget(5), retries=1,
                 journal=journal, artifact_path=plan,
             )
         except legacy.DriverError:
@@ -2288,7 +2301,7 @@ def process_story(story, args: argparse.Namespace) -> None:
                 IMPLEMENT_MODEL,
                 implementation_prompt(story, plan, context),
                 log_dir,
-                timeout_minutes=30,
+                timeout_minutes=phase_budget(30),
                 retries=IMPLEMENTATION_MAX_ATTEMPTS,
                 journal=journal,
                 progress=progress,
@@ -2306,7 +2319,7 @@ def process_story(story, args: argparse.Namespace) -> None:
         write_review_packet(base, paths, diff_file)
         if risk.required:
             outcome = run_phase(
-                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=5,
+                "review", REVIEW_MODEL, review_prompt(story, diff_file, risk), log_dir, timeout_minutes=phase_budget(5),
                 retries=1,
                 journal=journal,
             )
@@ -2318,7 +2331,7 @@ def process_story(story, args: argparse.Namespace) -> None:
                         "the focused review found a blocker after the single repair budget was spent: " + blocking
                     )
                 run_phase(
-                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=15,
+                    "review-repair", IMPLEMENT_MODEL, review_repair_prompt(story, blocking), log_dir, timeout_minutes=phase_budget(15),
                     retries=1,
                     journal=journal,
                 )
@@ -2405,7 +2418,7 @@ def plan_story(story) -> tuple[PlanMetadata | None, str]:
     if not plan.exists():
         try:
             run_phase(
-                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=5, retries=1,
+                "plan", PLAN_MODEL, plan_prompt(story, plan), log_dir, timeout_minutes=phase_budget(5), retries=1,
                 journal=journal, artifact_path=plan,
             )
         except legacy.DriverError:
