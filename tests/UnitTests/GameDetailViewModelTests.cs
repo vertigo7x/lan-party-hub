@@ -1,6 +1,8 @@
+using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.Formatting;
+using LANPartyHub.Client.Presentation.GameLauncher;
 using LANPartyHub.Shared.Contracts;
 using Xunit;
 
@@ -194,6 +196,103 @@ public sealed class GameDetailViewModelTests
         Assert.Equal(
             DesignTokens.StateWarning,
             DesignTokens.BadgeColorFor(CatalogViewState.InstalledOutdatedVersion));
+    }
+
+    [Fact]
+    public void An_outdated_installation_shows_the_update_as_the_primary_action()
+    {
+        // AC1, AC4: «Actualizar» sustituye a la acción primaria de la ficha.
+        var viewModel = new GameDetailViewModel(
+            CreateGame(),
+            CatalogViewState.InstalledOutdatedVersion,
+            "1.9.0",
+            PlayabilityDecision.Outdated("1.41.3"));
+
+        Assert.Equal("Actualizar", viewModel.Actions.PrimaryActionText);
+        Assert.True(viewModel.Actions.IsPrimaryUpdate);
+    }
+
+    [Fact]
+    public void An_outdated_installation_keeps_the_action_of_playing_available()
+    {
+        // AC4: «Jugar» permanece disponible SOLO si la instalación sigue siendo válida.
+        var viewModel = new GameDetailViewModel(
+            CreateGame(),
+            CatalogViewState.InstalledOutdatedVersion,
+            "1.9.0",
+            PlayabilityDecision.Outdated("1.41.3"));
+
+        Assert.True(viewModel.CanPlay);
+        Assert.False(viewModel.Actions.IsBlocked);
+    }
+
+    [Fact]
+    public void An_invalid_installation_shows_no_update_action()
+    {
+        // AC4: la invalidez MANDA sobre «Actualizar»: una instalación no válida es inválida
+        // y no reparable, con su motivo VISIBLE.
+        var viewModel = new GameDetailViewModel(
+            CreateGame(),
+            CatalogViewState.Available,
+            "1.9.0",
+            PlayabilityDecision.Blocked(
+                ErrorCatalog.InstallationIncompleteCode,
+                PlayabilityAction.Redownload));
+
+        Assert.False(viewModel.Actions.IsPrimaryUpdate);
+        Assert.Equal("Descargar de nuevo", viewModel.Actions.PrimaryActionText);
+        Assert.True(viewModel.Actions.ShowsReason);
+        Assert.Equal(
+            "No se puede jugar: instalación incompleta",
+            viewModel.Actions.ReasonText);
+    }
+
+[Fact]
+    public void The_ficha_shows_the_installed_and_the_available_versions()
+    {
+        // AC3, UX-DR-21: las DOS versiones van con su valor EXACTO, así que el jugador sabe
+        // cuál tiene y cuál hay.
+        var viewModel = new GameDetailViewModel(
+            CreateGame(),
+            CatalogViewState.InstalledOutdatedVersion,
+            "1.9.0");
+
+        Assert.Equal("Ya instalado · 1.9.0", viewModel.InstalledVersionText);
+        Assert.Equal("Disponible · 1.41.3", viewModel.AvailableVersionLineText);
+    }
+
+    [Fact]
+    public void The_line_of_the_installed_version_is_empty_without_an_installation()
+    {
+        // AC1: la línea de la versión INSTALADA sólo existe cuando el cliente tiene una
+        // instalación.
+        var viewModel = new GameDetailViewModel(CreateGame(), CatalogViewState.Available);
+
+        Assert.Null(viewModel.InstalledVersionText);
+    }
+
+    [Fact]
+    public void The_versions_of_the_ficha_go_in_the_monospaced_typography()
+    {
+        // AC3, UX-DR-2, UX-DR-21: la versión PUBLICADA y la INSTALADA van en la
+        // tipografía monoespaciada.
+        Assert.Equal("Cascadia Mono", DesignTokens.MonoFontFamily);
+        Assert.Equal(12, DesignTokens.MonoFontSize);
+    }
+
+    [Fact]
+    public void The_view_of_the_ficha_defines_no_text_of_the_update_action()
+    {
+        // AD-18, AR-3: el texto de «Actualizar» es una ACCIÓN, y por eso vive en el cliente
+        // y no en la tabla de microcopy de `Shared`.
+        Assert.Equal("Actualizar", GamePlayActionsViewModel.UpdateActionText);
+
+        var source = File.ReadAllText(FindSourceFile("GameDetailView.cs"));
+
+        Assert.DoesNotContain(
+            GamePlayActionsViewModel.UpdateActionText,
+            source,
+            StringComparison.Ordinal);
     }
 
     /// <summary>

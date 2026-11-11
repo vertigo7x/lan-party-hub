@@ -94,6 +94,50 @@ public sealed class CatalogViewStateResolverTests
     }
 
     [Fact]
+    public void A_validated_installation_whose_version_is_older_than_the_published_one_is_outdated()
+    {
+        // AC2, AR-5: el orden LEXICOGRÁFICO diría que «2.0» es anterior a «1.9»: con el
+        // orden semántico del catálogo «2.0» es la versión MÁS NUEVA, así que la
+        // instalación «1.9» es la que está desactualizada.
+        var state = CatalogViewStateResolver.Resolve(
+            CreateGame("2.0.0"),
+            snapshotCatalogVersion: 5,
+            serverCatalogVersion: 5,
+            installation: new InstalledGameView(GameId, "1.9.0", InstallationState.Installed));
+
+        Assert.Equal(CatalogViewState.InstalledOutdatedVersion, state);
+    }
+
+    [Fact]
+    public void The_outdated_installation_is_derived_with_the_semantic_order_of_the_catalog()
+    {
+        // AC2, AR-5, AD-10: la regla de orden de versiones es ÚNICA y vive en
+        // `Shared`, así que la derivación del estado NO declara un orden por su cuenta.
+        // El orden LEXICOGRÁFICO diría que «10.2.0» es anterior a «10.10.0»: con el orden
+        // semántico del catálogo «10.10.0» es la versión MÁS NUEVA, así que la
+        // instalación «10.2.0» es la que está desactualizada.
+        var state = CatalogViewStateResolver.Resolve(
+            CreateGame("10.10.0"),
+            snapshotCatalogVersion: 5,
+            serverCatalogVersion: 5,
+            installation: new InstalledGameView(GameId, "10.2.0", InstallationState.Installed));
+
+        Assert.Equal(CatalogViewState.InstalledOutdatedVersion, state);
+    }
+
+    [Fact]
+    public void An_installation_that_is_newer_than_the_published_one_is_not_outdated()
+    {
+        var state = CatalogViewStateResolver.Resolve(
+            CreateGame("1.9.0"),
+            snapshotCatalogVersion: 5,
+            serverCatalogVersion: 5,
+            installation: new InstalledGameView(GameId, "2.0.0", InstallationState.Installed));
+
+        Assert.NotEqual(CatalogViewState.InstalledOutdatedVersion, state);
+    }
+
+    [Fact]
     public void A_client_without_a_snapshot_is_synchronizing()
     {
         var state = CatalogViewStateResolver.Resolve(

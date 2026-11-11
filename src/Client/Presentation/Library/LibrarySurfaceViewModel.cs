@@ -148,6 +148,10 @@ public sealed class LibraryEntryViewModel
 
         ValidationState = installation.ValidationState;
 
+        PublishedVersion = installation.PublishedVersion;
+
+        IsOutdated = installation.Decision.IsOutdated;
+
         Actions = new GamePlayActionsViewModel(installation.GameId, installation.Decision);
     }
 
@@ -159,6 +163,18 @@ public sealed class LibraryEntryViewModel
 
     /// <summary>State of the installation.</summary>
     public InstallationState ValidationState { get; }
+
+    /// <summary>
+    /// Version that the catalog publishes for the videogame, or <c>null</c> when the client
+    /// does not know it (AC1, AC3).
+    /// </summary>
+    public string? PublishedVersion { get; }
+
+    /// <summary>
+    /// Whether the installation is VALID but its version is OLDER than the version
+    /// published in the catalog (AC1, AC4).
+    /// </summary>
+    public bool IsOutdated { get; }
 
     /// <summary>
     /// The table of the actions of the videogame, con el motivo VISIBLE del bloqueo
@@ -180,6 +196,20 @@ public sealed class LibraryEntryViewModel
     public string ValidationStateText => StateDisplayMap.GetText(ValidationState);
 
     /// <summary>
+    /// Text of the badge of the view state of the videogame, taken from the single table
+    /// of microcopy (AC1, AC4, AR-8).
+    ///
+    /// <para>
+    /// Una instalación desactualizada lleva el texto «instalado con versión
+    /// desactualizada», y CUALQUIER otra instalación lleva el texto de su estado de
+    /// instalación (AC1, AD-10).
+    /// </para>
+    /// </summary>
+    public string ViewStateText => IsOutdated
+        ? StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion)
+        : ValidationStateText;
+
+    /// <summary>
     /// Text of the line of the installed version, composed con la tabla de microcopia
     /// (AC3, UX-DR-6, AR-8).
     ///
@@ -191,4 +221,22 @@ public sealed class LibraryEntryViewModel
     /// </summary>
     public string InstalledVersionText =>
         StateDisplayMap.GetInstalledBadge(ValidationState, InstalledVersion);
+
+    /// <summary>
+    /// Text of the line of the PUBLISHED version, or <c>null</c> when the client does not
+    /// know it (AC1, AC3).
+    ///
+    /// <para>
+    /// La línea dice «Disponible · v1.3» con la versión EXACTA que publica el catálogo,
+    /// así que el jugador compara la que tiene con la que hay (AC3, UX-DR-21).
+    /// </para>
+    /// </summary>
+    public string? AvailableVersionText => PublishedVersion is null
+        ? null
+        : $"{AvailableVersionLabel}{StateDisplayMap.InstalledVersionSeparator}{PublishedVersion}";
+
+    /// <summary>
+    /// Label of the line of the PUBLISHED version (AC3, UX-DR-21).
+    /// </summary>
+    public const string AvailableVersionLabel = "Disponible";
 }

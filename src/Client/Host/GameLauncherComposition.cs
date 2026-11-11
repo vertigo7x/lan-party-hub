@@ -93,7 +93,11 @@ public sealed class GameLauncherComposition
         // AC1, AC2: la proyección de la jugabilidad REderiva la decisión al pintar, a
         // partir del veredicto de la certificación y del inspector, así que no hay columna
         // nueva ni migración (AD-11, AD-22).
-        _projection = new PlayabilityProjection(stateStore, _inspector);
+        //
+        // AC1, AC3: la proyección lee la VERSIÓN PUBLICADA del snapshot LOCAL que el
+        // cliente ya sincronizó, así que la desactualización se deriva sin ir al servidor
+        // (AD-5, AD-26).
+        _projection = new PlayabilityProjection(stateStore, _inspector, snapshots);
 
         // AC1, AC2: las primarias y la secundaria son SEAMS: el puerto REGISTRA la
         // intención y la ejecución vive en 8.3, en 5.x/6.x y en el registro de

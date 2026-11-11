@@ -42,6 +42,12 @@ public sealed class PlayabilityIntentService
     /// intención de RE-DESCARGAR: la re-descarga NUNCA llega al puerto de reparación
     /// (AC1, AC2, UX-DR-20).
     /// </para>
+    /// <para>
+    /// «Actualizar» registra la intención de RE-DESCARGAR la versión nueva que publica el
+    /// catálogo: la actualización descarga el paquete COMPLETO de la versión publicada, así
+    /// que su ejecución vive en 10.2 y aquí el puerto sólo deja constancia de lo que el
+    /// jugador pidió (AC1, AC4, FR-11).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame.</param>
     /// <param name="primary">The PRIMARY action that the player pressed.</param>
@@ -54,7 +60,7 @@ public sealed class PlayabilityIntentService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
 
-        if (primary == PlayabilityAction.Redownload)
+        if (primary is PlayabilityAction.Redownload or PlayabilityAction.Update)
         {
             await _intents
                 .RecordRedownloadAsync(gameId, cancellationToken)

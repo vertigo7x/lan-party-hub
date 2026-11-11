@@ -43,7 +43,43 @@ public static class PlayabilityResolver
     /// has no installation registered for the videogame.
     /// </param>
     /// <returns>The decision about the playability of the installation.</returns>
-    public static PlayabilityDecision Resolve(InstallationVerdict? verdict)
+    public static PlayabilityDecision Resolve(InstallationVerdict? verdict) =>
+        Resolve(verdict, installedVersion: null, publishedVersion: null);
+
+    /// <summary>
+    /// Derives the playability of an installation from its verdict and from the version
+    /// that the catalog publishes for the videogame (AC1, AC2, AC4, FR-11, AR-5).
+    ///
+    /// <para>
+    /// La comparación de las versiones usa el ORDEN SEMÁNTICO del catálogo, que es la
+    /// regla ÚNICA y vive en <see cref="CatalogVersionOrder"/>: nunca la comparación
+    /// lexicográfica (AC2, AR-5, AD-10).
+    /// </para>
+    /// <para>
+    /// Una instalación VÁLIDA cuya versión es anterior a la publicada hace «Actualizar» la
+    /// primaria, y «Jugar» SIGUE DISPONIBLE porque la instalación sigue siendo válida. Una
+    /// instalación INVÁLIDA es inválida y NO reparable por el hecho de estar desactualizada:
+    /// la invalidez MANDA sobre «Actualizar» y su motivo visible sale del veredicto
+    /// (AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="verdict">
+    /// Verdict of the certification of the installation, or <c>null</c> when the client
+    /// has no installation registered for the videogame.
+    /// </param>
+    /// <param name="installedVersion">
+    /// Version that the client has installed, or <c>null</c> when the client does not know
+    /// it.
+    /// </param>
+    /// <param name="publishedVersion">
+    /// Version that the catalog publishes for the videogame, or <c>null</c> when the client
+    /// does not know it.
+    /// </param>
+    /// <returns>The decision about the playability of the installation.</returns>
+    public static PlayabilityDecision Resolve(
+        InstallationVerdict? verdict,
+        string? installedVersion,
+        string? publishedVersion)
     {
         // Sin instalación no hay nada que lanzar: la acción se bloquea con el motivo
         // visible de la instalación INCOMPLETA (AC1, AC3).
@@ -56,6 +92,13 @@ public static class PlayabilityResolver
 
         if (verdict.IsInstalled)
         {
+            // La instalación es VÁLIDA: si su versión es anterior a la publicada, la
+            // primaria pasa a ser «Actualizar» y «Jugar» sigue disponible (AC1, AC4).
+            if (IsOutdated(installedVersion, publishedVersion))
+            {
+                return PlayabilityDecision.Outdated(publishedVersion!);
+            }
+
             return PlayabilityDecision.Playable();
         }
 
@@ -63,11 +106,38 @@ public static class PlayabilityResolver
 
         // La acción primaria depende de la REPARABILIDAD, que es lo único que decide si
         // la instalación puede rehacerse sin volver a descargar (AC1, AC2, UX-DR-20).
+        //
+        // La invalidez MANDA sobre la desactualización: una instalación inválida es inválida
+        // y no reparable por el hecho de estar desactualizada, así que «Actualizar» NO
+        // aparece (AC4).
         var primaryAction = verdict.IsRepairable
             ? PlayabilityAction.Repair
             : PlayabilityAction.Redownload;
 
         return PlayabilityDecision.Blocked(reasonCode, primaryAction);
+    }
+
+    /// <summary>
+    /// Tells whether the version that the client has installed is OLDER than the version
+    /// that the catalog publishes (AC1, AC2, AR-5).
+    ///
+    /// <para>
+    /// La regla es la ÚNICA del catálogo y vive en <see cref="CatalogVersionOrder"/>, así
+    /// que esta clase NO declara un orden de versiones por su cuenta (AC2, AD-10).
+    /// </para>
+    /// </summary>
+    /// <param name="installedVersion">Version that the client has installed.</param>
+    /// <param name="publishedVersion">Version that the catalog publishes.</param>
+    /// <returns>Whether the installed version is older than the published one.</returns>
+    private static bool IsOutdated(string? installedVersion, string? publishedVersion)
+    {
+        if (string.IsNullOrWhiteSpace(installedVersion) ||
+            string.IsNullOrWhiteSpace(publishedVersion))
+        {
+            return false;
+        }
+
+        return CatalogVersionOrder.IsOlder(installedVersion, publishedVersion);
     }
 
     /// <summary>

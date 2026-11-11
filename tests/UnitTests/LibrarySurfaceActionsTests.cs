@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
 using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Domain.Install;
+using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.GameLauncher;
 using LANPartyHub.Client.Presentation.Library;
 using LANPartyHub.Shared.Contracts;
@@ -174,6 +175,72 @@ public sealed class LibrarySurfaceActionsTests
     }
 
     /// <summary>
+    /// AC1: the row of the Biblioteca shows the badge of the OUTDATED version, taken from
+    /// the single table of microcopy (AC1, AC4, AR-8).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_row_of_an_outdated_installation_shows_the_badge_of_the_outdated_version()
+    {
+        var surface = new LibrarySurface(new LibrarySurfaceViewModel());
+
+        surface.ApplyInstallations([OutdatedInstallation()]);
+
+        var badge = TextsOf(surface).First();
+
+        Assert.Equal(
+            StateDisplayMap.GetText(CatalogViewState.InstalledOutdatedVersion),
+            badge.Text);
+    }
+
+    /// <summary>
+    /// AC1, AC4: the PRIMARY action of an outdated row is «Actualizar», so the wiring
+    /// registers the intention of UPDATING (AC1, AC4).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_primary_action_of_an_outdated_row_reports_the_update()
+    {
+        var primaries = new List<PlayabilityAction>();
+
+        var surface = new LibrarySurface(
+            new LibrarySurfaceViewModel(),
+            onPrimary: (_, action) => primaries.Add(action));
+
+        surface.ApplyInstallations([OutdatedInstallation()]);
+
+        SingleActionsOf(surface)
+            .PrimaryButton
+            .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+        Assert.Equal([PlayabilityAction.Update], primaries);
+    }
+
+    /// <summary>
+    /// AC3, UX-DR-21: the INSTALLED and the AVAILABLE versions of an outdated row go in
+    /// the MONOSPACED typography, so the player compares the digits aligned (AC3).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_versions_of_an_outdated_row_go_in_the_monospaced_typography()
+    {
+        var surface = new LibrarySurface(new LibrarySurfaceViewModel());
+
+        surface.ApplyInstallations([OutdatedInstallation()]);
+
+        // AC3, UX-DR-21: la línea de la versión PUBLICADA lleva su etiqueta y su valor
+        // EXACTO, así que el texto acaba con la versión.
+        var versions = TextsOf(surface)
+            .Where(text => text.Text.EndsWith("1.9.0", StringComparison.Ordinal)
+                        || text.Text.EndsWith("1.10.0", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, versions.Length);
+
+        foreach (var version in versions)
+        {
+            Assert.Equal(DesignTokens.MonoFontFamily, version.FontFamily.Name);
+            Assert.Equal(DesignTokens.MonoFontSize, version.FontSize);
+        }
+    }
+
+    /// <summary>
     /// Finds the table of actions of the only row of the Biblioteca (AC1, AC2).
     /// </summary>
     /// <param name="surface">Surface of the Biblioteca.</param>
@@ -187,6 +254,21 @@ public sealed class LibrarySurfaceActionsTests
             .Single();
 
         return actions;
+    }
+
+    /// <summary>
+    /// Finds the texts of the rows of the Biblioteca, so the test can read the badge and
+    /// the versions (AC1, AC3).
+    /// </summary>
+    /// <param name="surface">Surface of the Biblioteca.</param>
+    /// <returns>The texts of the rows.</returns>
+    private static IReadOnlyList<TextBlock> TextsOf(LibrarySurface surface)
+    {
+        var row = Assert.Single(surface.List.Children);
+
+        return FindDescendants(row)
+            .OfType<TextBlock>()
+            .ToArray();
     }
 
     /// <summary>
@@ -243,4 +325,16 @@ public sealed class LibrarySurfaceActionsTests
         PlayabilityDecision.Blocked(
             ErrorCatalog.GameExecutableMissingCode,
             PlayabilityAction.Redownload));
+
+    /// <summary>
+    /// Builds an installation that is VALID but OUTDATED, so la primaria es «Actualizar»
+    /// (AC1, AC4).
+    /// </summary>
+    /// <returns>The installation of the row.</returns>
+    private static InstalledGamePlayability OutdatedInstallation() => new(
+        GameId,
+        "1.9.0",
+        InstallationState.Installed,
+        PlayabilityDecision.Outdated("1.10.0"),
+        "1.10.0");
 }

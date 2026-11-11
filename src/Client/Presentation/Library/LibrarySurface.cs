@@ -5,6 +5,7 @@ using Avalonia.Media;
 using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.GameLauncher;
+using LANPartyHub.Shared.Contracts;
 
 namespace LANPartyHub.Client.Presentation.Library;
 
@@ -198,25 +199,75 @@ public sealed class LibrarySurface : UserControl
     /// </summary>
     /// <param name="entry">Row of the Biblioteca.</param>
     /// <returns>The control of the row.</returns>
-    private Control BuildEntry(LibraryEntryViewModel entry) => new StackPanel
+    private Control BuildEntry(LibraryEntryViewModel entry)
     {
-        Spacing = 8,
-        Children =
+        var badge = new TextBlock
         {
-            new TextBlock
-            {
-                Text = entry.InstalledVersionText,
-                FontSize = DesignTokens.MetaFontSize,
-                Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
-            },
+            Text = entry.ViewStateText,
+            FontSize = DesignTokens.MetaFontSize,
+            Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
+        };
 
-            // AC1, AC3: la fila lleva la MISMA tabla de acciones que la ficha, con el
-            // motivo visible del bloqueo junto a la etiqueta de «Jugar».
-            //
-            // AC1, AC2: la tabla se construye CON los delegates de la Biblioteca, así que
-            // «Jugar», «Reparar»/«Descargar de nuevo» y «Diagnosticar» disparan la
-            // acción que el jugador pidió y NO son pulsaciones muertas.
-            new GamePlayActionsView(entry.Actions, _onPlay, _onPrimary, _onSecondary),
-        },
-    };
+        // AC1: una instalación desactualizada lleva el ámbar de la advertencia, así que la
+        // insignia tiene su color con su significado canónico (AC3, DESIGN).
+        if (entry.IsOutdated)
+        {
+            badge.Foreground = new SolidColorBrush(
+                DesignTokens.BadgeColorFor(CatalogViewState.InstalledOutdatedVersion));
+        }
+
+        return new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                // AC1, AC3: la insignia dice «instalado con versión desactualizada» cuando
+                // la versión instalada es anterior a la publicada.
+                badge,
+
+                // AC3, UX-DR-21: la versión INSTALADA va en la tipografía MONOESPACIADA, con su
+                // etiqueta y su valor EXACTO, así que el jugador compara los dígitos
+                // alineados.
+                new TextBlock
+                {
+                    Text = entry.InstalledVersionText,
+                    FontFamily = new FontFamily(DesignTokens.MonoFontFamily),
+                    FontSize = DesignTokens.MonoFontSize,
+                    Foreground = new SolidColorBrush(DesignTokens.InkSecondary),
+                },
+
+                // AC3, UX-DR-21: la versión DISPONIBLE va también en la tipografía
+                // monoespaciada, con su etiqueta y su valor EXACTO.
+                BuildAvailableVersion(entry),
+
+                // AC1, AC3: la fila lleva la MISMA tabla de acciones que la ficha, con el
+                // motivo visible del bloqueo junto a la etiqueta de «Jugar».
+                //
+                // AC1, AC2: la tabla se construye CON los delegates de la Biblioteca, así que
+                // «Jugar», «Reparar»/«Descargar de nuevo» y «Diagnosticar» disparan la
+                // acción que el jugador pidió y NO son pulsaciones muertas.
+                new GamePlayActionsView(entry.Actions, _onPlay, _onPrimary, _onSecondary),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds the line of the PUBLISHED version, que sólo existe cuando el cliente
+    /// conoce la versión que publica el catálogo (AC1, AC3).
+    /// </summary>
+    /// <param name="entry">Row of the Biblioteca.</param>
+    /// <returns>The control of the line, hidden when the client does not know the version.</returns>
+    private static Control BuildAvailableVersion(LibraryEntryViewModel entry)
+    {
+        var text = new TextBlock
+        {
+            Text = entry.AvailableVersionText ?? string.Empty,
+            FontFamily = new FontFamily(DesignTokens.MonoFontFamily),
+            FontSize = DesignTokens.MonoFontSize,
+            Foreground = new SolidColorBrush(DesignTokens.InkPrimary),
+            IsVisible = entry.AvailableVersionText is not null,
+        };
+
+        return text;
+    }
 }
