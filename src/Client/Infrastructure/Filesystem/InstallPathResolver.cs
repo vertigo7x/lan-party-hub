@@ -39,7 +39,19 @@ public sealed class InstallPathResolver : IInstallPathResolver
     }
 
     /// <inheritdoc />
-    public string RootPath => Canonicalize(_layout.InstallDirectory);
+    public string RootPath
+    {
+        get
+        {
+            // La raíz vacía se rechaza de forma EXPLÍCITA: canonicalizarla
+            // dependería del host (en Windows `GetFullPath("")` lanza, en Linux
+            // devuelve el directorio actual), y una raíz vacía no es una raíz.
+            var installDirectory = _layout.InstallDirectory;
+            ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
+
+            return Canonicalize(installDirectory);
+        }
+    }
 
     /// <inheritdoc />
     public string ResolveInsideRoot(string relativePath)
@@ -54,9 +66,18 @@ public sealed class InstallPathResolver : IInstallPathResolver
         // AD-9: el manifiesto NO admite rutas absolutas. Una ruta absoluta se resuelve
         // contra la raíz como si fuera relativa, así que la comprobación canónica la
         // rechaza si el resultado sale de la raíz.
-        var candidate = Path.IsPathRooted(relativePath)
+        //
+        // La ruta se reconoce como ABSOLUTA por su FORMA, no por la del host: el
+        // manifiesto declara rutas relativas a la raíz, y una que trae letra de
+        // unidad o UNC es absoluta con independencia de la plataforma que la
+        // comprueba (AD-9).
+        // Los separadores se NORMALIZAN antes de combinar: un manifiesto declara
+        // rutas con cualquiera de los dos, y el host solo reconoce el suyo. Sin
+        // esto, una ruta con `\\` sería en Linux un nombre de archivo literal y
+        // no la ruta que el manifiesto declara (AD-9).
+        var candidate = InstallPathConfine.IsAbsoluteByForm(relativePath)
             ? relativePath
-            : Path.Combine(root, relativePath);
+            : Path.Combine(root, NormalizeSeparators(relativePath));
 
         var canonical = Canonicalize(candidate);
 
@@ -89,6 +110,28 @@ public sealed class InstallPathResolver : IInstallPathResolver
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Normalizes the SEPARATORS of a declared path to the ones of the host
+    /// (AD-9).
+    ///
+    /// <para>
+    /// Un manifiesto declara rutas relativas con cualquiera de los dos separadores, y
+    /// el host solo reconoce el suyo: sin normalizar, en Linux una ruta con `\\` sería
+    /// un nombre de archivo literal en lugar de la ruta que declara el manifiesto.
+    /// </para>
+    /// </summary>
+    /// <param name="path">Path as the manifest wrote it.</param>
+    /// <returns>The path with the separators of the host.</returns>
+    private static string NormalizeSeparators(string path)
+    {
+        if (Path.DirectorySeparatorChar == '\\')
+        {
+            return path;
+        }
+
+        return path.Replace('\\', Path.DirectorySeparatorChar);
     }
 
     /// <summary>

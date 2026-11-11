@@ -44,6 +44,23 @@ public sealed class ClientDataLayout : IClientDataLayout
     /// <summary>Extension of the partial file of a package.</summary>
     public const string PartialFileExtension = ".part";
 
+    /// <summary>
+    /// The characters that are NOT valid in a file name, for the host AND for WINDOWS
+    /// (AD-17).
+    /// </summary>
+    /// <remarks>
+    /// El cliente es una aplicación de Windows (AD-17), así que el identificador de un
+    /// paquete tiene que ser un nombre de archivo para WINDOWS, no para el host que lo
+    /// comprueba: un `*` es un nombre válido en Linux y no lo es en Windows, y el
+    /// paquete se descarga en la plataforma del cliente. El conjunto del host se
+    /// conserva, así que ninguna plataforma pierde los caracteres que ya rechazaba.
+    /// </remarks>
+    private static readonly char[] InvalidFileNameChars =
+        Path.GetInvalidFileNameChars()
+            .Concat(['"', '<', '>', '|', ':', '*', '?', '\\'])
+            .Distinct()
+            .ToArray();
+
     private ClientDataLayout(
         string folder,
         string installDirectory,
@@ -174,7 +191,11 @@ public sealed class ClientDataLayout : IClientDataLayout
         // The identifier of a package is an opaque string and it is used as a file name, so it
         // cannot carry a separator. The partial file lives only in the folder of the downloads
         // (AD-9) and this check is what keeps it there.
-        if (packageId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+        // Los caracteres inválidos son los del HOST y los de WINDOWS, que es la
+        // plataforma del cliente (AD-17): el identificador se usa como nombre de
+        // archivo, y un nombre que Windows no admite no sirve aunque el host lo
+        // admita (AD-9).
+        if (packageId.IndexOfAny(InvalidFileNameChars) >= 0
             || packageId.Contains('/', StringComparison.Ordinal)
             || packageId.Contains('\\', StringComparison.Ordinal))
         {

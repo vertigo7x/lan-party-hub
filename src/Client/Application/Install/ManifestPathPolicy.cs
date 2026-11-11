@@ -180,7 +180,12 @@ public static class ManifestPathPolicy
         // AD-9, AC2: una ruta ABSOLUTA no se admite. Se rechaza por su FORMA, y no por
         // donde resuelva: el manifiesto declara destinos RELATIVOS a la raíz
         // configurada, así que una raíz de unidad o un UNC no tienen forma admitida.
-        if (Path.IsPathRooted(path))
+        //
+        // La forma se reconoce por SUYO, no por la del host: el manifiesto puede
+        // declarar una ruta de Windows aunque la comprobación corra en otra
+        // plataforma, y una ruta absoluta que el host no reconozca no por eso deja
+        // de ser absoluta.
+        if (InstallPathConfine.IsAbsoluteByForm(path))
         {
             reason = $"La ruta '{path}' es absoluta y el manifiesto sólo admite rutas relativas a la raíz de instalación.";
 
@@ -217,8 +222,11 @@ public static class ManifestPathPolicy
     {
         var depth = 0;
 
+        // Los segmentos se separan por AMBOS separadores, no por los del host: un
+        // manifiesto declara rutas con cualquiera de los dos, y un `..` que sale de
+        // la raíz lo es con independencia de la plataforma que comprueba.
         var segments = relativePath.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            ['/', '\\'],
             StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var segment in segments)

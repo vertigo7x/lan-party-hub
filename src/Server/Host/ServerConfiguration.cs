@@ -5,6 +5,8 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Configuration.Memory;
 
+using LANPartyHub.Server.Domain.Packages;
+
 namespace LANPartyHub.Server.Host;
 
 /// <summary>
@@ -159,7 +161,11 @@ public sealed class ServerConfiguration
 
         var directory = rawDirectory is null ? DefaultDataDirectory : rawDirectory.Trim();
 
-        return Path.IsPathRooted(directory)
+        // La ruta se reconoce como ABSOLUTA por su FORMA, no por la del host: la
+        // escribe el operador o la escribe el archivo de configuración, y una ruta
+        // de Windows es absoluta aunque la comprobación corra en otra plataforma
+        // (AD-12, AD-17).
+        return PathForm.IsAbsoluteByForm(directory)
             ? Path.GetFullPath(directory)
             : Path.GetFullPath(Path.Combine(baseDirectory, directory));
     }

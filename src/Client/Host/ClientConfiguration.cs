@@ -1,5 +1,6 @@
 using System.Globalization;
 using LANPartyHub.Client.Application;
+using LANPartyHub.Client.Domain.Install;
 using LANPartyHub.Client.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
@@ -287,7 +288,11 @@ public sealed class ClientConfiguration
 
         var directory = rawDirectory.Trim();
 
-        return Path.IsPathRooted(directory)
+        // La ruta se reconoce como ABSOLUTA por su FORMA, no por la del host: la
+        // configuración la escribe el usuario o la escribe el servidor, y una ruta
+        // de Windows es absoluta aunque la comprobación corra en otra plataforma
+        // (AD-9, AD-12).
+        return InstallPathConfine.IsAbsoluteByForm(directory)
             ? Path.GetFullPath(directory)
             : Path.GetFullPath(Path.Combine(dataFolder, directory));
     }
