@@ -189,4 +189,40 @@ public interface IClientStateStore
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task with the code of the error, or with <c>null</c>.</returns>
     Task<string?> LoadInstallationFailureAsync(string gameId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// PERSISTS an error that the client registered, so the visor of diagnostics can show
+    /// it even after the client restarts (AD-11, AD-15, NFR-7).
+    ///
+    /// <para>
+    /// La escritura es IDEMPOTENTE por identificador: el mismo error registrado dos veces
+    /// deja UNA sola fila, así que una reintento de la operación no duplica el
+    /// diagnóstico (AD-22).
+    /// </para>
+    /// <para>
+    /// La fila es del CLIENTE y lleva su <c>clientId</c> y su <c>operationId</c>, que son
+    /// los mismos identificadores que viajan en el log del servidor, así que un error del
+    /// servidor y su correspondiente en el cliente se pueden UNIR (AD-23, AR-20).
+    /// </para>
+    /// </summary>
+    /// <param name="error">Error that the client registered.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the error is persisted.</returns>
+    Task SaveErrorAsync(PersistedClientError error, CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
+    /// <summary>
+    /// Reads the errors that the client registered, so the visor de diagnóstico puede
+    /// presentarlos (AD-11, NFR-7).
+    ///
+    /// <para>
+    /// La lectura es LOCAL y devuelve los errores ORDENADOS por el instante en que
+    /// ocurrieron, del más antiguo al más reciente, así que el visor muestra siempre las
+    /// mismas filas en el mismo orden (AD-22).
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the registered errors.</returns>
+    Task<IReadOnlyList<PersistedClientError>> LoadErrorsAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<PersistedClientError>>([]);
 }

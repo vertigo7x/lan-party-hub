@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.GameLauncher;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Infrastructure.Install;
@@ -49,12 +50,18 @@ public sealed class GameLauncherComposition
     /// <param name="manifestCache">Port of the cache of the signed manifests.</param>
     /// <param name="paths">Resolver of the paths of the installation, which confines them (AD-9).</param>
     /// <param name="loggerFactory">Factory of the log of the client.</param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors del lanzamiento, or <c>null</c> when the client
+    /// does not register them. Sin registrador el lanzamiento SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public GameLauncherComposition(
         IClientStateStore stateStore,
         ICatalogSnapshotStore snapshots,
         IManifestCache manifestCache,
         IInstallPathResolver paths,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(stateStore);
         ArgumentNullException.ThrowIfNull(snapshots);
@@ -80,7 +87,8 @@ public sealed class GameLauncherComposition
             _inspector,
             paths,
             _runner,
-            loggerFactory.CreateLogger<GameLaunchService>());
+            loggerFactory.CreateLogger<GameLaunchService>(),
+            errorRecorder);
 
         // AC1, AC2: la proyección de la jugabilidad REderiva la decisión al pintar, a
         // partir del veredicto de la certificación y del inspector, así que no hay columna

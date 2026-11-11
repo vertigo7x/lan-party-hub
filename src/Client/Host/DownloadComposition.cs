@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.Downloads;
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Integrity;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Client.Domain.Trust;
@@ -81,6 +82,11 @@ public sealed class DownloadComposition : IDisposable
     /// y el progreso y el estado viajan por la MISMA conexión con el hub: dos conexiones
     /// separadas podrían reordenar las publicaciones (AD-22).
     /// </param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors de la descarga, or <c>null</c> when the client
+    /// does not register them. Sin registrador la descarga SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public DownloadComposition(
         Uri serverAddress,
         IClientRequestHeaders headers,
@@ -92,7 +98,8 @@ public sealed class DownloadComposition : IDisposable
         int maxConcurrentDownloads = DownloadCoordinator.DefaultMaxConcurrentDownloads,
         int maxTotalConnections = DownloadCoordinator.DefaultMaxTotalConnections,
         IServerVersionProbe? versionProbe = null,
-        IDownloadProgressReporter? progressReporter = null)
+        IDownloadProgressReporter? progressReporter = null,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(serverAddress);
         ArgumentNullException.ThrowIfNull(headers);
@@ -177,7 +184,8 @@ public sealed class DownloadComposition : IDisposable
             maxConcurrentDownloads,
             maxTotalConnections,
             reporter,
-            versionProbe);
+            versionProbe,
+            errorRecorder: errorRecorder);
 
         // La ruta del contenido la construye el servidor con el identificador del paquete
         // (AD-20), así que la recuperación la resuelve desde la dirección del servidor.

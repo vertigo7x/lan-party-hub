@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Application.Diagnostics;
 using LANPartyHub.Client.Application.Ports;
 using LANPartyHub.Shared.Contracts;
 using Microsoft.Extensions.Logging;
@@ -34,6 +35,7 @@ public sealed class GameLaunchService
     private readonly IInstallationInspector _inspector;
     private readonly IInstallPathResolver _paths;
     private readonly IGameProcessRunner _runner;
+    private readonly RecordClientError? _errorRecorder;
     private readonly ILogger<GameLaunchService> _logger;
 
     /// <summary>Creates the use case of the launch of a videogame.</summary>
@@ -41,11 +43,17 @@ public sealed class GameLaunchService
     /// <param name="paths">Resolver of the paths of the installation, which confines them (AD-9).</param>
     /// <param name="runner">Port of the run of the videogame process (AD-19).</param>
     /// <param name="logger">Log of the use case.</param>
+    /// <param name="errorRecorder">
+    /// Use case that REGISTERS the errors del lanzamiento, or <c>null</c> when the client
+    /// does not register them. Sin registrador el lanzamiento SIGUE: el diagnóstico es un
+    /// complemento y no su motivo de vida (AD-1, AD-11, NFR-7).
+    /// </param>
     public GameLaunchService(
         IInstallationInspector inspector,
         IInstallPathResolver paths,
         IGameProcessRunner runner,
-        ILogger<GameLaunchService> logger)
+        ILogger<GameLaunchService> logger,
+        RecordClientError? errorRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(inspector);
         ArgumentNullException.ThrowIfNull(paths);
@@ -56,6 +64,7 @@ public sealed class GameLaunchService
         _paths = paths;
         _runner = runner;
         _logger = logger;
+        _errorRecorder = errorRecorder;
     }
 
     /// <summary>
@@ -74,6 +83,12 @@ public sealed class GameLaunchService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
 
+        // AD-23: el lanzamiento es una UNIDAD DE TRABAJO, así que lleva su propio
+        // identificador opaco y UUID v7, el mismo que viaja en el log del cliente y en el
+        // del servidor, así que un error del servidor y su correspondiente en el cliente
+        // se pueden UNIR (AC3, AR-20).
+        var operationId = Guid.CreateVersion7().ToString("N");
+
         // PASO 1: la instalación se INSPECTA y se CERTIFICA (AD-19, AC1, AC5).
         var inspection = await _inspector
             .InspectAsync(gameId, cancellationToken)
@@ -81,9 +96,11 @@ public sealed class GameLaunchService
 
         if (inspection is null)
         {
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchInstallationInvalidCode,
-                $"El cliente no tiene ninguna instalación registrada para el juego '{gameId}', así que no se ejecuta ningún proceso.");
+                $"El cliente no tiene ninguna instalación registrada para el juego '{gameId}', así que no se ejecuta ningún proceso.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
         if (!inspection.Verdict.IsInstalled)
@@ -91,9 +108,11 @@ public sealed class GameLaunchService
             var reason = inspection.Verdict.ReasonText
                 ?? $"La instalación del juego '{gameId}' no está certificada como válida.";
 
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchInstallationInvalidCode,
-                $"{reason} No se ejecuta ningún proceso.");
+                $"{reason} No se ejecuta ningún proceso.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // PASO 2: el ejecutable se RESUELVE contra la raíz de instalación y no sale de ella
@@ -106,30 +125,40 @@ public sealed class GameLaunchService
         }
         catch (InstallPathOutsideRootException exception)
         {
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchPathOutsideRootCode,
-                $"El ejecutable '{exception.RelativePath}' del juego '{gameId}' resuelve en '{exception.CanonicalPath}', que está fuera de la raíz de instalación '{exception.RootPath}'. No se ejecuta ningún proceso.");
+                $"El ejecutable '{exception.RelativePath}' del juego '{gameId}' resuelve en '{exception.CanonicalPath}', que está fuera de la raíz de instalación '{exception.RootPath}'. No se ejecuta ningún proceso.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException)
         {
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchExecutableMissingCode,
-                $"El manifiesto firmado del juego '{gameId}' no declara una ruta de ejecutable válida, así que no se ejecuta ningún proceso.");
+                $"El manifiesto firmado del juego '{gameId}' no declara una ruta de ejecutable válida, así que no se ejecuta ningún proceso.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // PASO 3: el ejecutable TIENE QUE EXISTIR, y el error nombra su ruta exacta (AC1).
         if (!File.Exists(executablePath))
         {
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchExecutableMissingCode,
-                $"El ejecutable '{executablePath}' del juego '{gameId}' no existe. No se ejecuta ningún proceso.");
+                $"El ejecutable '{executablePath}' del juego '{gameId}' no existe. No se ejecuta ningún proceso.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // El directorio de trabajo también se RESUELVE contra la raíz, porque es una ruta
         // del manifiesto y el confine de AD-9 no tiene excepción (AD-9).
         if (!TryResolveWorkingDirectory(inspection, gameId, out var workingDirectory, out var rejection))
         {
-            return rejection!;
+            return await RejectAsync(
+                rejection!.Error!.Code,
+                rejection.Reason!,
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
         var arguments = inspection.LaunchSettings.Arguments ?? [];
@@ -158,11 +187,14 @@ public sealed class GameLaunchService
                 "El juego {GameId} no arrancó: el proceso falló al iniciarse.",
                 gameId);
 
-            return Reject(
+            return await RejectAsync(
                 ErrorCatalog.GameLaunchProcessFailedCode,
-                $"El proceso del juego '{gameId}' no arrancó a partir del ejecutable '{executablePath}'. No se ha quedado ningún proceso en marcha.");
+                $"El proceso del juego '{gameId}' no arrancó a partir del ejecutable '{executablePath}'. No se ha quedado ningún proceso en marcha.",
+                operationId,
+                cancellationToken).ConfigureAwait(false);
         }
     }
+
 
     /// <summary>
     /// Resolves the working directory of the launch against the installation root (AD-9).
@@ -204,8 +236,8 @@ public sealed class GameLaunchService
         }
         catch (InstallPathOutsideRootException exception)
         {
-            rejection = Reject(
-                ErrorCatalog.GameLaunchPathOutsideRootCode,
+            rejection = GameLaunchOutcome.Rejected(
+                ErrorCatalog.Resolve(ErrorCatalog.GameLaunchPathOutsideRootCode),
                 $"El directorio de trabajo '{exception.RelativePath}' del juego '{gameId}' resuelve en '{exception.CanonicalPath}', que está fuera de la raíz de instalación '{exception.RootPath}'. No se ejecuta ningún proceso.");
 
             workingDirectory = string.Empty;
@@ -217,11 +249,26 @@ public sealed class GameLaunchService
     /// <summary>
     /// Builds the rejection of a launch, with its cause and the exact path when the
     /// problem is a path (AC1, AD-15, AD-25).
+    ///
+    /// <para>
+    /// El rechazo queda REGISTRADO en el registro de diagnóstico del cliente, con su
+    /// código y sus tres partes, y ASOCIADO a la operación de lanzamiento que lo produjo
+    /// (AD-11, AD-15, AC2, NFR-7).
+    /// </para>
     /// </summary>
     /// <param name="code">Stable code of the error of the catalog.</param>
     /// <param name="reason">Human readable reason of the rejection.</param>
-    /// <returns>The outcome of the rejection.</returns>
-    private GameLaunchOutcome Reject(string code, string reason)
+    /// <param name="operationId">
+    /// Identifier of the launch operation, so the error can be JOINED with the log of the
+    /// server (AD-23).
+    /// </param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task with the outcome of the rejection.</returns>
+    private async Task<GameLaunchOutcome> RejectAsync(
+        string code,
+        string reason,
+        string operationId,
+        CancellationToken cancellationToken)
     {
         var error = ErrorCatalog.Resolve(code);
 
@@ -230,6 +277,51 @@ public sealed class GameLaunchService
             code,
             reason);
 
+        // AD-1, AD-11: el registro del diagnóstico NUNCA impide que el jugador siga: el
+        // error queda persistido en el cliente y un fallo del registrador se anota y se
+        // continúa (NFR-7).
+        await RecordErrorAsync(error, operationId, cancellationToken).ConfigureAwait(false);
+
         return GameLaunchOutcome.Rejected(error, reason);
+    }
+
+    /// <summary>
+    /// REGISTERS an error del lanzamiento en el registro de diagnóstico del cliente
+    /// (AD-11, AD-15, NFR-7, AC2).
+    ///
+    /// <para>
+    /// El registro NUNCA impide que el jugador siga: el diagnóstico es un complemento y
+    /// no su motivo de vida, así que un fallo del registrador se anota y se continúa
+    /// (AD-1).
+    /// </para>
+    /// </summary>
+    /// <param name="error">Error of the catalog that explains the failure.</param>
+    /// <param name="operationId">Identifier of the launch operation (AD-23).</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>A task that completes when the error has been registered, or has failed.</returns>
+    private async Task RecordErrorAsync(
+        ApiError error,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        if (_errorRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _errorRecorder
+                .RecordAsync(error, operationId, OperationTypeNames.Launch, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "No se pudo registrar el error {Code} de la operación {OperationId} en el registro de diagnóstico del cliente.",
+                error.Code,
+                operationId);
+        }
     }
 }

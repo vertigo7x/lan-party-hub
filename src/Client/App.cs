@@ -12,6 +12,7 @@ using LANPartyHub.Client.Infrastructure;
 using LANPartyHub.Client.Presentation;
 using LANPartyHub.Client.Presentation.Catalog;
 using LANPartyHub.Client.Presentation.Connection;
+using LANPartyHub.Client.Presentation.Diagnostics;
 using LANPartyHub.Client.Presentation.Downloads;
 using LANPartyHub.Client.Presentation.GameLauncher;
 using LANPartyHub.Client.Presentation.Install;
@@ -47,6 +48,7 @@ public sealed class App : Avalonia.Application
     private CatalogSurface? _catalogSurface;
     private LibrarySurface? _librarySurface;
     private GameRunStatusViewModel? _gameRunStatus;
+    private DiagnosticsLogViewModel? _diagnosticsViewModel;
 
     /// <summary>Creates the application without settings and without a failure to report.</summary>
     public App()
@@ -149,6 +151,21 @@ public sealed class App : Avalonia.Application
 
             _librarySurface = librarySurface;
 
+            // AC1, AC4, NFR-7: el VISOR de diagnóstico muestra el registro de errores
+            // persistidos de su equipo, con sus cuatro partes y con la asociación a la
+            // descarga, la instalación o el lanzamiento que los produjo. El visor se
+            // abre en el modo OSCURO, que es el predeterminado, y ofrece su variante
+            // clara con los tokens `-light` de `DESIGN.md` (UX-DR-41, UX-DR-1).
+            var diagnosticsViewModel = new DiagnosticsLogViewModel();
+            _diagnosticsViewModel = diagnosticsViewModel;
+
+            var diagnosticsView = new DiagnosticsLogView(diagnosticsViewModel);
+
+            // La lectura del registro es LOCAL y su fallo NO puede impedir que el jugador
+            // abra la ventana: el visor se abre igual y su estado vacío lo dice (AD-1,
+            // AD-26, NFR-7).
+            _ = LoadDiagnosticsAsync(diagnosticsViewModel);
+
             // Las instalaciones que el cliente registró son LOCALES: la ficha del
             // videojuego las lee para derivar la insignia de su estado de vista, y la
             // lectura NO va al servidor (AC3, AD-22). La lectura NO bloquea el arranque:
@@ -212,7 +229,8 @@ public sealed class App : Avalonia.Application
                     catalogSurface,
                     connectionSurface,
                     statusPanel,
-                    librarySurface)
+                    librarySurface,
+                    diagnosticsView)
                 : new StartupErrorWindow(_startupError);
 
             // El overlay de la confirmación de la cancelación vive DENTRO de la ventana,
@@ -951,6 +969,47 @@ public sealed class App : Avalonia.Application
 
             _librarySurface?.ApplyInstallations(projection);
         });
+    }
+
+    /// <summary>
+    /// Reads the errors that the client registered and hands them to the visor de
+    /// diagnóstico (AC1, NFR-7).
+    ///
+    /// <para>
+    /// La lectura es LOCAL: el registro de errores vive en la base de datos del cliente y
+    /// nunca va al servidor (AD-22).
+    /// </para>
+    /// <para>
+    /// La lectura NO bloquea el arranque: el visor se abre igual y su estado vacío dice
+    /// que no hay errores registrados (AD-1, AD-26).
+    /// </para>
+    /// </summary>
+    /// <param name="viewModel">View model of the visor de diagnóstico.</param>
+    /// <returns>A task that completes when the errors have been read.</returns>
+    private async Task LoadDiagnosticsAsync(DiagnosticsLogViewModel viewModel)
+    {
+        var store = _registration?.StateStore;
+
+        if (store is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var errors = await store
+                .LoadErrorsAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+
+            // El registro llega desde el grupo de hilos, así que la notificación se
+            // encola en el hilo de la interfaz antes de tocar el visor (AC3, AC4, AC5).
+            _uiThread.Post(() => viewModel.ApplyErrors(errors));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La lectura del registro es LOCAL y su fallo NO puede impedir que el jugador
+            // use el cliente: el visor se abre con su estado vacío (AC3, AD-26).
+        }
     }
 
     /// <summary>
