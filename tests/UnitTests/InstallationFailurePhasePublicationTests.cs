@@ -269,6 +269,7 @@ public sealed class InstallationFailurePhasePublicationTests : IDisposable
             paths,
             tree ?? new ReportingTreeWriter(),
             stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
             NullLogger<InstallationCoordinator>.Instance,
             tracker);
 

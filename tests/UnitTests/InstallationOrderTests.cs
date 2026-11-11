@@ -425,6 +425,7 @@ public sealed class InstallationOrderTests : IDisposable
             paths,
             tree,
             stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
             NullLogger<InstallationCoordinator>.Instance);
 
         await Task.CompletedTask;

@@ -205,11 +205,42 @@ public sealed record InstallationResult
 /// <param name="PackageId">Opaque identifier of the package that was being installed.</param>
 /// <param name="Version">Version of the videogame that is installed.</param>
 /// <param name="ErrorCode">Stable code of the error of the catalog that explains the failure.</param>
+/// <param name="Mode">
+/// Mode of the failed operation: initial installation or update. El reintento de una
+/// actualización NO invalida la instalación anterior si vuelve a fallar (AC4, FR-11).
+/// </param>
 public sealed record FailedInstallation(
     string GameId,
     string PackageId,
     string Version,
-    string ErrorCode);
+    string ErrorCode,
+    InstallationMode Mode = InstallationMode.Initial);
+
+/// <summary>
+/// The MODE of an installation operation of the client (AC1, AC2, FR-11).
+///
+/// <para>
+/// El modo NO cambia el ORDEN NORMATIVO ni la verificación de integridad: las dos son las
+/// del flujo inicial (AD-8, AC2). El modo dice sólo qué hacer con la fila de la
+/// instalación cuando la operación falla, así que la actualización NO duplica la
+/// verificación de integridad (AC2).
+/// </para>
+/// </summary>
+public enum InstallationMode
+{
+    /// <summary>
+    /// The FIRST installation of a videogame, así que un fallo deja la fila en el estado
+    /// terminal <c>Failed</c> y la acción «Reintentar» disponible (AC5, NFR-9).
+    /// </summary>
+    Initial,
+
+    /// <summary>
+    /// The UPDATE of a videogame that already has a VALID installation, así que un fallo
+    /// NO toca la fila que ya existe: la instalación anterior conserva su versión y su
+    /// validez (AC1, AC4, FR-11).
+    /// </summary>
+    Update,
+}
 
 /// <summary>
 /// Coordinator of the installation operations of the client (AD-7, AD-8, AD-9, AD-10,
@@ -248,6 +279,7 @@ public sealed class InstallationCoordinator
     private readonly IInstallPathResolver _paths;
     private readonly IInstallTreeWriter _tree;
     private readonly IClientStateStore _stateStore;
+    private readonly IInstallRootSwitcher _switcher;
     private readonly ActiveInstallations? _activeInstallations;
     private readonly RecordClientError? _errorRecorder;
     private readonly ILogger<InstallationCoordinator> _logger;
@@ -275,6 +307,11 @@ public sealed class InstallationCoordinator
     /// <param name="paths">Resolver of the paths of the installation.</param>
     /// <param name="tree">Port of the application of the typed operations of the manifest.</param>
     /// <param name="stateStore">Access to the database of the client.</param>
+    /// <param name="switcher">
+    /// Port of the PREPARATION and the SUSTITUTION of the installation root, que es lo
+    /// que permite que una ACTUALIZACIÓN no toque el árbol anterior hasta que la versión
+    /// nueva esté certificada (AD-9, AC4, FR-11).
+    /// </param>
     /// <param name="logger">Log of the coordinator.</param>
     /// <param name="activeInstallations">
     /// Tracker of the INSTALLATION operations in course, or <c>null</c> when the client
@@ -295,6 +332,7 @@ public sealed class InstallationCoordinator
         IInstallPathResolver paths,
         IInstallTreeWriter tree,
         IClientStateStore stateStore,
+        IInstallRootSwitcher switcher,
         ILogger<InstallationCoordinator> logger,
         ActiveInstallations? activeInstallations = null,
         RecordClientError? errorRecorder = null)
@@ -307,6 +345,7 @@ public sealed class InstallationCoordinator
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(tree);
         ArgumentNullException.ThrowIfNull(stateStore);
+        ArgumentNullException.ThrowIfNull(switcher);
         ArgumentNullException.ThrowIfNull(logger);
 
         _manifests = manifests;
@@ -317,6 +356,7 @@ public sealed class InstallationCoordinator
         _paths = paths;
         _tree = tree;
         _stateStore = stateStore;
+        _switcher = switcher;
         _logger = logger;
         _activeInstallations = activeInstallations;
         _errorRecorder = errorRecorder;
@@ -326,15 +366,56 @@ public sealed class InstallationCoordinator
     /// Runs an installation in the NORMATIVE order and certifies its outcome (AD-8, AC1,
     /// AC2, AC4, AC5).
     ///
+    /// <para>
+    /// La ACTUALIZACIÓN reutiliza esta misma vía: el orden normativo, la verificación de
+    /// la firma y de la <c>schemaVersion</c> y la comprobación final del <c>sha256</c> son
+    /// LOS MISMOS que los del flujo inicial, así que no existe una segunda definición de
+    /// «instalar» (AC2, FR-11).
+    /// </para>
+    /// </summary>
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="packageId">Opaque identifier of the package that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    public Task<InstallationResult> InstallAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        CancellationToken cancellationToken) =>
+        InstallAsync(
+            gameId,
+            packageId,
+            installedVersion,
+            InstallationMode.Initial,
+            cancellationToken);
+
+    /// <summary>
+    /// Runs an installation in the NORMATIVE order and certifies its outcome, in the
+    /// MODE that the caller declares (AC1, AC2, AC4, AC5, FR-11).
+    ///
+    /// <para>
+    /// En el modo <see cref="InstallationMode.Update"/> la operación SUSTITUYE la versión
+    /// anterior: el manifiesto de la versión nueva se aplica dentro de la MISMA raíz y la
+    /// fila se actualiza con la versión nueva (AC1).
+    /// </para>
+    /// <para>
+    /// Un fallo de la actualización NO toca la fila que ya existe: la instalación
+    /// anterior conserva su versión y su validez, porque la retirada o el fallo de la
+    /// versión nueva no puede invalidar lo que ya estaba instalado (AC4, FR-11).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The result of the installation.</returns>
     public async Task<InstallationResult> InstallAsync(
         string gameId,
         string packageId,
         string installedVersion,
+        InstallationMode mode,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
@@ -353,6 +434,7 @@ public sealed class InstallationCoordinator
                 gameId,
                 packageId,
                 installedVersion,
+                mode,
                 trackedOperation,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -380,6 +462,7 @@ public sealed class InstallationCoordinator
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="packageId">Opaque identifier of the package that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="trackedOperation">
     /// Identifier of the TRACKED operation, or <c>null</c> when the client does not track
     /// the installation (AD-22).
@@ -390,6 +473,7 @@ public sealed class InstallationCoordinator
         string gameId,
         string packageId,
         string installedVersion,
+        InstallationMode mode,
         string? trackedOperation,
         CancellationToken cancellationToken)
     {
@@ -508,6 +592,14 @@ public sealed class InstallationCoordinator
         // PASO 4 (continuación): la aplicación del árbol por puerto (AD-7, AD-9). La
         // operación privilegiada pide CONFIRMACIÓN EXPLÍCITA dentro de esta llamada, y
         // la máquina pasa por `AwaitingConfirmation` mientras la espera (AC2, AD-10).
+        //
+        // AC4, FR-11: la ACTUALIZACIÓN NO escribe encima de la versión anterior: el
+        // árbol nuevo se PREPARA en una raíz aparte, se CERTIFICA allí y sólo después
+        // SUSTITUYE al anterior, que hasta ese momento sigue intacto y jugable.
+        var writeRoot = mode == InstallationMode.Update
+            ? _switcher.PrepareStagingRoot(rootPath)
+            : rootPath;
+
         InstallTreeOutcome tree;
 
         try
@@ -515,7 +607,7 @@ public sealed class InstallationCoordinator
             try
             {
                 tree = await _tree
-                    .ApplyAsync(manifest, rootPath, packagePath, sink, cancellationToken)
+                    .ApplyAsync(manifest, writeRoot, packagePath, sink, cancellationToken)
                     .ConfigureAwait(false);
             }
             finally
@@ -523,6 +615,14 @@ public sealed class InstallationCoordinator
                 // Esperar la fase antes del resultado terminal, incluso si falla el árbol.
                 await sink.FlushAsync().ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // AC4, FR-11: una CANCELACIÓN deja la instalación anterior intacta: la raíz
+            // de PREPARACIÓN se descarta y la activa conserva su contenido.
+            DiscardStagingRoot(rootPath, writeRoot);
+
+            throw;
         }
         catch (PrivilegedOperationDeclinedException exception)
         {
@@ -533,19 +633,25 @@ public sealed class InstallationCoordinator
             machine.TryTransitionTo(InstallationState.Installing);
             machine.TryTransitionTo(InstallationState.Failed);
 
+            // AC4, FR-11: la raíz de PREPARACIÓN se descarta y la anterior conserva su
+            // contenido: el decline no puede invalidar lo que ya estaba instalado.
+            DiscardStagingRoot(rootPath, writeRoot);
+
             await PersistFailureAsync(
                 gameId,
                 installedVersion,
                 rootPath,
                 ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
                 exception.Message,
+                mode,
                 cancellationToken).ConfigureAwait(false);
 
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
                 installedVersion,
-                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode);
+                ErrorCatalog.InstallPrivilegedConfirmationDeclinedCode,
+                mode);
 
             // AD-22: la fase REAL de la FALLA se publica antes de cerrar el seguimiento,
             // así que el servidor sabe que la operación terminó (AD-22, FR-10).
@@ -570,19 +676,26 @@ public sealed class InstallationCoordinator
             // (NFR-9).
             machine.TryTransitionTo(InstallationState.Failed);
 
+            // AC4, FR-11: la raíz de PREPARACIÓN se descarta y la anterior conserva su
+            // contenido: un fallo de la versión nueva no puede invalidar la instalación
+            // que ya era válida.
+            DiscardStagingRoot(rootPath, writeRoot);
+
             await PersistFailureAsync(
                 gameId,
                 installedVersion,
                 rootPath,
                 ErrorCatalog.InstallOperationFailedCode,
                 exception.Message,
+                mode,
                 cancellationToken).ConfigureAwait(false);
 
             FailedOperation = new FailedInstallation(
                 gameId,
                 packageId,
                 installedVersion,
-                ErrorCatalog.InstallOperationFailedCode);
+                ErrorCatalog.InstallOperationFailedCode,
+                mode);
 
             _logger.LogError(
                 exception,
@@ -632,6 +745,43 @@ public sealed class InstallationCoordinator
 
         machine.TryTransitionTo(InstallationState.ValidatingInstallation);
         machine.TryTransitionTo(verdict.State);
+
+        // AC4, FR-11: la SUSTITUCIÓN sólo ocurre con un árbol NUEVO que CERTIFICA. Un
+        // árbol que no verifica o que escribió fuera de la raíz NO se publica: se
+        // descarta y la instalación anterior conserva su contenido y su fila, así que
+        // el juego sigue siendo jugable con la versión que ya estaba (AC4, FR-11).
+        if (mode == InstallationMode.Update && !verdict.IsInstalled)
+        {
+            DiscardStagingRoot(rootPath, writeRoot);
+
+            _logger.LogWarning(
+                "La actualización del juego {GameId} a la versión {Version} NO certifica el árbol nuevo: {Reason} La instalación anterior conserva su versión y su validez.",
+                gameId,
+                installedVersion,
+                verdict.ReasonText);
+
+            await PublishAsync(
+                InstallPhase.Failed,
+                sink.LastBytesWritten,
+                sink.LastTotalBytes,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
+
+            return await RejectAsync(
+                ErrorCatalog.InstallOperationFailedCode,
+                $"La actualización del juego '{gameId}' a la versión '{installedVersion}' no se certificó: {verdict.ReasonText} La instalación anterior conserva su versión y su validez.",
+                packageId,
+                trackedOperation,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // AC1, FR-11: el árbol nuevo está CERTIFICADO, así que SUSTITUYE al anterior.
+        // El cambio de nombre es la operación que no deja la instalación a medias, así
+        // que a partir de aquí la versión nueva es la vigente (AD-9, AC4).
+        if (mode == InstallationMode.Update)
+        {
+            _switcher.CommitStagingRoot(rootPath, writeRoot);
+        }
 
         // El identificador de la raíz es ESTABLE: se deriva de su ruta canónica, así que
         // no cambia ante una reparación ni ante la reinstalación del binario (AC1).
@@ -724,6 +874,40 @@ public sealed class InstallationCoordinator
     }
 
     /// <summary>
+    /// REINTENTA an installation that FAILED, reusing the package that was already
+    /// validated, in the MODE that the caller declares (AC1, AC5, FR-11).
+    ///
+    /// <para>
+    /// El reintento de una ACTUALIZACIÓN es una operación NUEVA sobre la versión
+    /// publicada, así que el modo es <see cref="InstallationMode.Update"/> y la
+    /// instalación anterior conserva su validez si el reintento también falla (AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame that is installed.</param>
+    /// <param name="packageId">Opaque identifier of the package that is installed.</param>
+    /// <param name="installedVersion">Version of the videogame that is installed.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    /// <returns>The result of the installation.</returns>
+    public Task<InstallationResult> RetryAsync(
+        string gameId,
+        string packageId,
+        string installedVersion,
+        InstallationMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(installedVersion);
+
+        // El reintento es una operación NUEVA, así que el fallo anterior deja de ser el
+        // fallo vigente mientras la operación corre (AC5).
+        FailedOperation = null;
+
+        return InstallAsync(gameId, packageId, installedVersion, mode, cancellationToken);
+    }
+
+    /// <summary>
     /// Certifies the tree that is ALREADY installed, and tells whether it is a valid
     /// installation of the same version (AC1).
     ///
@@ -813,14 +997,59 @@ public sealed class InstallationCoordinator
     }
 
     /// <summary>
+    /// DISCARDS the root of PREPARATION, leaving the active one untouched (AD-9, AC4,
+    /// FR-11).
+    ///
+    /// <para>
+    /// El descarte sólo existe en el modo <see cref="InstallationMode.Update"/>: en el
+    /// flujo inicial no hay raíz de preparación, y el árbol se escribe directamente en la
+    /// raíz activa (AC1, AC4).
+    /// </para>
+    /// </summary>
+    /// <param name="rootPath">Canonical absolute path of the active installation root.</param>
+    /// <param name="writeRoot">
+    /// Canonical absolute path of the root the tree was written into.
+    /// </param>
+    private void DiscardStagingRoot(string rootPath, string writeRoot)
+    {
+        if (string.Equals(rootPath, writeRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            _switcher.DiscardStagingRoot(rootPath, writeRoot);
+        }
+        catch (Exception exception)
+        {
+            // El descarte NUNCA puede impedir que la operación siga: lo que importa es
+            // que la raíz activa NO se toca (AC4, AD-1).
+            _logger.LogWarning(
+                exception,
+                "No se pudo descartar la raíz de preparación '{StagingRoot}': la raíz activa '{RootPath}' conserva su contenido.",
+                writeRoot,
+                rootPath);
+        }
+    }
+
+    /// <summary>
     /// Persists the FAILURE of an installation, so the error queda registrado y la
     /// operación es REINTENTABLE sin reinstalar el cliente (AD-8, AD-11, AC5).
+    ///
+    /// <para>
+    /// En el modo <see cref="InstallationMode.Update"/> la fila que ya existe NO se toca:
+    /// la instalación anterior conserva su versión y su validez, porque el fallo de la
+    /// versión nueva no puede invalidar lo que ya estaba instalado (AC4, FR-11). El
+    /// error se REGISTRA igual, así que el diagnóstico conserva lo que pasó (AD-15).
+    /// </para>
     /// </summary>
     /// <param name="gameId">Identifier of the videogame that is installed.</param>
     /// <param name="installedVersion">Version of the videogame that is installed.</param>
     /// <param name="rootPath">Canonical absolute path of the installation root.</param>
     /// <param name="errorCode">Stable code of the error of the catalog.</param>
     /// <param name="reason">Human readable reason of the failure.</param>
+    /// <param name="mode">Mode of the operation: initial installation or update.</param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>A task that completes when the failure is persisted.</returns>
     private async Task PersistFailureAsync(
@@ -829,8 +1058,24 @@ public sealed class InstallationCoordinator
         string rootPath,
         string errorCode,
         string reason,
+        InstallationMode mode,
         CancellationToken cancellationToken)
     {
+        if (mode == InstallationMode.Update)
+        {
+            // AC4, FR-11: la instalación anterior NO se invalida. La fila conserva su
+            // versión y su estado, así que lo que ya estaba instalado sigue siendo válido
+            // (AC4).
+            _logger.LogWarning(
+                "La actualización del juego {GameId} a la versión {Version} falla con el código {Code}: la instalación anterior conserva su versión y su validez. Detalle: {Reason}",
+                gameId,
+                installedVersion,
+                errorCode,
+                reason);
+
+            return;
+        }
+
         var installDirectoryId = InstallationCertification.DeriveInstallDirectoryId(rootPath);
 
         await _stateStore

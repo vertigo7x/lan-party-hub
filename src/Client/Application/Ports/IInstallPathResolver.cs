@@ -58,6 +58,40 @@ public interface IInstallPathResolver
     /// <param name="relativePath">Path of the manifest, relative to the installation root.</param>
     /// <returns><c>true</c> when the path resolves inside the root.</returns>
     bool IsInsideRoot(string relativePath);
+
+    /// <summary>
+    /// Resolves a relative path of the manifest against an EXPLICIT root and REQUIRES
+    /// that the resolved canonical path stays inside THAT root (AD-9, AC5).
+    ///
+    /// <para>
+    /// La resolución contra la raíz CONFIGURED es la de <see cref="ResolveInsideRoot"/>, y
+    /// esta es la de la raíz que el caso de uso está ESCRIBIENDO: durante una
+    /// ACTUALIZACIÓN el árbol nuevo se prepara FUERA de la raíz activa, así que el confine
+    /// se comprueba contra la raíz de preparación y no contra la que hay en el disco
+    /// (AD-9, AC4, FR-11).
+    /// </para>
+    /// <para>
+    /// La REGLA es la misma en las dos: la ruta canónica se comprueba, y el destino que
+    /// sale de la raíz se rechaza (AD-9).
+    /// </para>
+    /// </summary>
+    /// <param name="rootPath">Canonical absolute path of the root that confines the write.</param>
+    /// <param name="relativePath">Path of the manifest, relative to that root.</param>
+    /// <returns>The canonical absolute path that resolves inside the given root.</returns>
+    /// <exception cref="ArgumentException">The path is empty or whitespace.</exception>
+    /// <exception cref="InstallPathOutsideRootException">
+    /// The resolved canonical path does NOT stay inside the given root (AD-9).
+    /// </exception>
+    string ResolveInside(string rootPath, string relativePath);
+
+    /// <summary>
+    /// Tells whether a relative path of the manifest resolves inside an EXPLICIT root,
+    /// without throwing (AD-9, AC5).
+    /// </summary>
+    /// <param name="rootPath">Canonical absolute path of the root that confines the write.</param>
+    /// <param name="relativePath">Path of the manifest, relative to that root.</param>
+    /// <returns><c>true</c> when the path resolves inside the given root.</returns>
+    bool IsInside(string rootPath, string relativePath);
 }
 
 /// <summary>

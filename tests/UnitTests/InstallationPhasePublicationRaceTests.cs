@@ -262,6 +262,7 @@ public sealed class InstallationPhasePublicationRaceTests : IDisposable
             paths,
             tree,
             stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
             NullLogger<InstallationCoordinator>.Instance,
             tracker);
 

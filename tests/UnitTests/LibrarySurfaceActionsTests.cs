@@ -241,6 +241,30 @@ public sealed class LibrarySurfaceActionsTests
     }
 
     /// <summary>
+    /// AC1, FR-11, R-MVP-4: the row of an outdated installation NAMES the CONSEQUENCE of
+    /// «Actualizar», así que el jugador sabe que se descarga la versión COMPLETA y que
+    /// sustituye a la instalada (UX-DR-22).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_row_of_an_outdated_installation_names_the_consequence_of_the_update()
+    {
+        var surface = new LibrarySurface(new LibrarySurfaceViewModel());
+
+        surface.ApplyInstallations([OutdatedInstallation()]);
+
+        var row = Assert.Single(surface.List.Children);
+
+        var actions = FindDescendants(row)
+            .OfType<GamePlayActionsView>()
+            .Single();
+
+        Assert.True(actions.Actions.IsPrimaryUpdate);
+        Assert.Equal(
+            GamePlayActionsViewModel.UpdateConsequence,
+            actions.Actions.ConsequenceText);
+    }
+
+    /// <summary>
     /// Finds the table of actions of the only row of the Biblioteca (AC1, AC2).
     /// </summary>
     /// <param name="surface">Surface of the Biblioteca.</param>

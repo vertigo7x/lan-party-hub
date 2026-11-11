@@ -305,9 +305,10 @@ public sealed class GamePlayActionsView : UserControl
 
         _reason.IsVisible = reason is not null;
 
-        // AC1, UX-DR-20: la consecuencia de la reparación se NOMBRA junto a la primaria,
-        // sin modal: el jugador sabe que la descarga no se repite.
-        var consequence = _viewModel.RepairConsequenceText;
+        // AC1, UX-DR-20, FR-11: la consecuencia de la primaria se NOMBRA junto a ella,
+        // sin modal: el jugador sabe si la descarga se repite, si se descarga la versión
+        // COMPLETA o si se sustituye la versión instalada.
+        var consequence = _viewModel.ConsequenceText;
 
         _consequence.Text = consequence ?? string.Empty;
 

@@ -286,7 +286,175 @@ public sealed class InstallationRepairServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Builds the fixture of the repair over the doubles of the ports (AD-16).
+    /// AC1, AC2, FR-11: la ACTUALIZACIÓN reutiliza el mismo camino de instalación que el
+    /// flujo inicial, así que la verificación de la firma, de la <c>schemaVersion</c> y del
+    /// <c>sha256</c> es la MISMA (AD-8).
+    /// </summary>
+    [Fact]
+    public async Task The_update_is_rejected_before_writing_when_the_hash_diverges()
+    {
+        var fixture = await CreateUpdateFixtureAsync();
+
+        // Los bytes del paquete de la versión nueva NO son los que declara el manifiesto
+        // firmado, así que la actualización se rechaza ANTES de escribir nada (AD-8).
+        await File.WriteAllBytesAsync(
+            fixture.PackagePath,
+            Encoding.UTF8.GetBytes("contenido alterado"),
+            TestContext.Current.CancellationToken);
+
+        var outcome = await fixture.Coordinator
+            .InstallAsync(
+                GameId,
+                PackageId,
+                "2.0",
+                InstallationMode.Update,
+                TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.IsRejected);
+        Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, outcome.Error!.Code);
+
+        // NADA se escribió en la raíz de instalación (AD-8, AC2).
+        Assert.Null(fixture.TreeWriter.LastRootPath);
+    }
+
+    /// <summary>
+    /// AC4, FR-11: un fallo de la ACTUALIZACIÓN NO invalida la instalación anterior: la
+    /// fila conserva su versión y su validez, porque lo que ya estaba instalado sigue
+    /// siendo válido (AC4).
+    /// </summary>
+    [Fact]
+    public async Task A_failed_update_keeps_the_previous_installation_valid()
+    {
+        var fixture = await CreateUpdateFixtureAsync(treeThrows: true);
+
+        var outcome = await fixture.Coordinator
+            .InstallAsync(
+                GameId,
+                PackageId,
+                "2.0",
+                InstallationMode.Update,
+                TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.IsRejected);
+        Assert.Equal(ErrorCatalog.InstallOperationFailedCode, outcome.Error!.Code);
+
+        // La fila de la instalación ANTERIOR no se tocó: ni su versión ni su validez
+        // (AC4, FR-11).
+        Assert.Empty(fixture.StateStore.SavedInstallations);
+        Assert.Empty(fixture.StateStore.SavedFailureCodes);
+    }
+
+    /// <summary>
+    /// AC1, FR-11: la ACTUALIZACIÓN que termina bien SUSTITUYE la versión anterior en la
+    /// MISMA raíz de instalación, así que la fila del cliente lleva la versión nueva.
+    /// </summary>
+    [Fact]
+    public async Task A_successful_update_replaces_the_previous_version()
+    {
+        var fixture = await CreateUpdateFixtureAsync();
+
+        var outcome = await fixture.Coordinator
+            .InstallAsync(
+                GameId,
+                PackageId,
+                "2.0",
+                InstallationMode.Update,
+                TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.IsCertified);
+        Assert.True(outcome.Verdict!.IsInstalled);
+
+        // AC1, AD-9: el árbol nuevo se PREPARA en una raíz HERMANA de la activa, se
+        // CERTIFICA allí y sólo después SUSTITUYE a la anterior por cambio de nombre.
+        // Por eso lo escrito NO está en la raíz activa, y por eso la raíz activa
+        // conserva su contenido si la certificación falla (AC4, FR-11).
+        Assert.NotNull(fixture.TreeWriter.LastRootPath);
+        Assert.NotEqual(fixture.RootPath, fixture.TreeWriter.LastRootPath);
+        Assert.Equal(
+            fixture.RootPath + InstallRootSwitcher.StagingSuffix,
+            fixture.TreeWriter.LastRootPath);
+
+        // La SUSTITUCIÓN es lo que deja la versión nueva en la raíz activa: tras la
+        // operación, la raíz activa es la que contiene el árbol nuevo (AC1).
+        Assert.True(Directory.Exists(fixture.RootPath));
+
+        var installation = Assert.Single(fixture.StateStore.SavedInstallations);
+
+        Assert.Equal(GameId, installation.GameId);
+        Assert.Equal("2.0", installation.InstalledVersion);
+        Assert.Equal(InstallationState.Installed, installation.ValidationState);
+    }
+
+    /// <summary>
+    /// Builds the fixture of the UPDATE over the doubles of the ports (AD-16).
+    /// </summary>
+    /// <param name="treeThrows">Whether the application of the tree fails.</param>
+    /// <returns>The fixture of the update.</returns>
+    private async Task<UpdateFixture> CreateUpdateFixtureAsync(bool treeThrows = false)
+    {
+        var folder = CreateTemporaryFolder();
+
+        var layout = new TemporaryDataLayout(folder);
+
+        var packageBytes = Encoding.UTF8.GetBytes("contenido del paquete nuevo");
+
+        var manifest = new InstallationManifest(
+            1,
+            PackageId,
+            "2.0",
+            packageBytes.LongLength,
+            PackageIntegrity.ComputeSha256(packageBytes),
+            new InstallationManifest.LaunchSettings("game.exe", ["-novid"], "game"),
+            [new InstallationManifest.Verify("game/game.exe")]);
+
+        var canonical = LANPartyHub.Server.Domain.Packages.ManifestCanonicalizer
+            .Canonicalize(manifest);
+
+        var packagePath = layout.PartialFilePath(PackageId);
+
+        await File.WriteAllBytesAsync(
+            packagePath,
+            packageBytes,
+            TestContext.Current.CancellationToken);
+
+        var stateStore = new RecordingStateStore();
+        var paths = new InstallPathResolver(layout);
+        var treeWriter = new RecordingTreeWriter(verifyPasses: true, throws: treeThrows);
+
+        var coordinator = new InstallationCoordinator(
+            new FixedManifestClient(manifest),
+            new AcceptingManifestVerifier(),
+            new FixedTrustAnchorReader(),
+            new RecordingManifestCache(),
+            layout,
+            paths,
+            treeWriter,
+            stateStore,
+            new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance),
+            NullLogger<InstallationCoordinator>.Instance);
+
+        return new UpdateFixture(
+            coordinator,
+            stateStore,
+            treeWriter,
+            layout.InstallDirectory,
+            packagePath);
+    }
+
+    /// <summary>
+    /// Fixture of the update: el coordinador y los dobles que hacen las escrituras
+    /// observables (AD-16).
+    /// </summary>
+    private sealed record UpdateFixture(
+        InstallationCoordinator Coordinator,
+        RecordingStateStore StateStore,
+        RecordingTreeWriter TreeWriter,
+        string RootPath,
+        string PackagePath);
+
+    /// <summary>
+    /// Builds the fixture of the repair: un paquete REAL, un manifiesto REAL firmado y una
+    /// instalación REAL ya aplicada (AD-16).
     /// </summary>
     /// <param name="verifyPasses">Whether the <c>verify</c> operation passes over the tree.</param>
     /// <param name="treeThrows">Whether the application of the tree fails.</param>
@@ -427,6 +595,52 @@ public sealed class InstallationRepairServiceTests : IDisposable
         ExplodingManifestClient Manifests,
         string RootPath,
         string PackagePath);
+
+    /// <summary>
+    /// Port of the read of the signed manifest que devuelve SIEMPRE el mismo manifiesto,
+    /// así que la verificación de la firma y de la <c>schemaVersion</c> es observable sin
+    /// un servidor (AD-16).
+    /// </summary>
+    private sealed class FixedManifestClient : ISignedManifestClient
+    {
+        private readonly InstallationManifest _manifest;
+
+        public FixedManifestClient(InstallationManifest manifest) => _manifest = manifest;
+
+        public Task<InstallationManifest.SignedEnvelope?> GetAsync(
+            string packageId,
+            CancellationToken cancellationToken)
+        {
+            var canonical = LANPartyHub.Server.Domain.Packages.ManifestCanonicalizer
+                .Canonicalize(_manifest);
+
+            return Task.FromResult<InstallationManifest.SignedEnvelope?>(
+                new InstallationManifest.SignedEnvelope(canonical, "firma", "clave"));
+        }
+    }
+
+    /// <summary>
+    /// Verificador de la firma que la ACEPTA, así que el rechazo de la firma no es lo que
+    /// la prueba observa (AD-2, AD-16).
+    /// </summary>
+    private sealed class AcceptingManifestVerifier : IManifestSignatureVerifier
+    {
+        public bool Verify(string canonicalManifest, string signature, byte[] publicKey) => true;
+    }
+
+    /// <summary>
+    /// Port of the read of the ancla de confianza que siempre devuelve el mismo valor, así
+    /// que la validación contra el ancla fijado es observable (AD-27, AD-16).
+    /// </summary>
+    private sealed class FixedTrustAnchorReader : ITrustAnchorReader
+    {
+        public Task<PinnedTrustAnchor?> LoadTrustAnchorAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<PinnedTrustAnchor?>(
+                new PinnedTrustAnchor(
+                    Convert.ToBase64String(new byte[32]),
+                    "fingerprint",
+                    "2026-10-26T00:00:00.0000000Z"));
+    }
 
     /// <summary>
     /// Port of the read of the signed manifest that NEVER answers, así que la prueba

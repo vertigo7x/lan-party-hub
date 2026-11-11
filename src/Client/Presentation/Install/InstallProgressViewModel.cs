@@ -33,6 +33,7 @@ public sealed class InstallProgressViewModel
     private InstallProgress _progress = InstallProgress.Idle;
     private string? _errorCode;
     private bool _canRetry;
+    private bool _updating;
 
     /// <summary>Raised when the view model changes and the view has to be repainted.</summary>
     public event Action? Changed;
@@ -103,6 +104,24 @@ public sealed class InstallProgressViewModel
     /// True when the operation FAILED and it can be retried (AC5, NFR-9, UX-DR-34).
     /// </summary>
     public bool CanRetry => _canRetry;
+
+    /// <summary>
+    /// Marks the operation as an UPDATE, so the interface dice que lo que se instala es
+    /// la versión COMPLETA que sustituye a la anterior (AC1, FR-11, R-MVP-4).
+    /// </summary>
+    /// <param name="updating">Whether the operation is an update.</param>
+    public void ApplyUpdating(bool updating)
+    {
+        _updating = updating;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// True when the operation in course is the installation of the COMPLETE package of an
+    /// update (AC1, FR-11, R-MVP-4).
+    /// </summary>
+    public bool IsUpdating => _updating;
 
     /// <summary>
     /// The text of the phase, taken from the single rule of the application, para que la

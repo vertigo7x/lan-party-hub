@@ -1,13 +1,25 @@
 <#
 .SYNOPSIS
-    Verifica que los ficheros Markdown y TOML del repositorio no contengan caracteres
-    fuera del juego esperado: codepoints CJK (cirílico/coreano/japonés/chino) ni
-    el caracter de reemplazo U+FFFD.
+    Verifica que los ficheros Markdown, TOML y C# del repositorio no contengan
+    caracteres fuera del juego esperado: codepoints CJK (cirílico/coreano/
+    japonés/chino) ni el caracter de reemplazo U+FFFD.
 
 .DESCRIPTION
     Los editores han inyectado repetidamente codepoints CJK dentro de texto en
     español y han dejado pasar revisiones que declaraban "CJK: PASS - 0" sobre
     ficheros corruptos. Este check convierte ese fallo en algo detectable.
+
+    El codigo C# entra en el barrido porque una letra acentuada perdida al
+    escribir deja un U+FFFD en un comentario o en un mensaje visible al
+    usuario, y ningun otro guard lo detecta: el U+FFFD es un caracter de
+    reemplazo valido, asi que el compilador lo acepta sin quejarse. La regla
+    del BOM se queda en Markdown y TOML, donde el BOM no aporta nada, porque
+    en C# es la convencion del editor de Visual Studio.
+
+    En C# el CJK si puede aparecer, y de forma DELIBERADA: un test que mide
+    puntos de codigo necesita ideogramas de verdad. Ese fichero lo declara
+    EXENTO con una marca explicita en su primera linea, y el guard lo respeta:
+    la excepcion es una DECLARACION, no un nombre de fichero en una lista.
 
     Solo lectura: no modifica ficheros. Devuelve 1 si encuentra offenders.
 
@@ -17,7 +29,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string[]] $Path = @('docs', '_bmad-output', '_bmad', 'AGENTS.md', 'tools'),
+    [string[]] $Path = @('docs', '_bmad-output', '_bmad', 'AGENTS.md', 'tools', 'src', 'tests'),
     [switch] $Quiet
 )
 
@@ -55,7 +67,10 @@ foreach ($target in $Path) {
     $item = Get-Item -LiteralPath $target
     if ($item.PSIsContainer) {
         $files += Get-ChildItem -LiteralPath $target -Recurse -File |
-            Where-Object { $_.Extension -in @('.md', '.toml') }
+            Where-Object {
+                $_.Extension -in @('.md', '.toml', '.cs') -and
+                $_.FullName -notmatch '[\\/](bin|obj)[\\/]'
+            }
     }
     else {
         $files += $item
@@ -66,13 +81,20 @@ $files = $files | Sort-Object FullName -Unique
 $offenders = @()
 foreach ($file in $files) {
     $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+    # El BOM solo es un problema en Markdown y TOML: en C# es la convencion del
+    # editor de Visual Studio y quitarlo seria un cambio sin motivo.
+    if ($file.Extension -ne '.cs' -and
+        $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
         $offenders += [pscustomobject]@{ File = $file.FullName; Line = 0; Detail = 'UTF-8 BOM' }
         continue
     }
     $text = [System.Text.Encoding]::UTF8.GetString($bytes)
     $lines = $text -split "`n"
+    # El fichero se declara EXENTO si su primera linea lo dice: la excepcion
+    # viaja con el fichero, no con una lista aparte que se desincroniza.
+    $exempt = ($lines.Count -gt 0) -and ($lines[0] -match 'encoding-guard:\s*exempt')
     for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($exempt) { break }
         foreach ($ch in $lines[$i].ToCharArray()) {
             $detail = Test-Forbidden -CodePoint ([int][char]$ch)
             if ($detail) {
@@ -87,7 +109,7 @@ foreach ($file in $files) {
 }
 
 if (-not $Quiet) {
-    Write-Host "Ficheros Markdown y TOML analizados: $($files.Count)"
+    Write-Host "Ficheros Markdown, TOML y C# analizados: $($files.Count)"
     if ($offenders.Count -eq 0) {
         Write-Host 'OK: sin codepoints CJK ni U+FFFD.' -ForegroundColor Green
     }

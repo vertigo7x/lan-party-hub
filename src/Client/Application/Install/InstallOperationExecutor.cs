@@ -57,6 +57,13 @@ public sealed class InstallOperationExecutor
     /// <summary>
     /// Applies the typed operations of the manifest inside the installation root (AD-7,
     /// AD-9, AC1, AC2).
+    ///
+    /// <para>
+    /// La raíz que confine las escrituras es la que recibe la llamada, y NO la raíz
+    /// configurada: durante una ACTUALIZACIÓN el árbol nuevo se prepara en una raíz de
+    /// PREPARACIÓN y la anterior sigue intacta hasta que la nueva se certify (AD-9, AC4,
+    /// FR-11).
+    /// </para>
     /// </summary>
     /// <param name="manifest">Manifest whose operations are applied.</param>
     /// <param name="rootPath">Canonical absolute path of the installation root.</param>
@@ -76,6 +83,7 @@ public sealed class InstallOperationExecutor
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(progress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
         var verifyPassed = true;
         var pathsConfinedToRoot = true;
@@ -161,7 +169,7 @@ public sealed class InstallOperationExecutor
             {
                 case InstallationManifest.Extract extract:
                 {
-                    if (!TryResolve(extract.DestinationPath, out _, out var extractRejection))
+                    if (!TryResolve(rootPath, extract.DestinationPath, out _, out var extractRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= extractRejection;
@@ -178,7 +186,7 @@ public sealed class InstallOperationExecutor
                     progress.Report(InstallPhase.Extracting, writtenBytes, totalBytes);
 
                     var written = await _extractor
-                        .ExtractAsync(packagePath, extract.ArchivePath, extract.DestinationPath, destinationIsDirectory: true, cancellationToken)
+                        .ExtractAsync(rootPath, packagePath, extract.ArchivePath, extract.DestinationPath, destinationIsDirectory: true, cancellationToken)
                         .ConfigureAwait(false);
 
                     writtenBytes += written;
@@ -190,7 +198,7 @@ public sealed class InstallOperationExecutor
 
                 case InstallationManifest.CreateDirectory createDirectory:
                 {
-                    if (!TryResolve(createDirectory.Path, out var directoryPath, out var directoryRejection))
+                    if (!TryResolve(rootPath, createDirectory.Path, out var directoryPath, out var directoryRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= directoryRejection;
@@ -205,7 +213,7 @@ public sealed class InstallOperationExecutor
 
                 case InstallationManifest.CopyFile copyFile:
                 {
-                    if (!TryResolve(copyFile.DestinationPath, out var copyPath, out var copyRejection))
+                    if (!TryResolve(rootPath, copyFile.DestinationPath, out var copyPath, out var copyRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= copyRejection;
@@ -231,7 +239,7 @@ public sealed class InstallOperationExecutor
                     // antes de escribir y el archivo sale de los bytes que el manifiesto
                     // firmado ya autorizó.
                     var written = await _extractor
-                        .ExtractAsync(packagePath, copyFile.SourcePath, copyFile.DestinationPath, destinationIsDirectory: false, cancellationToken)
+                        .ExtractAsync(rootPath, packagePath, copyFile.SourcePath, copyFile.DestinationPath, destinationIsDirectory: false, cancellationToken)
                         .ConfigureAwait(false);
 
                     writtenBytes += written;
@@ -243,7 +251,7 @@ public sealed class InstallOperationExecutor
 
                 case InstallationManifest.WriteConfig writeConfig:
                 {
-                    if (!TryResolve(writeConfig.Path, out var configPath, out var configRejection))
+                    if (!TryResolve(rootPath, writeConfig.Path, out var configPath, out var configRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= configRejection;
@@ -276,7 +284,7 @@ public sealed class InstallOperationExecutor
                     // (AD-9, AC2).
                     var launchPath = "launch.json";
 
-                    if (!TryResolve(launchPath, out var materializedPath, out var launchRejection))
+                    if (!TryResolve(rootPath, launchPath, out var materializedPath, out var launchRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= launchRejection;
@@ -308,7 +316,7 @@ public sealed class InstallOperationExecutor
 
                 case InstallationManifest.Verify verify:
                 {
-                    if (!TryResolve(verify.Path, out var verifiedPath, out var verifyRejection))
+                    if (!TryResolve(rootPath, verify.Path, out var verifiedPath, out var verifyRejection))
                     {
                         pathsConfinedToRoot = false;
                         rejectedPath ??= verifyRejection;
@@ -514,14 +522,21 @@ public sealed class InstallOperationExecutor
     /// <param name="resolved">Canonical absolute path that resolves inside the root.</param>
     /// <param name="rejection">The path that was rejected, or <c>null</c>.</param>
     /// <returns><c>true</c> when the path stays inside the root.</returns>
-    private bool TryResolve(string relativePath, out string resolved, out string? rejection)
+    private bool TryResolve(
+        string rootPath,
+        string relativePath,
+        out string resolved,
+        out string? rejection)
     {
         resolved = string.Empty;
         rejection = null;
 
         try
         {
-            resolved = _paths.ResolveInsideRoot(relativePath);
+            // AD-9: el confine se comprueba contra la raíz que esta llamada está
+            // ESCRIBIENDO, que durante una actualización es la raíz de PREPARACIÓN y no
+            // la que hay en el disco (AD-9, AC4, FR-11).
+            resolved = _paths.ResolveInside(rootPath, relativePath);
 
             return true;
         }

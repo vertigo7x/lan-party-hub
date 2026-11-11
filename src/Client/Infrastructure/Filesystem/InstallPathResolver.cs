@@ -54,14 +54,18 @@ public sealed class InstallPathResolver : IInstallPathResolver
     }
 
     /// <inheritdoc />
-    public string ResolveInsideRoot(string relativePath)
+    public string ResolveInsideRoot(string relativePath) => ResolveInside(RootPath, relativePath);
+
+    /// <inheritdoc />
+    public string ResolveInside(string rootPath, string relativePath)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
 
         // AD-9: la raíz se lee AHORA, no en el constructor: el confine se repite antes
         // de cada escritura y una raíz que se mueve tiene que surtir efecto de
         // inmediato.
-        var root = RootPath;
+        var root = Canonicalize(rootPath);
 
         // AD-9: el manifiesto NO admite rutas absolutas. Una ruta absoluta se resuelve
         // contra la raíz como si fuera relativa, así que la comprobación canónica la
@@ -93,16 +97,19 @@ public sealed class InstallPathResolver : IInstallPathResolver
     }
 
     /// <inheritdoc />
-    public bool IsInsideRoot(string relativePath)
+    public bool IsInsideRoot(string relativePath) => IsInside(RootPath, relativePath);
+
+    /// <inheritdoc />
+    public bool IsInside(string rootPath, string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(relativePath))
+        if (string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(rootPath))
         {
             return false;
         }
 
         try
         {
-            ResolveInsideRoot(relativePath);
+            ResolveInside(rootPath, relativePath);
 
             return true;
         }

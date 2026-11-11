@@ -609,6 +609,144 @@ public sealed class CatalogSurfaceTests : IDisposable
     }
 
     /// <summary>
+    /// AC4, AD-26: un snapshot que RETIRA un juego NO borra su instalación ni altera su
+    /// validez, así que lo que ya estaba instalado sigue siendo válido (FR-11).
+    /// </summary>
+    [Fact]
+    public async Task The_installation_survives_a_snapshot_that_withdraws_the_game()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        // La instalación del cliente es VÁLIDA antes de la retirada.
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "1.0.0",
+            InstallationState.Installed);
+
+        // El snapshot que RETIRA el juego no lo declara, así que el juego sale del
+        // catálogo del cliente (AD-26).
+        await ApplySnapshotAsync(
+            databasePath,
+            new CatalogSnapshot(
+                99,
+                [],
+                []));
+
+        var store = await OpenStoreAsync(databasePath);
+
+        // La instalación NO se borra (AC4, AD-26).
+        var installations = await store
+            .LoadInstalledGamesAsync(TestContext.Current.CancellationToken);
+
+        var installation = Assert.Single(installations);
+
+        Assert.Equal(game.GameId, installation.GameId);
+        Assert.Equal("1.0.0", installation.InstalledVersion);
+
+        // Y la retirada NO altera su VALIDEZ: lo instalado sigue siendo válido (AC4).
+        Assert.Equal(InstallationState.Installed, installation.ValidationState);
+    }
+
+    /// <summary>
+    /// AC4, AD-26: el snapshot que retira el juego CONSERVA la instalación y la declara
+    /// con la MISMA validez, así que la retirada no la invalida (FR-11).
+    /// </summary>
+    [Fact]
+    public async Task The_withdrawn_installation_keeps_its_validity_in_the_outcome()
+    {
+        await using var host = await TestServer.StartAsync(
+            CreateTemporaryDataDirectory(),
+            TestContext.Current.CancellationToken);
+
+        using var client = host.CreateClient();
+
+        await PublishGameAsync(client, host.DataDirectory, "Counter-Strike 2", "Shooter");
+
+        var (viewModel, databasePath) = await SynchronizeWithDatabaseAsync(host);
+
+        var game = Assert.Single(viewModel.Games);
+
+        await RegisterInstallationAsync(
+            databasePath,
+            game.GameId,
+            "1.0.0",
+            InstallationState.Installed);
+
+        await ApplySnapshotAsync(
+            databasePath,
+            new CatalogSnapshot(
+                99,
+                [],
+                []));
+
+        var store = await OpenStoreAsync(databasePath);
+
+        var applier = new CatalogSnapshotApplier(
+            store,
+            NullLogger<CatalogSnapshotApplier>.Instance);
+
+        var outcome = await applier.ApplyAsync(
+            new CatalogSnapshot(100, [], []),
+            TestContext.Current.CancellationToken);
+
+        var withdrawn = Assert.Single(outcome.WithdrawnInstallations);
+
+        Assert.Equal(game.GameId, withdrawn.GameId);
+        Assert.Equal("1.0.0", withdrawn.InstalledVersion);
+
+        // La validez es la MISMA que tenía antes de la retirada (AC4, AD-26).
+        Assert.Equal(InstallationState.Installed, withdrawn.ValidationState);
+    }
+
+    /// <summary>
+    /// Opens the store of the snapshot over the REAL <c>state.sqlite</c> of the client, así
+    /// que la prueba puede aplicar un snapshot sobre el archivo de verdad (AD-16).
+    /// </summary>
+    /// <param name="databasePath">Path of the file of the client.</param>
+    /// <returns>The store of the snapshot.</returns>
+    private static async Task<CatalogSnapshotStore> OpenStoreAsync(string databasePath)
+    {
+        var options = new DbContextOptionsBuilder<ClientStateDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .Options;
+
+        var context = new ClientStateDbContext(options);
+
+        await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+
+        return new CatalogSnapshotStore(context);
+    }
+
+    /// <summary>
+    /// Applies a snapshot on the REAL <c>state.sqlite</c> of the client, así que la
+    /// retirada se observa sobre el archivo de verdad (AD-16, AC4).
+    /// </summary>
+    /// <param name="databasePath">Path of the file of the client.</param>
+    /// <param name="snapshot">Snapshot that the client applies.</param>
+    /// <returns>A task that completes when the snapshot has been applied.</returns>
+    private static async Task ApplySnapshotAsync(string databasePath, CatalogSnapshot snapshot)
+    {
+        var store = await OpenStoreAsync(databasePath);
+
+        var applier = new CatalogSnapshotApplier(
+            store,
+            NullLogger<CatalogSnapshotApplier>.Instance);
+
+        await applier.ApplyAsync(snapshot, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
     /// Synchronizes the real client over a real <c>state.sqlite</c> and builds the
     /// surface over the snapshot that the client applied.
     /// </summary>

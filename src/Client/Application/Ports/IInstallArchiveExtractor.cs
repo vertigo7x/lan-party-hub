@@ -19,7 +19,13 @@ public interface IInstallArchiveExtractor
 {
     /// <summary>
     /// Extracts an entry of the package into the installation root (AD-7, AD-9, AC1).
-    ///
+    /// </summary>
+    /// <param name="rootPath">
+    /// Canonical absolute path of the root that confines the write. It is NOT
+    /// necessarily the configured root: during an UPDATE the tree is prepared in a
+    /// STAGING root and the previous one is not touched until the new one is certified
+    /// (AD-9, AC4, FR-11).
+    /// </param>
     /// <param name="packagePath">Absolute path of the file that holds the bytes of the package.</param>
     /// <param name="archivePath">
     /// Path of the entry INSIDE the package, as the manifest declares it.
@@ -38,6 +44,7 @@ public interface IInstallArchiveExtractor
     /// An entry of the archive resolves OUTSIDE the installation root (AD-9, AC1).
     /// </exception>
     Task<long> ExtractAsync(
+        string rootPath,
         string packagePath,
         string archivePath,
         string destinationPath,

@@ -56,6 +56,7 @@ public sealed class DownloadProgressViewModel
 
     private DownloadOperationHandle? _handle;
     private bool _resuming;
+    private bool _updating;
 
     /// <summary>Raised when the view model changes and the view has to be repainted.</summary>
     public event Action? Changed;
@@ -204,6 +205,25 @@ public sealed class DownloadProgressViewModel
 
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Marks the operation as the download of an UPDATE, so the interface dice que lo que
+    /// se descarga es la versión COMPLETA que sustituye a la instalada (AC1, FR-11,
+    /// R-MVP-4).
+    /// </summary>
+    /// <param name="updating">Whether the operation is an update.</param>
+    public void ApplyUpdating(bool updating)
+    {
+        _updating = updating;
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// True when the operation in course is the download of the COMPLETE package of an
+    /// update (AC1, FR-11, R-MVP-4).
+    /// </summary>
+    public bool IsUpdating => _updating;
 
     /// <summary>
     /// The fraction that the bar draws, the SAME that the percentage declares

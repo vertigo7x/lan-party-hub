@@ -38,19 +38,22 @@ public sealed class ZipInstallArchiveExtractor : IInstallArchiveExtractor
 
     /// <inheritdoc />
     public async Task<long> ExtractAsync(
+        string rootPath,
         string packagePath,
         string archivePath,
         string destinationPath,
         bool destinationIsDirectory,
         CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(packagePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
 
         // AD-9: el destino se resuelve contra la raíz ANTES de abrir el archivo, así que
-        // un destino que sale de la raíz se rechaza sin tocar el disco.
-        var resolvedDestination = _paths.ResolveInsideRoot(destinationPath);
+        // un destino que sale de la raíz se rechaza sin tocar el disco. La raíz es la que
+        // recibe la llamada, que durante una actualización es la de PREPARACIÓN (AD-9, AC4).
+        var resolvedDestination = _paths.ResolveInside(rootPath, destinationPath);
 
         if (!File.Exists(packagePath))
         {
@@ -88,8 +91,8 @@ public sealed class ZipInstallArchiveExtractor : IInstallArchiveExtractor
         // raíz —por el nombre de la entrada o por el destino del manifiesto— se rechaza
         // ANTES de escribir.
         var canonicalDestination = destinationIsDirectory
-            ? _paths.ResolveInsideRoot(Path.Combine(destinationPath, entryName))
-            : _paths.ResolveInsideRoot(destinationPath);
+            ? _paths.ResolveInside(rootPath, Path.Combine(destinationPath, entryName))
+            : _paths.ResolveInside(rootPath, destinationPath);
 
         var directory = Path.GetDirectoryName(canonicalDestination);
 
