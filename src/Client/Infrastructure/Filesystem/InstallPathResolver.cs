@@ -21,6 +21,11 @@ namespace LANPartyHub.Client.Infrastructure.Filesystem;
 /// era válida deja de serlo en cuanto la raíz se mueve o en cuanto aparece un enlace,
 /// así que una copia congelada de la raíz dejaría pasar la escapada (AD-9, AC1).
 /// </para>
+/// <para>
+/// La raíz es POR JUEGO: cada juego tiene la suya, así que el confine se comprueba
+/// contra la raíz de ESE juego y una ruta que cae en la raíz de otro queda FUERA
+/// (AD-9, FR-8).
+/// </para>
 /// </summary>
 public sealed class InstallPathResolver : IInstallPathResolver
 {
@@ -39,22 +44,45 @@ public sealed class InstallPathResolver : IInstallPathResolver
     }
 
     /// <inheritdoc />
-    public string RootPath
+    public string GameRootPath(string gameId)
     {
-        get
-        {
-            // La raíz vacía se rechaza de forma EXPLÍCITA: canonicalizarla
-            // dependería del host (en Windows `GetFullPath("")` lanza, en Linux
-            // devuelve el directorio actual), y una raíz vacía no es una raíz.
-            var installDirectory = _layout.InstallDirectory;
-            ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
 
-            return Canonicalize(installDirectory);
-        }
+        // AD-9: la raíz del JUEGO se deriva del layout en cada llamada, sin caché: la
+        // raíz que confine es la del MOMENTO, no una copia congelada (AD-9, AC1).
+        //
+        // La raíz vacía se rechaza de forma EXPLÍCITA: canonicalizarla dependería del
+        // host (en Windows `GetFullPath("")` lanza, en Linux devuelve el directorio
+        // actual), y una raíz vacía no es una raíz.
+        var installDirectory = _layout.InstallDirectory;
+        ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
+
+        return Canonicalize(_layout.GameInstallDirectory(gameId));
     }
 
     /// <inheritdoc />
-    public string ResolveInsideRoot(string relativePath) => ResolveInside(RootPath, relativePath);
+    public string ResolveInsideGameRoot(string gameId, string relativePath) =>
+        ResolveInside(GameRootPath(gameId), relativePath);
+
+    /// <inheritdoc />
+    public bool IsInsideGameRoot(string gameId, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            ResolveInsideGameRoot(gameId, relativePath);
+
+            return true;
+        }
+        catch (InstallPathOutsideRootException)
+        {
+            return false;
+        }
+    }
 
     /// <inheritdoc />
     public string ResolveInside(string rootPath, string relativePath)
@@ -95,9 +123,6 @@ public sealed class InstallPathResolver : IInstallPathResolver
 
         return canonical;
     }
-
-    /// <inheritdoc />
-    public bool IsInsideRoot(string relativePath) => IsInside(RootPath, relativePath);
 
     /// <inheritdoc />
     public bool IsInside(string rootPath, string relativePath)
