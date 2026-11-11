@@ -1169,7 +1169,10 @@ def parse_skill_output(path: Path) -> tuple[str, str]:
                 lines.append(text)
         elif kind == "tool":
             tool = str(part.get("tool", ""))
-            state = str(part.get("state", ""))
+            # El estado se conserva como DICT: si se convierte a texto, la
+            # comprobacion de si es un dict nunca es cierta y el detalle de
+            # la herramienta (su estado y su salida) se pierde del transcript.
+            state = part.get("state", "")
             status = (state.get("status") if isinstance(state, dict) else "") or ""
             detail = ""
             if isinstance(state, dict):
@@ -1788,6 +1791,14 @@ deferred:
             check(session_id == "ses_fixture", "the session id is not read from the event stream")
             check("hola" in transcript, "the transcript does not carry the text of the run")
             check("bash" in transcript, "the transcript does not carry the tool calls")
+            check(
+                "dotnet build" in transcript,
+                "the transcript does not carry the detail of the tool call",
+            )
+            check(
+                "completed" in transcript,
+                "the transcript does not carry the state of the tool call",
+            )
             check(parse_skill_output(Path(temporary) / "missing.jsonl") == ("", ""),
                   "a missing event stream does not degrade quietly")
         subject, commit_body = select_commit_message(
