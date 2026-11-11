@@ -101,7 +101,10 @@ PLAN_SOURCE_MAX_CHARS = 18000
 # idioma: el plazo del artefacto del plan, el presupuesto de cada fase y la ventana
 # de progreso son el mismo calculo.
 PHASE_PROVIDER = os.environ.get("BUILD_LITE_PROVIDER", "opencode").strip().lower()
-PHASE_BUDGET_FACTOR = 2 if PHASE_PROVIDER == "hermes" else 1
+# El factor es TRES con Hermes: la evidencia de la 10.4 dice que el diseño de una
+# historia transversal, solo con leer, pasa de 30 minutos (implementation `stalled`
+# a los 1801 s en `.build-lite/logs/10-4/phases.json`).
+PHASE_BUDGET_FACTOR = 3 if PHASE_PROVIDER == "hermes" else 1
 
 # El plazo del plan: el planificador tiene que escribir su artefacto dentro de el.
 PLAN_ARTIFACT_DEADLINE_SECONDS = 90 * PHASE_BUDGET_FACTOR
@@ -1135,6 +1138,10 @@ Lee primero {relative(plan)} y el paquete de contexto {relative(context)}. El pa
 evidencia ya seleccionada de esta historia: úsalo y no explores el backlog por tu cuenta.
 Implementa el código y las pruebas que el plan y el paquete describen, ejecuta las pruebas más
 cercanas que existan y deja el árbol listo para commit.
+Lee solo lo que necesitas para la PIEZA que estás escribiendo: empieza por el cambio de
+dominio o de contrato y escríbelo, y sigue con los adaptadores y con las pruebas. No leas el
+árbol entero antes de escribir nada: el driver da por parada una fase que no deja cambio
+ninguno, y una historia que lo lee todo antes no deja cambio nunca.
 Limita tu exploración a las rutas que el plan y el paquete declaran. Si el paquete no contiene lo
 que necesitas, no amplíes el alcance: repórtalo como bloqueo demostrado con una línea que empiece
 por `{BLOCKER_MARKER}` (qué falta y en qué ruta), emitida mediante un comando `Write-Output` o
