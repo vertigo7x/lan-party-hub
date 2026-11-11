@@ -62,17 +62,26 @@ public sealed class InstallPathConfineFormTests
     }
 
     /// <summary>
-    /// The unit of a path is a DRIVE, and the drive is what the host calls it: Windows
-    /// admits any character before the colon as a drive, and this rule admits the same
-    /// ones, so that a path is absolute for one platform and for this rule at once
-    /// (AD-9).
+    /// The unit of a path is a DRIVE, and a drive needs a VALID drive letter: Windows
+    /// only admits ASCII letters before the colon, and this rule admits the same ones,
+    /// so that a path is absolute for one platform and for this rule at once (AD-9).
     /// </summary>
+    /// <remarks>
+    /// `Path.IsPathRooted` de .NET exige una letra de unidad valida, asi que `1:\\x` NO
+    /// es una ruta absoluta para Windows. Antes de esta regla, el cliente la trataba
+    /// como relativa y la servidor como absoluta: las dos copias tienen que coincidir
+    /// CON WINDOWS, no entre si.
+    /// </remarks>
     [Fact]
     public void The_unit_of_a_path_is_the_one_of_windows()
     {
-        // Windows da por ABSOLUTA una ruta con cualquier carácter antes de los dos
-        // puntos, y esta regla tiene que coincidir con él.
-        Assert.True(InstallPathConfine.IsAbsoluteByForm("1:\\juegos"));
-        Assert.True(InstallPathConfine.IsAbsoluteByForm("?:\\juegos"));
+        // Una letra de unidad, en mayuscula o en minuscula.
+        Assert.True(InstallPathConfine.IsAbsoluteByForm("C:\\juegos"));
+        Assert.True(InstallPathConfine.IsAbsoluteByForm("c:\\juegos"));
+
+        // Un caracter que NO es una letra de unidad no es una unidad: Windows no lo
+        // reconoce, y esta regla tampoco.
+        Assert.False(InstallPathConfine.IsAbsoluteByForm("1:\\juegos"));
+        Assert.False(InstallPathConfine.IsAbsoluteByForm("?:\\juegos"));
     }
 }

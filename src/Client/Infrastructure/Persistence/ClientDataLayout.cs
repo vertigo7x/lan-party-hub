@@ -61,6 +61,29 @@ public sealed class ClientDataLayout : IClientDataLayout
             .Distinct()
             .ToArray();
 
+    /// <summary>
+    /// Tells whether an identifier of a package can be used as a FILE NAME (AD-9).
+    /// </summary>
+    /// <remarks>
+    /// La comprobacion vive aqui y no en cada sitio que usa el identificador como
+    /// nombre de archivo: la cache de manifiestos y el fichero parcial lo usan los dos,
+    /// y con dos conjuntos distintos un identificador podia pasar por uno y ser
+    /// rechazado por el otro.
+    /// </remarks>
+    /// <param name="packageId">Identifier of the package.</param>
+    /// <returns><c>true</c> when the identifier can be used as a file name.</returns>
+    public static bool IsValidPackageId(string packageId)
+    {
+        if (string.IsNullOrWhiteSpace(packageId))
+        {
+            return false;
+        }
+
+        return packageId.IndexOfAny(InvalidFileNameChars) < 0
+            && !packageId.Contains('/', StringComparison.Ordinal)
+            && !packageId.Contains('\\', StringComparison.Ordinal);
+    }
+
     private ClientDataLayout(
         string folder,
         string installDirectory,
@@ -195,9 +218,7 @@ public sealed class ClientDataLayout : IClientDataLayout
         // plataforma del cliente (AD-17): el identificador se usa como nombre de
         // archivo, y un nombre que Windows no admite no sirve aunque el host lo
         // admita (AD-9).
-        if (packageId.IndexOfAny(InvalidFileNameChars) >= 0
-            || packageId.Contains('/', StringComparison.Ordinal)
-            || packageId.Contains('\\', StringComparison.Ordinal))
+        if (!IsValidPackageId(packageId))
         {
             throw new ArgumentException(
                 "El identificador de un paquete no puede usarse como nombre de archivo.",

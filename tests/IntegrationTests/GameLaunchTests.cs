@@ -95,7 +95,7 @@ public sealed class GameLaunchTests : IDisposable
         // ejecuta el probe con `/c` y `sh` lo ejecuta por su nombre (AD-16, AD-17).
         Assert.Equal(
             HostInterpreter.ProbeArguments(
-                OperatingSystem.IsWindows() ? "game\\probe.cmd" : "game/probe.sh",
+                HostInterpreter.ProbeRelativePath,
                 ["-novid", "-console", "mapa1"]),
             inspection.LaunchSettings.Arguments);
 
@@ -438,9 +438,7 @@ public sealed class GameLaunchTests : IDisposable
 
         if (runsProbe)
         {
-            var probe = Path.Combine(
-                Path.GetDirectoryName(executable)!,
-                "probe" + HostInterpreter.ProbeExtension);
+            var probe = Path.Combine(_installDirectory, HostInterpreter.ProbeRelativePath);
 
             await File.WriteAllTextAsync(
                 probe,

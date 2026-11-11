@@ -69,7 +69,25 @@ internal static class ProcSocketTable
             return inodes;
         }
 
-        foreach (var descriptor in Directory.EnumerateFileSystemEntries(folder))
+        // La enumeración va PROTEGIDA: si el proceso muere mientras se leen sus
+        // descriptores, la lista sale vacía en vez de romper la prueba con una
+        // excepción (AD-16).
+        string[] descriptors;
+
+        try
+        {
+            descriptors = Directory.GetFileSystemEntries(folder);
+        }
+        catch (IOException)
+        {
+            return inodes;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return inodes;
+        }
+
+        foreach (var descriptor in descriptors)
         {
             string link;
 

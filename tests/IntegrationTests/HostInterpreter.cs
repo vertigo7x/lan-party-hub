@@ -24,9 +24,44 @@ internal static class HostInterpreter
     /// <summary>
     /// The REAL interpreter of the host.
     /// </summary>
-    public static string Path => OperatingSystem.IsWindows()
-        ? System.IO.Path.Combine(Environment.SystemDirectory, "cmd.exe")
-        : "/bin/sh";
+    /// <remarks>
+    /// El intérprete se BUSCA en los sitios donde suele estar, y no en uno solo: un
+    /// host que lo tenga en `/usr/bin/sh` y no en `/bin/sh` es un host valido, y una
+    /// ruta fija rompería la suite sin motivo.
+    /// </remarks>
+    public static string Path
+    {
+        get
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return System.IO.Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            }
+
+            foreach (var candidate in new[] { "/bin/sh", "/usr/bin/sh", "/bin/bash", "/usr/bin/bash" })
+            {
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            throw new InvalidOperationException(
+                "No se ha encontrado un intérprete de shell real en el host: la prueba de lanzamiento necesita un ejecutable real.");
+        }
+    }
+
+    /// <summary>
+    /// The path of the probe script, relative to the root of the installation, as the
+    /// manifest declares it.
+    /// </summary>
+    /// <remarks>
+    /// La ruta la calcula el propio fixture, y este es el mismo calculo: asi la
+    /// aserción y el fixture no pueden desincronizarse sin que lo detecte nadie.
+    /// </remarks>
+    public static string ProbeRelativePath => System.IO.Path.Combine(
+        System.IO.Path.GetDirectoryName(ExecutablePath)!,
+        "probe" + ProbeExtension);
 
     /// <summary>
     /// The extension of the probe script of the host.

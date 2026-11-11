@@ -116,9 +116,10 @@ public sealed class ManifestCache : IManifestCache
         // El identificador de un paquete es un texto opaco y se usa como nombre de archivo,
         // así que no puede llevar un separador: este es el control que mantiene el
         // manifiesto DENTRO de la carpeta de la caché (AD-9).
-        if (packageId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-            || packageId.Contains('/', StringComparison.Ordinal)
-            || packageId.Contains('\\', StringComparison.Ordinal))
+        // La MISMA regla que el layout usa para el fichero parcial: un identificador
+        // que uno acepta y el otro rechaza es un identificador que falla a medias
+        // (AD-9).
+        if (!ClientDataLayout.IsValidPackageId(packageId))
         {
             throw new ArgumentException(
                 "El identificador de un paquete no puede usarse como nombre de archivo.",
