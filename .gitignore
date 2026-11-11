@@ -238,3 +238,8 @@ logs/
 .bmad-loop/cache/
 .bmad-loop/policy.toml
 _bmad/render/
+
+# ── Salidas de la suite de pruebas: son EJECUCIÓN, no código ──────
+out-*.txt
+err-*.txt
+test-out*.txt
