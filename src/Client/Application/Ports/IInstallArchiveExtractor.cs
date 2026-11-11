@@ -34,9 +34,9 @@ public interface IInstallArchiveExtractor
     /// Destination path RELATIVE to the installation root, as the manifest declares it.
     /// </param>
     /// <param name="destinationIsDirectory">
-    /// Whether the destination is a DIRECTORY �the semantics of the <c>extract</c>
-    /// operation, que escribe la entrada DENTRO de ella con su propio nombre� or an
-    /// exact FILE �the semantics of the <c>copyFile</c> operation (AD-7).
+    /// Whether the destination is a DIRECTORY —the semantics of the <c>extract</c>
+    /// operation, que escribe la entrada DENTRO de ella con su propio nombre— or an
+    /// exact FILE —the semantics of the <c>copyFile</c> operation (AD-7).
     /// </param>
     /// <param name="cancellationToken">Token that cancels the operation.</param>
     /// <returns>The number of bytes that were really written.</returns>

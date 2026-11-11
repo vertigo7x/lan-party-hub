@@ -20,8 +20,8 @@ namespace LANPartyHub.UnitTests;
 /// AC1..AC10).
 ///
 /// <para>
-/// El coordinador se ejercita con dobles de los PUERTOS: as� la secuencia de la
-/// descarga, la pausa, la reanudaci�n y la cancelaci�n son observables sin un servidor y
+/// El coordinador se ejercita con dobles de los PUERTOS: así la secuencia de la
+/// descarga, la pausa, la reanudación y la cancelación son observables sin un servidor y
 /// sin un disco (AD-1, AD-16).
 /// </para>
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task Starting_a_download_registers_the_intention_and_persists_the_operation()
     {
-        // AC1: el cliente registra la intenci�n con el servidor y obtiene el operationId.
+// AC1: el cliente registra la intención con el servidor y obtiene el operationId.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -46,7 +46,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         Assert.Equal("operacion-1", handle.OperationId);
         Assert.Equal("paquete-1", intents.RegisteredPackageId);
 
-        // AD-10, AD-11: la operaci�n y su estado se persisten, con el motor que la
+// AD-10, AD-11: la operación y su estado se persisten, con el motor que la
         // transfiere.
         var operation = Assert.Single(
             store.SavedOperations,
@@ -59,7 +59,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task A_download_in_course_reports_its_progress()
     {
-        // AC2: el cliente informa del porcentaje entero y del par de tama�os.
+// AC2: el cliente informa del porcentaje entero y del par de tamaños.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -110,15 +110,15 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         Assert.Equal(DownloadState.Paused, handle.StateMachine.Current);
 
-        // AC4: el offset persistido se conserva, as� que la reanudaci�n contin�a desde la
-        // misma posici�n.
+// AC4: el offset persistido se conserva, así que la reanudación continúa desde la
+// misma posición.
         Assert.Equal(300, store.SavedProgresses.Last().BytesPersisted);
     }
 
     [Fact]
     public async Task Resuming_a_download_continues_from_the_persisted_offset()
     {
-        // AC3, AC4: al reanudar contin�a DESDE LA MISMA POSICI�N, sin volver a cero.
+// AC3, AC4: al reanudar continúa DESDE LA MISMA POSICIÓN, sin volver a cero.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -145,7 +145,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 2);
 
-        // La reanudaci�n pide el rango que empieza en el offset acumulado (AD-20, AD-24).
+// La reanudación pide el rango que empieza en el offset acumulado (AD-20, AD-24).
         Assert.Equal(300, engine.RequestedStarts[1]);
     }
 
@@ -177,7 +177,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         Assert.Equal(DownloadState.Cancelled, handle.StateMachine.Current);
 
-        // El archivo parcial est� BORRADO.
+// El archivo parcial está BORRADO.
         Assert.False(File.Exists(partial));
 
         // El registro de progreso se REINICIA: bytesPersisted vuelve a cero.
@@ -188,7 +188,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task Cancelling_a_download_leaves_it_terminal_and_not_resumable()
     {
-        // AC5: �Cancelled� es un estado TERMINAL de DownloadState.
+// AC5: «Cancelled» es un estado TERMINAL de DownloadState.
         var coordinator = CreateCoordinator(new RecordingIntentClient(), new RecordingStateStore());
 
         var handle = await coordinator.StartAsync(
@@ -201,7 +201,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         Assert.True(DownloadStateMachine.IsTerminalState(DownloadState.Cancelled));
         Assert.True(handle.StateMachine.IsTerminal);
 
-        // La operaci�n NO queda reintentable por reanudaci�n.
+// La operación NO queda reintentable por reanudación.
         await coordinator.ResumeAsync(handle, TestContext.Current.CancellationToken);
 
         Assert.Equal(DownloadState.Cancelled, handle.StateMachine.Current);
@@ -210,7 +210,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task A_failed_download_keeps_its_partial_and_its_offset()
     {
-        // AC5: a diferencia de la cancelaci�n, Failed CONSERVA el parcial y su offset.
+// AC5: a diferencia de la cancelación, Failed CONSERVA el parcial y su offset.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -263,7 +263,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
-        // La segunda operaci�n del MISMO paquete espera su turno: la primera tiene el
+// La segunda operación del MISMO paquete espera su turno: la primera tiene el
         // recurso tomado.
         Assert.Single(engine.RequestedStarts);
 
@@ -308,7 +308,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public void The_limits_of_the_client_have_a_default_value()
     {
-        // AC10: los l�mites por cliente son configurables y tienen valor por defecto.
+// AC10: los límites por cliente son configurables y tienen valor por defecto.
         var coordinator = CreateCoordinator(new RecordingIntentClient(), new RecordingStateStore());
 
         Assert.Equal(2, coordinator.MaxConcurrentDownloads);
@@ -318,7 +318,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public void The_limits_of_the_client_can_be_configured()
     {
-        // AC10: los l�mites por cliente son CONFIGURABLES.
+// AC10: los límites por cliente son CONFIGURABLES.
         var coordinator = CreateCoordinator(
             new RecordingIntentClient(),
             new RecordingStateStore(),
@@ -346,7 +346,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     [Fact]
     public async Task The_client_does_not_open_more_simultaneous_downloads_than_its_limit()
     {
-        // AD-14: el l�mite de descargas simult�neas es POR CLIENTE.
+// AD-14: el límite de descargas simultáneas es POR CLIENTE.
         var intents = new RecordingIntentClient();
         var store = new RecordingStateStore();
 
@@ -373,7 +373,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
         await WaitUntilAsync(() => engine.RequestedStarts.Count >= 1);
 
-        // El l�mite de UNA descarga simult�nea: la segunda espera.
+// El límite de UNA descarga simultánea: la segunda espera.
         Assert.Single(engine.RequestedStarts);
 
         gate.Release(100);
@@ -402,7 +402,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// AC1, AC2, FR-11: la descarga de la VERSI�N COMPLETA termina en �Completado� cuando
+/// AC1, AC2, FR-11: la descarga de la VERSIÓN COMPLETA termina en «Completado» cuando
     /// el <c>sha256</c> de los bytes coincide con el del manifiesto firmado.
     /// </summary>
     [Fact]
@@ -446,9 +446,9 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// AC1, AC2: la descarga de la versi�n completa NO deja nada escrito en disco cuando
-    /// el manifiesto firmado no valida contra el ancla fijada: ni manifiesto en la cach�,
-    /// ni parcial, ni operaci�n registrada (AD-2, AD-8, AD-27).
+/// AC1, AC2: la descarga de la versión completa NO deja nada escrito en disco cuando
+/// el manifiesto firmado no valida contra el ancla fijada: ni manifiesto en la caché,
+/// ni parcial, ni operación registrada (AD-2, AD-8, AD-27).
     /// </summary>
     [Fact]
     public async Task The_download_of_the_complete_package_writes_nothing_when_the_manifest_is_not_trustworthy()
@@ -502,12 +502,12 @@ public sealed class DownloadCoordinatorTests : IDisposable
             ClientDataLayout.DownloadsFolderName,
             "paquete-1" + ClientDataLayout.PartialFileExtension)));
 
-        // Y la operaci�n NO se registr� (AD-8).
+// Y la operación NO se registró (AD-8).
         Assert.Empty(store.SavedOperations);
     }
 
     /// <summary>
-    /// AC2, AD-8: la descarga de la versi�n completa DESCARTA el parcial y falla cuando el
+/// AC2, AD-8: la descarga de la versión completa DESCARTA el parcial y falla cuando el
     /// <c>sha256</c> de los bytes NO coincide con el del manifiesto firmado.
     /// </summary>
     [Fact]
@@ -547,7 +547,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         Assert.Equal(DownloadState.Failed, handle.StateMachine.Current);
         Assert.Equal(ErrorCatalog.PackageIntegrityMismatchCode, handle.ValidationError!.Code);
 
-        // El parcial se DESCARTA: la operaci�n no es reparable por reanudaci�n (AD-8).
+// El parcial se DESCARTA: la operación no es reparable por reanudación (AD-8).
         Assert.False(File.Exists(Path.Combine(
             folder,
             ClientDataLayout.DownloadsFolderName,
@@ -603,7 +603,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
         {
             if (DateTime.UtcNow > deadline)
             {
-                throw new TimeoutException("La condici�n no se cumpli� dentro del plazo.");
+throw new TimeoutException("La condición no se cumplió dentro del plazo.");
             }
 
             await Task.Delay(10, TestContext.Current.CancellationToken);
@@ -628,7 +628,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
 
     /// <summary>
     /// Gate that holds the transfer until the test releases it, so el momento de la
-    /// pausa y el de la cancelaci�n son observables (AD-16).
+/// pausa y el de la cancelación son observables (AD-16).
     /// </summary>
     private sealed class TransferGate : IDisposable
     {
@@ -744,7 +744,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Store of the client that RECUERDA lo que se le escribi�, para que la persistencia
+/// Store of the client that RECUERDA lo que se le escribió, para que la persistencia
     /// sea observable sin un disco (AD-16).
     /// </summary>
     private sealed class RecordingStateStore : IClientStateStore
@@ -854,8 +854,8 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Engine that sirve el CONTENIDO COMPLETO del paquete de una vez, as� que la
-    /// descarga de la versi�n completa no necesita ninguna puerta (AD-4).
+/// Engine that sirve el CONTENIDO COMPLETO del paquete de una vez, así que la
+/// descarga de la versión completa no necesita ninguna puerta (AD-4).
     /// </summary>
     private sealed class WholeTransferEngine : ITransferEngine
     {
@@ -879,8 +879,8 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Port of the read of the signed manifest que devuelve SIEMPRE el mismo sobre, as�
-    /// que la validaci�n de la autenticidad es observable sin un servidor (AD-16).
+/// Port of the read of the signed manifest que devuelve SIEMPRE el mismo sobre, así
+/// que la validación de la autenticidad es observable sin un servidor (AD-16).
     /// </summary>
     private sealed class FixedManifestClient : ISignedManifestClient
     {
@@ -896,7 +896,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Verificador de la firma que la ACEPTA o la RECHAZA, as� que el rechazo ANTES de
+/// Verificador de la firma que la ACEPTA o la RECHAZA, así que el rechazo ANTES de
     /// escribir es observable (AD-2, AD-8).
     /// </summary>
     private sealed class AcceptingManifestVerifier : IManifestSignatureVerifier
@@ -909,8 +909,8 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Port of the read of the ancla de confianza que siempre devuelve el mismo valor, as�
-    /// que la validaci�n contra el ancla fijado es observable (AD-27).
+/// Port of the read of the ancla de confianza que siempre devuelve el mismo valor, así
+/// que la validación contra el ancla fijado es observable (AD-27).
     /// </summary>
     private sealed class FixedTrustAnchorReader : ITrustAnchorReader
     {
@@ -923,7 +923,7 @@ public sealed class DownloadCoordinatorTests : IDisposable
     }
 
     /// <summary>
-    /// Port of the cache of the signed manifests que RECUERDA lo que se le escribi�, as�
+/// Port of the cache of the signed manifests que RECUERDA lo que se le escribió, así
     /// que la ausencia de escritura en disco es observable (AD-2, AD-8).
     /// </summary>
     private sealed class RecordingManifestCache : IManifestCache
