@@ -81,11 +81,7 @@ public sealed class GamePlayActionsView : UserControl
         // indicador de foco, un `HorizontalAlignment.Left` colapsa el botón a cero
         // ANCHO, y un control sin ancho no es un destino válido del recorrido de
         // `Tab` (AC5, UX-DR-26).
-        _play = new Button
-        {
-            Content = GamePlayActionsViewModel.PlayActionText,
-            Height = DesignTokens.FieldInputHeight,
-        };
+        _play = Buttons.Primary(GamePlayActionsViewModel.PlayActionText);
 
         // AC5, UX-DR-38: el indicador de foco es EXPLICITO y lleva el color de la
         // acción, así que no depende del color de la insignia del estado.
@@ -136,19 +132,14 @@ public sealed class GamePlayActionsView : UserControl
 
         // La primaria y la secundaria son SEAMS habilitadas: su ejecución vive en 8.3 y
         // en 5.x/6.x, y aquí el puerto registra la intención (AC1, AC2).
-        _primary = new Button
-        {
-            Height = DesignTokens.FieldInputHeight,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
+        _primary = Buttons.Primary();
+        _primary.HorizontalAlignment = HorizontalAlignment.Left;
 
-        _secondary = new Button
-        {
-            Content = GamePlayActionsViewModel.DiagnoseActionText,
-            Height = DesignTokens.FieldInputHeight,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            IsVisible = false,
-        };
+        // Diagnosticar es la acción TERCIARIA de la tarjeta: no compite con la primaria
+        // (UX-DR-8).
+        _secondary = Buttons.Ghost(GamePlayActionsViewModel.DiagnoseActionText);
+        _secondary.HorizontalAlignment = HorizontalAlignment.Left;
+        _secondary.IsVisible = false;
 
         _actions = new StackPanel
         {

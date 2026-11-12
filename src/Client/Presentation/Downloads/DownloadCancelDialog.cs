@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Presentation.Design;
@@ -50,19 +51,11 @@ public sealed class DownloadCancelDialog : UserControl
         };
 
         // UX-DR-8: la acción que confirma la destrucción es la acción PELIGRO.
-        _confirmButton = new Button
-        {
-            Content = ConfirmActionText,
-            Height = DesignTokens.FieldInputHeight,
-            Foreground = new SolidColorBrush(DesignTokens.StateWarning),
-        };
+        // Cancelar una descarga es UNA de las tres acciones de peligro reservadas
+        // (UX-DR-8).
+        _confirmButton = Buttons.Danger(ConfirmActionText);
 
-        _keepButton = new Button
-        {
-            Content = KeepActionText,
-            Height = DesignTokens.FieldInputHeight,
-            Foreground = new SolidColorBrush(DesignTokens.InkPrimary),
-        };
+        _keepButton = Buttons.Secondary(KeepActionText);
 
         _surface = new Border
         {
@@ -109,16 +102,54 @@ public sealed class DownloadCancelDialog : UserControl
             },
         };
 
+        // El `Esc` CANCELA la acción NO destructiva: mantiene la descarga y devuelve el
+        // foco al elemento invocador (AC4, UX-DR-37).
+        KeyDown += OnKeyDown;
+
         _viewModel.Changed += Render;
 
         Render();
     }
 
     /// <summary>
+    /// Raised when the dialog is DISMISSED without cancelling the download, so that the
+    /// overlay closes and the focus goes back to the element that invoked it
+    /// (AC4, UX-DR-37).
+    /// </summary>
+    public event EventHandler? Dismissed;
+
+    /// <summary>
     /// The surface of the dialog, so it can be inspected and driven from the outside
     /// (UX-DR-16).
     /// </summary>
     public Border Surface => _surface;
+
+    /// <summary>
+    /// Keeps the download and dismisses the dialog without destroying anything
+    /// (AC4, UX-DR-22).
+    /// </summary>
+    public void Keep()
+    {
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Handles the `Esc`: it dismisses the dialog keeping the download, because `Esc`
+    /// NEVER destroys work (AC4, UX-DR-37).
+    /// </summary>
+    /// <param name="sender">Sender of the event.</param>
+    /// <param name="eventArgs">Arguments of the event.</param>
+    private void OnKeyDown(object? sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key != Key.Escape)
+        {
+            return;
+        }
+
+        eventArgs.Handled = true;
+
+        Keep();
+    }
 
     /// <summary>
     /// The message that names what the cancellation loses, so it can be inspected and

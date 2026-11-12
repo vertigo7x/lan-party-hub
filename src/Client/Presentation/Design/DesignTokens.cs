@@ -373,6 +373,34 @@ public static class DesignTokens
     /// The weight of the MONOSPACED typography, and the seven weights of Inter, live
     /// here and not written in the components (DESIGN, UX-DR-1, AC1).
     /// </summary>
+    /// <summary>
+    /// Height of a PRIMARY, SECONDARY or DANGER button, in pixels (DESIGN, UX-DR-7).
+    /// </summary>
+    /// <para>
+    /// El alto NO cambia con el foco: el foco engorda el borde DENTRO del alto fijo, de
+    /// modo que la rejilla de la superficie no se deforma al pasar el ratón (UX-DR-7).
+    /// </para>
+    /// </summary>
+    public const double ButtonHeight = 36;
+
+    /// <summary>Height of a GHOST button, in pixels (DESIGN, UX-DR-8).</summary>
+    public const double GhostButtonHeight = 32;
+
+    /// <summary>Height of a row of the table of clients, in pixels (DESIGN, UX-DR-14).</summary>
+    public const double DataTableRowHeight = 40;
+
+    /// <summary>
+    /// Thickness of the separator that goes UNDER a row of the table, in pixels (DESIGN,
+    /// UX-DR-14).
+    /// </summary>
+    public const double DataTableRowSeparatorThickness = 1;
+
+    /// <summary>Horizontal padding of a button, in pixels (DESIGN).</summary>
+    public const double ButtonPaddingHorizontal = Spacing4;
+
+    /// <summary>Radius of a button, in pixels (DESIGN).</summary>
+    public const double ButtonRadius = RadiusControl;
+
     /// <summary>Size of the DISPLAY typography, in pixels (DESIGN).</summary>
     public const double DisplayFontSize = 32;
 

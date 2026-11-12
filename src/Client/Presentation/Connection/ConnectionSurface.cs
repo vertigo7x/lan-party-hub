@@ -82,7 +82,7 @@ public sealed class ConnectionSurface : UserControl
 
         _emptyText = new TextBlock { TextWrapping = TextWrapping.Wrap };
 
-        _manualAddress = new Button { Content = ConnectionSurfaceViewModel.ManualAddressText };
+        _manualAddress = Buttons.Secondary(ConnectionSurfaceViewModel.ManualAddressText);
 
         _manualAddress.Click += (_, _) => ConfirmAddress();
 
@@ -137,7 +137,7 @@ public sealed class ConnectionSurface : UserControl
         _expectedFingerprintInput.TextChanged += (_, _) =>
             _viewModel.SetExpectedFingerprint(_expectedFingerprintInput.Text);
 
-        _fixAnchor = new Button { Content = "Fijar ancla de confianza" };
+        _fixAnchor = Buttons.Secondary("Fijar ancla de confianza");
 
         _fixAnchor.Click += (_, _) => ConfirmAnchor();
 

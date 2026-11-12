@@ -587,6 +587,10 @@ public sealed class App : Avalonia.Application
             return;
         }
 
+        // El elemento que INVOCO el dialogo es el que recibe el foco de vuelta cuando
+        // el dialogo se cierra sin destruir nada (AC4, UX-DR-37).
+        var invoker = window.FocusManager?.GetFocusedElement() as Control;
+
         var dialog = new DownloadCancelDialog(viewModel);
 
         // El overlay vive dentro de la ventana y no abre una ventana nueva: el cliente es
@@ -602,13 +606,26 @@ public sealed class App : Avalonia.Application
             }
         }
 
-        dialog.KeepButton.Click += (_, _) => CloseOverlay();
+        void Dismiss()
+        {
+            CloseOverlay();
+
+            // El foco vuelve al elemento invocador: el jugador no se queda perdido
+            // (AC4, UX-DR-37).
+            invoker?.Focus();
+        }
+
+        dialog.Dismissed += (_, _) => Dismiss();
+
+        dialog.KeepButton.Click += (_, _) => Dismiss();
 
         dialog.ConfirmButton.Click += async (_, _) =>
         {
             CloseOverlay();
 
             await coordinator.CancelAsync(handle, CancellationToken.None).ConfigureAwait(true);
+
+            invoker?.Focus();
         };
 
         overlay.Children.Add(dialog);

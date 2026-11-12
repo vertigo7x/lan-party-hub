@@ -66,13 +66,8 @@ public sealed class InstallProgressControl : UserControl
             Foreground = new SolidColorBrush(DesignTokens.StateDanger),
         };
 
-        _retryButton = new Button
-        {
-            Content = InstallProgressViewModel.RetryActionText,
-            Height = DesignTokens.FieldInputHeight,
-            Foreground = new SolidColorBrush(DesignTokens.AccentAction),
-            IsEnabled = false,
-        };
+        _retryButton = Buttons.Primary(InstallProgressViewModel.RetryActionText);
+        _retryButton.IsEnabled = false;
 
         Content = new StackPanel
         {

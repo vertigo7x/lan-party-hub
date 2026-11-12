@@ -61,21 +61,11 @@ public sealed class PrivilegedOperationDialog : UserControl
             TextWrapping = TextWrapping.Wrap,
         };
 
-        _confirmButton = new Button
-        {
-            Content = ConfirmActionText,
-            Height = DesignTokens.FieldInputHeight,
-            Foreground = new SolidColorBrush(DesignTokens.AccentAction),
-        };
+        _confirmButton = Buttons.Primary(ConfirmActionText);
 
         // La acción que cancela NO es la acción PELIGRO: cancelar una operación
         // privilegiada NO destruye trabajo, así que usa el tinta primaria (UX-DR-8).
-        _cancelButton = new Button
-        {
-            Content = CancelActionText,
-            Height = DesignTokens.FieldInputHeight,
-            Foreground = new SolidColorBrush(DesignTokens.InkPrimary),
-        };
+        _cancelButton = Buttons.Secondary(CancelActionText);
 
         _surface = new Border
         {
