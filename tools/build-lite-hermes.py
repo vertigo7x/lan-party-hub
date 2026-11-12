@@ -29,7 +29,9 @@ Variables de entorno:
 from __future__ import annotations
 
 import json
+import ctypes
 import os
+import signal
 import shlex
 import subprocess
 import sys
@@ -66,6 +68,40 @@ def tool_event(
         "sessionID": session_id,
         "part": {"type": "tool", "tool": tool, "state": state},
     })
+
+
+# El proceso de Hermes es un NIETO del driver: el driver lanza este envoltorio y
+# este envoltorio lanza a Hermes. Si el driver corta la fase, mata al envoltorio,
+# y el nieto se queda vivo: sigue gastando CPU y sigue escribiendo en el worktree
+# de una historia que ya no existe. PR_SET_PDEATHSIG ata la vida del nieto a la
+# del envoltorio, asi que el kernel lo mata sea cual sea la causa de la muerte.
+try:
+    _LIBC = ctypes.CDLL("libc.so.6", use_errno=True)
+except OSError:  # pragma: no cover - solo en sistemas sin libc cargable
+    _LIBC = None
+
+
+def set_parent_death_signal() -> None:
+    """Pide al kernel que mate a este proceso cuando muera su padre."""
+    if _LIBC is None:
+        return
+    try:
+        _LIBC.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass
+
+
+def terminate_child(process) -> None:
+    """Mata al proceso de Hermes y espera a que se vaya."""
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+    except Exception:
+        pass
 
 
 def hermes_argv(prompt: str) -> list[str]:
@@ -182,7 +218,20 @@ def main() -> int:
         stdin=subprocess.DEVNULL,
         text=True,
         bufsize=1,
+        preexec_fn=set_parent_death_signal,
     )
+
+    # Si este envoltorio recibe un SIGTERM, se lleva al nieto por delante: sin esto
+    # el proceso de Hermes seguiria vivo despues de que el driver cortase la fase.
+    def _on_signal(signum, frame):
+        terminate_child(process)
+        sys.exit(128 + signum)
+
+    for _signal in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_signal, _on_signal)
+        except (ValueError, OSError):
+            pass
 
     state = {"session_id": "", "pending": {}}
 

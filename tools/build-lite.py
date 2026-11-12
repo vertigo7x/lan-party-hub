@@ -31,6 +31,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -1180,21 +1181,22 @@ def implementation_prompt(story, plan: Path, context: Path) -> str:
     sources = plan_reads_source(plan)
 
     return f"""Implementa exclusivamente la Story {story.short_id}: {story.title}.
-Lee primero {relative(plan)} y el paquete de contexto {relative(context)}. El paquete es la
-evidencia ya seleccionada de esta historia: úsalo y no explores el backlog por tu cuenta.
-El código de los ficheros que el plan declara te viene ABAJO, en bruto: úsalo y no lo vuelvas
-a abrir fichero por fichero. Cada apertura es un viaje que se paga con el presupuesto de la
-fase.
+El plan {relative(plan)} y el paquete de contexto {relative(context)} son la historia COMPLETA:
+no hay nada más que leer. Tu trabajo termina en los ficheros que el plan declara. Las
+herramientas del repositorio (`tools/`), el bookkeeping del propio bucle (`.build-lite/`) y el
+backlog de historias no forman parte de esta historia: no hay nada que cambiar en ellos.
+El código de los ficheros que el plan declara te viene ABAJO, en bruto: úsalo y no lo vuelvas a
+abrir fichero por fichero. Cada apertura es un viaje que se paga con el presupuesto de la fase.
 Implementa el código y las pruebas que el plan y el paquete describen, ejecuta las pruebas más
 cercanas que existan y deja el árbol listo para commit.
-Lee solo lo que necesitas para la PIEZA que estás escribiendo: empieza por el cambio de
-dominio o de contrato y escríbelo, y sigue con los adaptadores y con las pruebas. No leas el
-árbol entero antes de escribir nada: el driver da por parada una fase que no deja cambio
-ninguno, y una historia que lo lee todo antes no deja cambio nunca.
-Limita tu exploración a las rutas que el plan y el paquete declaran. Si el paquete no contiene lo
-que necesitas, no amplíes el alcance: repórtalo como bloqueo demostrado con una línea que empiece
-por `{BLOCKER_MARKER}` (qué falta y en qué ruta), emitida mediante un comando `Write-Output` o
-`echo`, y detente. Solo ese evento de herramienta queda como evidencia del bloqueo.
+Lee solo lo que necesitas para la PIEZA que estás escribiendo: empieza por el cambio de dominio o
+de contrato y escríbelo, y sigue con los adaptadores y con las pruebas. Si dejas el árbol sin
+cambios, la fase se considera parada y se pierde; una historia que lo lee todo antes no deja
+cambio nunca.
+El alcance lo fija el plan: si el paquete no contiene lo que necesitas, repórtalo como bloqueo
+demostrado con una línea que empiece por `{BLOCKER_MARKER}` (qué falta y en qué ruta), emitida
+mediante un comando `Write-Output` o `echo`, y detente. Solo ese evento de herramienta queda como
+evidencia del bloqueo.
 No replanifiques, no lances revisores, no abras PR y no cambies otras stories.
 
 --- CÓDIGO DE LOS FICHEROS QUE EL PLAN DECLARA ---
@@ -2631,6 +2633,85 @@ def schedule(stories: Sequence, args: argparse.Namespace) -> int:
     return 0
 
 
+def hermes_orphan_regression() -> list[str]:
+    """Cortar la fase no puede dejar vivo al proceso de Hermes (AD-12).
+
+    El proceso de Hermes es un nieto del driver. Si el envoltorio muere y el nieto
+    sobrevive, el nieto sigue gastando CPU y escribiendo en el worktree de una
+    historia que el driver ya dio por perdida. Este test lo demuestra con un
+    `hermes` de mentira: lo lanza, mata al envoltorio y comprueba que el nieto
+    tambien se va.
+    """
+    import tempfile
+
+    failures: list[str] = []
+    adapter = REPO_ROOT / "tools" / "build-lite-hermes.py"
+    if not adapter.exists():
+        return ["the Hermes adapter is missing"]
+    with tempfile.TemporaryDirectory() as folder:
+        pid_file = Path(folder) / "pid"
+        fake = Path(folder) / "hermes-falso"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f"echo $$ > '{pid_file}'\n"
+            "sleep 300\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        env = dict(os.environ)
+        env["BUILD_LITE_PROVIDER"] = "hermes"
+        env["BUILD_LITE_HERMES_BIN"] = str(fake)
+        process = subprocess.Popen(
+            [sys.executable, str(adapter)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            text=True,
+        )
+        try:
+            process.stdin.write("BUILD_LITE_WORKER:\nplan de prueba\n")
+            process.stdin.close()
+            for _ in range(100):
+                if pid_file.exists():
+                    break
+                time.sleep(0.1)
+            if not pid_file.exists():
+                process.kill()
+                process.wait(timeout=10)
+                return ["the fake Hermes never started"]
+            child = int(pid_file.read_text().strip())
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+            for _ in range(50):
+                if not pid_alive(child):
+                    break
+                time.sleep(0.1)
+            if pid_alive(child):
+                os.kill(child, signal.SIGKILL)
+                failures.append("the Hermes process survived the death of its wrapper")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    return failures
+
+
+def pid_alive(pid: int) -> bool:
+    """Whether a process still exists."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def self_test() -> int:
     failures = []
     if not classify_risk(["src/Server/Application/Catalog/RegisterGame.cs"]).required:
@@ -2795,6 +2876,7 @@ def self_test_plan_limits() -> list[str]:
     finally:
         plan.unlink(missing_ok=True)
         log_path.unlink(missing_ok=True)
+    failures.extend(hermes_orphan_regression())
     return failures
 
 
