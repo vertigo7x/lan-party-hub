@@ -35,6 +35,44 @@ public static class SizeFormatter
     /// <summary>Number of bytes of one decimal gigabyte (AD-7).</summary>
     public const long BytesPerGigabyte = 1_000_000_000L;
 
+    /// <summary>Separator between the two magnitudes of a pair (UX-DR-5).</summary>
+    public const string PairSeparator = " de ";
+
+    /// <summary>Separator between the percentage and the size (UX-DR-5).</summary>
+    public const string ProgressSeparator = " · ";
+
+    /// <summary>
+    /// Formats a PAIR of magnitudes in the SAME unit and with the SAME precision, with
+    /// the total always SECOND: «3,2 GB de 7,6 GB» (UX-DR-5).
+    /// </summary>
+    /// <param name="transferredBytes">Magnitude already transferred.</param>
+    /// <param name="totalBytes">Total magnitude, when it is known.</param>
+    /// <returns>The pair, as for example <c>3,2 GB de 7,6 GB</c>.</returns>
+    public static string FormatPair(long transferredBytes, long? totalBytes) =>
+        totalBytes is { } total
+            ? $"{Format(transferredBytes)}{PairSeparator}{Format(total)}"
+            : Format(transferredBytes);
+
+    /// <summary>
+    /// Formats the progress of an operation: the INTEGER percentage and the size, in the
+    /// same form for a download and for an installation (UX-DR-5, UX-DR-13).
+    /// </summary>
+    /// <param name="percentage">Whole percentage, between zero and a hundred.</param>
+    /// <param name="transferredBytes">Magnitude already transferred.</param>
+    /// <param name="totalBytes">Total magnitude, when it is known.</param>
+    /// <returns>The progress, as for example <c>42 % · 3,2 GB de 7,6 GB</c>.</returns>
+    public static string FormatProgress(int percentage, long transferredBytes, long? totalBytes)
+    {
+        // Una operación COMPLETADA muestra el tamaño UNA vez: «100 % · 7,6 GB» y no
+        // «7,6 GB de 7,6 GB», que repite la misma magnitud (UX-DR-5).
+        if (percentage >= 100)
+        {
+            return $"{percentage} %{ProgressSeparator}{Format(transferredBytes)}";
+        }
+
+        return $"{percentage} %{ProgressSeparator}{FormatPair(transferredBytes, totalBytes)}";
+    }
+
     /// <summary>
     /// Formats a size in exact bytes into its decimal gigabytes, with exactly one decimal
     /// and the Spanish decimal separator.

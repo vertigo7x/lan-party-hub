@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Presentation.Formatting;
 using LANPartyHub.Client.Application.Install;
 using LANPartyHub.Client.Presentation.Errors;
 using LANPartyHub.Shared.Contracts;
@@ -84,6 +85,20 @@ public sealed class InstallProgressViewModel
     /// </para>
     /// </summary>
     public string ProgressText => $"{PhaseText}{PhaseSeparator}{_progress.Percentage} %";
+
+    /// <summary>
+    /// The sizes of the installation, as «3,2 GB de 7,6 GB»: the SAME unit, the SAME
+    /// precision and the total always second, like in the download (UX-DR-5).
+    /// </summary>
+    public string SizesText =>
+        SizeFormatter.FormatPair(_progress.BytesWritten, _progress.TotalBytes);
+
+    /// <summary>
+    /// The progress of the operation as a whole, as «100 % · 7,6 GB»: the percentage and
+    /// the size, in the same form for a download and for an installation (UX-DR-5).
+    /// </summary>
+    public string OperationText =>
+        SizeFormatter.FormatProgress(_progress.Percentage, _progress.BytesWritten, _progress.TotalBytes);
 
     /// <summary>
     /// The fraction that the bar draws, the SAME that the percentage declares

@@ -133,4 +133,6 @@ public sealed class SizeFormatterTests
         Assert.Equal("1,0", SizeFormatter.FormatValue(1_000_000_000));
         Assert.Equal("2,0", SizeFormatter.FormatValue(2_000_000_000));
     }
+
+
 }
