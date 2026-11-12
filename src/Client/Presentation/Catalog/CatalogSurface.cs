@@ -198,7 +198,13 @@ public sealed class CatalogSurface : UserControl
     /// Focuses the SEARCH of the catalog, para que `Ctrl+F` la alcance desde cualquier
     /// superficie (AC3, UX-DR-11).
     /// </summary>
-    public void FocusSearch() => _search.Focus();
+        /// <summary>
+    /// The number of games that the catalogue shows, para que el anuncio del lector de
+    /// pantalla diga cuántos hay (AC3, UX-DR-39).
+    /// </summary>
+    public int GameCount => _viewModel.Games.Count;
+
+public void FocusSearch() => _search.Focus();
 
     /// <summary>
     /// Clears the SEARCH of the catalog, para que `Esc` la vacíe cuando no hay ningún

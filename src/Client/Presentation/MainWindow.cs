@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -255,6 +256,13 @@ public sealed class MainWindow : Window
             pair.Value.IsVisible = pair.Key == surface;
         }
 
+        // El lector de pantalla ANUNCIA la superficie en la que entra el jugador: «Catálogo,
+        // catálogo de videojuegos, 24 juegos» (AC3, UX-DR-39).
+        if (_surfaceHosts.TryGetValue(surface, out var host))
+        {
+            AutomationProperties.SetName(host, AnnouncementOf(surface));
+        }
+
         foreach (var pair in _navigationButtons)
         {
             var active = pair.Key == surface;
@@ -268,6 +276,23 @@ public sealed class MainWindow : Window
                 : new SolidColorBrush(DesignTokens.InkSecondary);
         }
     }
+
+    /// <summary>
+    /// The announcement of a surface for the screen reader, con su nombre y lo que
+    /// contiene (AC3, UX-DR-39).
+    /// </summary>
+    /// <param name="surface">The surface the player entered.</param>
+    /// <returns>The text the screen reader announces.</returns>
+    private string AnnouncementOf(ClientSurface surface) => surface switch
+    {
+        ClientSurface.Catalogo => _catalogSurface is null
+            ? "Catálogo"
+            : $"Catálogo, catálogo de videojuegos, {_catalogSurface.GameCount} juegos",
+        ClientSurface.Biblioteca => "Biblioteca, videojuegos instalados",
+        ClientSurface.Conexion => "Conexión, servidores del evento",
+        ClientSurface.Configuracion => "Configuración y diagnóstico",
+        _ => surface.ToString(),
+    };
 
     /// <summary>
     /// The KEYBOARD primitives of the navigation (AC3, UX-DR-11).

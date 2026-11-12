@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Automation;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -130,6 +131,10 @@ public sealed class DownloadProgressControl : UserControl
 
         _viewModel.Changed += Render;
 
+        // El anuncio va DESPUÉS del repintado, así que el lector dice lo mismo que ve
+        // el jugador (AC4, UX-DR-39).
+        _viewModel.Changed += () => AnnounceSignificantProgress();
+
         Render();
     }
 
@@ -184,6 +189,24 @@ public sealed class DownloadProgressControl : UserControl
     /// <summary>
     /// Renders the state of the view model in the control (AC2, AC3, AC4).
     /// </summary>
+    /// <summary>
+    /// Announces the SIGNIFICANT step of the progress to the screen reader, y no cada
+    /// `tick` (AC4, UX-DR-39).
+    /// </summary>
+    private void AnnounceSignificantProgress()
+    {
+        if (!_viewModel.ConsumeSignificantPercentage())
+        {
+            return;
+        }
+
+        // El nombre accesible lleva el porcentaje ANUNCIADO, así que el lector dice lo
+        // mismo que ve el jugador (AC4, UX-DR-39).
+        AutomationProperties.SetName(
+            _bar,
+            $"{_viewModel.AnnouncedPercentage} % {_viewModel.ProgressText}");
+    }
+
     private void Render()
     {
         // AC1, AC2: el estado de una validación fallida es el DIFERENCIADO, con el tamaño
