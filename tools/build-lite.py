@@ -1182,6 +1182,27 @@ def plan_prompt(story, plan: Path) -> str:
             "tests/UnitTests/InstallProgressTests.cs",
             "tests/UnitTests/ValidationFailurePresentationTests.cs",
         ),
+        "11.5": (
+            "_bmad-output/planning-artifacts/ux-designs/ux-lan-party-hub-2026-10-26/DESIGN.md",
+            "src/Client/Presentation/Design/DesignTokens.cs",
+            "src/Client/Presentation/GameLauncher/GamePlayActionsView.cs",
+            "src/Client/Presentation/GameLauncher/GamePlayActionsViewModel.cs",
+            "src/Client/Presentation/Downloads/DownloadCancelDialog.cs",
+            "src/Client/Presentation/Install/PrivilegedOperationDialog.cs",
+            "src/Client/Presentation/Catalog/CatalogSurface.cs",
+            "src/Client/Presentation/Catalog/CatalogGrid.cs",
+            "src/Client/Presentation/Library/LibrarySurface.cs",
+            "src/Client/Presentation/Connection/ConnectionSurface.cs",
+            "src/Client/Presentation/CatalogSyncBanner.cs",
+            "src/Client/Presentation/MainWindow.cs",
+            "src/Client/Presentation/Errors/ErrorToast.cs",
+            "src/Server/Presentation/Clients/ClientsWindow.cs",
+            "src/Server/Presentation/Clients/ClientsViewModel.cs",
+            "src/Server/Presentation/Trust/TrustAnchorPanel.cs",
+            "tests/UnitTests/GamePlayActionsViewModelTests.cs",
+            "tests/UnitTests/ClientsTableTests.cs",
+            "tests/UnitTests/AvaloniaSurfaceCollection.cs",
+        ),
     }
     candidates = candidates_by_story.get(story.short_id, ())
     available = [path for path in candidates if (REPO_ROOT / path).is_file()]
