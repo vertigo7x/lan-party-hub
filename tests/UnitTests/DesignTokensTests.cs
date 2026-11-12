@@ -198,6 +198,91 @@ public sealed class DesignTokensTests
     }
 
     /// <summary>
+    /// Ningún componente escribe un PESO de fuente propio: los pesos viven en los tokens
+    /// (AC1, UX-DR-1, UX-DR-2).
+    /// </summary>
+    [Fact]
+    public void No_component_writes_a_font_weight_of_its_own()
+    {
+        var offenders = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(PresentationDirectory, "*.cs", SearchOption.AllDirectories))
+        {
+            if (Path.GetFullPath(file) == Path.GetFullPath(TokensFile))
+            {
+                continue;
+            }
+
+            var text = File.ReadAllText(file);
+
+            if (Regex.IsMatch(text, @"FontWeight\s*=\s*(?:Avalonia\.Media\.)?FontWeight\."))
+            {
+                offenders.Add(Path.GetFileName(file));
+            }
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            $"Hay pesos de fuente escritos a mano: {string.Join(", ", offenders)}");
+    }
+
+    /// <summary>
+    /// Cada estilo de texto del token existe en el diseño, con su tamaño y su peso
+    /// (AC1, UX-DR-2).
+    /// </summary>
+    [Fact]
+    public void Every_text_style_of_the_tokens_exists_in_the_design()
+    {
+        var design = File.ReadAllText(DesignFile);
+        var estilos = new[]
+        {
+            ("display", "DisplayFontSize", "700"),
+            ("headline", "HeadlineFontSize", "600"),
+            ("title", "TitleFontSize", "600"),
+            ("body", "BodyFontSize", "400"),
+            ("body-strong", "BodyStrongFontSize", "600"),
+            ("label", "LabelFontSize", "500"),
+            ("meta", "MetaFontSize", "500"),
+        };
+
+        var tokens = File.ReadAllText(TokensFile);
+
+        foreach (var (estilo, token, peso) in estilos)
+        {
+            var seccion = design.Substring(design.IndexOf($"  {estilo}:", StringComparison.Ordinal));
+
+            Assert.Contains("fontFamily: 'Inter'", seccion);
+            Assert.Contains($"fontWeight: '{peso}'", seccion);
+            Assert.Contains(token, tokens);
+        }
+    }
+
+    /// <summary>
+    /// El nombre de un juego se trunca a UNA línea con elipsis y NUNCA se envuelve a
+    /// tres (AC1, UX-DR-2, UX-DR-10).
+    /// </summary>
+    [Fact]
+    public void The_name_of_a_game_is_never_wrapped()
+    {
+        var grid = File.ReadAllText(Path.Combine(PresentationDirectory, "Catalog", "CatalogGrid.cs"));
+
+        // Cada texto que lleva el NOMBRE de un juego se trunca a una línea con elipsis y
+        // no se envuelve. El resto de los textos de la superficie pueden envolver: el
+        // mensaje de catalogo vacio es una frase, no un nombre.
+        var bloques = grid.Split("new TextBlock");
+        var conNombre = bloques.Where(bloque => bloque.Contains("Text = game.Name", StringComparison.Ordinal)).ToArray();
+
+        Assert.Equal(2, conNombre.Length);
+
+        foreach (var bloque in conNombre)
+        {
+            Assert.Contains("TextTrimming = TextTrimming.CharacterEllipsis,", bloque);
+            Assert.Contains("MaxLines = 1,", bloque);
+            Assert.DoesNotContain("TextWrapping = TextWrapping.Wrap,", bloque);
+        }
+    }
+
+    /// <summary>
     /// Reads the flat map of a section of the YAML front matter of DESIGN.md.
     /// </summary>
     /// <param name="section">Name of the section, as it is declared in the design.</param>

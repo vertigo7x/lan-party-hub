@@ -179,7 +179,7 @@ public sealed class ConnectionSurface : UserControl
                 {
                     Text = "Conexión",
                     FontSize = 22,
-                    FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                    FontWeight = DesignTokens.HeadlineFontWeight,
                 },
                 _servers,
                 _emptyText,

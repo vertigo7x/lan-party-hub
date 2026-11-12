@@ -129,7 +129,7 @@ public sealed class ConnectionStatusPanel : UserControl
                 {
                     Text = "Conexión",
                     FontSize = DesignTokens.TitleFontSize,
-                    FontWeight = FontWeight.SemiBold,
+                    FontWeight = DesignTokens.TitleFontWeight,
                 },
                 _presenceBadge,
                 _unavailableNotice,

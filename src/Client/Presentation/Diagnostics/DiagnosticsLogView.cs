@@ -92,7 +92,7 @@ public sealed class DiagnosticsLogView : UserControl
                     {
                         Text = DiagnosticsLogViewModel.TitleText,
                         FontSize = DesignTokens.TitleFontSize,
-                        FontWeight = FontWeight.SemiBold,
+                        FontWeight = DesignTokens.TitleFontWeight,
                         Foreground = new SolidColorBrush(_viewModel.PrimaryInk),
                     },
 

@@ -78,7 +78,7 @@ public sealed class GameDetailView : UserControl
         _title = new TextBlock
         {
             FontSize = DesignTokens.TitleFontSize,
-            FontWeight = FontWeight.SemiBold,
+            FontWeight = DesignTokens.TitleFontWeight,
             Foreground = new SolidColorBrush(DesignTokens.InkPrimary),
         };
 
