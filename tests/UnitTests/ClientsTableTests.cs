@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Automation;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -516,6 +517,32 @@ public sealed class ClientsTableTests
         Assert.Equal("Descargar el paquete", toast.AttemptedActionText.Text);
         Assert.Equal(error.Cause, toast.CauseText.Text);
         Assert.Equal(error.NextStep, toast.NextStepText.Text);
+    }
+
+    /// <summary>
+    /// The BADGE of the state names its state: the colour is never the only signal
+    /// (AC5, UX-DR-38, UX-DR-12).
+    /// </summary>
+    [AvaloniaFact]
+    public async Task The_badge_of_the_state_names_its_state()
+    {
+        var window = await OpenWindowAsync(
+            Client("EQ-PC", FirstClientId, connectionState: ConnectionState.Disconnected));
+
+        var cell = window.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .First(text => text.Text.Contains(
+                StateDisplayMap.GetText(ConnectionState.Disconnected),
+                StringComparison.Ordinal));
+
+        // El TEXTO de la insignia lleva el estado (AC5).
+        Assert.Contains(StateDisplayMap.GetText(ConnectionState.Disconnected), cell.Text, StringComparison.Ordinal);
+
+        // Y el nombre accesible lo lleva tambien, para el lector de pantalla (AC5).
+        var name = AutomationProperties.GetName(cell);
+
+        Assert.NotNull(name);
+        Assert.Contains(StateDisplayMap.GetText(ConnectionState.Disconnected), name!, StringComparison.Ordinal);
     }
 
     /// <summary>

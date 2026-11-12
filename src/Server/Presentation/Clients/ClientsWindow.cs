@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Automation;
 using LANPartyHub.Server.Presentation.Design;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -357,6 +358,11 @@ public sealed class ClientsWindow : Window
             : row.ConnectionStateText;
 
         var cell = BuildDataCell(text);
+
+        // El nombre accesible de la insignia incluye su ESTADO: el color nunca es la
+        // unica señal y el lector de pantalla dice lo mismo que el organizador ve
+        // (AC5, UX-DR-38, UX-DR-12).
+        AutomationProperties.SetName(cell, text);
 
         if (row.IsIncompatible || row.IsDisconnected)
         {
