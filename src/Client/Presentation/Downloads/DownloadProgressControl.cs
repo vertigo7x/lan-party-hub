@@ -92,8 +92,8 @@ public sealed class DownloadProgressControl : UserControl
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 8,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 new TextBlock
@@ -110,7 +110,7 @@ public sealed class DownloadProgressControl : UserControl
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 8,
+                    Spacing = DesignTokens.Spacing2,
                     Children =
                     {
                         _pauseButton,

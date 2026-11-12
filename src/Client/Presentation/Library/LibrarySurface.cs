@@ -94,12 +94,12 @@ public sealed class LibrarySurface : UserControl
             IsVisible = false,
         };
 
-        _list = new StackPanel { Spacing = 12 };
+        _list = new StackPanel { Spacing = DesignTokens.Spacing3 };
 
         _root = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 12,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 new TextBlock
@@ -218,7 +218,7 @@ public sealed class LibrarySurface : UserControl
 
         return new StackPanel
         {
-            Spacing = 8,
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 // AC1, AC3: la insignia dice «instalado con versión desactualizada» cuando

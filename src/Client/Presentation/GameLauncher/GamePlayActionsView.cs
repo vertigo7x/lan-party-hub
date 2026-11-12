@@ -99,7 +99,7 @@ public sealed class GamePlayActionsView : UserControl
         {
             BorderBrush = new SolidColorBrush(DesignTokens.AccentAction),
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(DesignTokens.RadiusSmall),
             Padding = new Thickness(DesignTokens.FieldInputFocusBorderThickness),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = _play,
@@ -153,7 +153,7 @@ public sealed class GamePlayActionsView : UserControl
         _actions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 _playCell,
@@ -182,7 +182,7 @@ public sealed class GamePlayActionsView : UserControl
 
         Content = new StackPanel
         {
-            Spacing = 8,
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 _actions,
@@ -255,8 +255,7 @@ public sealed class GamePlayActionsView : UserControl
     /// <param name="visible">Whether the button has the focus.</param>
     private void ShowFocusIndicator(bool visible)
     {
-        _playFocus.BorderThickness = new Thickness(
-            visible ? DesignTokens.FieldInputFocusBorderThickness : 0);
+        _playFocus.BorderThickness = new Thickness(visible ? DesignTokens.FieldInputFocusBorderThickness : 0);
     }
 
     /// <summary>

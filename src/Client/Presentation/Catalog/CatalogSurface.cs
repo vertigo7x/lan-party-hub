@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Presentation.Design;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -139,8 +140,8 @@ public sealed class CatalogSurface : UserControl
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 12,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 new TextBlock
@@ -152,7 +153,7 @@ public sealed class CatalogSurface : UserControl
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 8,
+                    Spacing = DesignTokens.Spacing2,
                     Children =
                     {
                         _search,
@@ -163,7 +164,7 @@ public sealed class CatalogSurface : UserControl
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 8,
+                    Spacing = DesignTokens.Spacing2,
                     Children =
                     {
                         _emptyAction,
@@ -176,7 +177,7 @@ public sealed class CatalogSurface : UserControl
                 {
                     Orientation = Orientation.Horizontal,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Spacing = 12,
+                    Spacing = DesignTokens.Spacing3,
                     Children =
                     {
                         _previous,

@@ -135,8 +135,8 @@ public sealed class MainWindow : Window
 
         var content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 8,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 new TextBlock { Text = "LAN Party Hub" },
@@ -163,7 +163,7 @@ public sealed class MainWindow : Window
         {
             layout.Children.Add(new StackPanel
             {
-                Spacing = 4,
+                Spacing = DesignTokens.Spacing1,
                 Children =
                 {
                     new TextBlock

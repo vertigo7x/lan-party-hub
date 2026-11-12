@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Presentation.Design;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -56,8 +57,8 @@ public sealed class CatalogSyncBanner : StackPanel
         ArgumentNullException.ThrowIfNull(onSynchronizeNow);
 
         Orientation = Orientation.Horizontal;
-        Spacing = 12;
-        Margin = new Thickness(16, 16, 16, 0);
+        Spacing = DesignTokens.Spacing3;
+        Margin = new Thickness(DesignTokens.Spacing4, DesignTokens.Spacing4, DesignTokens.Spacing4, 0);
 
         _message = new TextBlock
         {

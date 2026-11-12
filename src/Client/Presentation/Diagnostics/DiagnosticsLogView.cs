@@ -77,15 +77,15 @@ public sealed class DiagnosticsLogView : UserControl
             TextWrapping = TextWrapping.Wrap,
         };
 
-        _entries = new StackPanel { Spacing = 8 };
+        _entries = new StackPanel { Spacing = DesignTokens.Spacing2 };
 
         _root = new Border
         {
-            Padding = new Thickness(16),
+            Padding = new Thickness(DesignTokens.Spacing4),
             Background = new SolidColorBrush(_viewModel.Background),
             Child = new StackPanel
             {
-                Spacing = 8,
+                Spacing = DesignTokens.Spacing2,
                 Children =
                 {
                     new TextBlock
@@ -193,7 +193,7 @@ public sealed class DiagnosticsLogView : UserControl
     {
         return new StackPanel
         {
-            Spacing = 4,
+            Spacing = DesignTokens.Spacing1,
             Children =
             {
                 new TextBlock
@@ -205,7 +205,7 @@ public sealed class DiagnosticsLogView : UserControl
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 8,
+                    Spacing = DesignTokens.Spacing2,
                     Children =
                     {
                         _operationIdFilter,
@@ -293,10 +293,10 @@ public sealed class DiagnosticsLogView : UserControl
         {
             BorderBrush = new SolidColorBrush(_viewModel.HairlineBorder),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(0, 8, 0, 8),
+            Padding = new Thickness(0, DesignTokens.Spacing2, 0, DesignTokens.Spacing2),
             Child = new StackPanel
             {
-                Spacing = 4,
+                Spacing = DesignTokens.Spacing1,
                 Children =
                 {
                     code,

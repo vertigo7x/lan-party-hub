@@ -80,12 +80,12 @@ public sealed class PrivilegedOperationDialog : UserControl
         _surface = new Border
         {
             Background = new SolidColorBrush(DesignTokens.SurfaceOverlay),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = new CornerRadius(DesignTokens.RadiusDialog),
             Padding = new Thickness(20),
             Width = 420,
             Child = new StackPanel
             {
-                Spacing = 16,
+                Spacing = DesignTokens.Spacing4,
                 Children =
                 {
                     new TextBlock
@@ -104,7 +104,7 @@ public sealed class PrivilegedOperationDialog : UserControl
                     {
                         Orientation = Orientation.Horizontal,
                         HorizontalAlignment = HorizontalAlignment.Right,
-                        Spacing = 8,
+                        Spacing = DesignTokens.Spacing2,
                         Children =
                         {
                             _cancelButton,

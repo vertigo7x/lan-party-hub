@@ -173,6 +173,94 @@ public static class DesignTokens
     /// </summary>
     public static readonly Color StateDangerLight = Color.FromRgb(0xC0, 0x26, 0x2E);
 
+    /// <summary>Surface SUNKEN: the deepest level of the tonal depth (DESIGN, UX-DR-3).</summary>
+    public static readonly Color SurfaceSunken = Color.FromRgb(0x0D, 0x0F, 0x13);
+
+    /// <summary>Ink of the disabled state (DESIGN).</summary>
+    public static readonly Color InkDisabled = Color.FromRgb(0x4A, 0x50, 0x60);
+
+    /// <summary>
+    /// Green of the LAN: the accent of a HEALTHY system, which is not the same token as
+    /// the green of the success state although today they share the value (DESIGN,
+    /// UX-DR-1).
+    /// </summary>
+    public static readonly Color AccentLan = Color.FromRgb(0x4D, 0xD8, 0xA4);
+
+    /// <summary>Ink that goes ON the green of the LAN (DESIGN).</summary>
+    public static readonly Color AccentLanInk = Color.FromRgb(0x06, 0x23, 0x1A);
+
+    /// <summary>Ink that goes ON the blue of the action (DESIGN).</summary>
+    public static readonly Color AccentActionInk = Color.FromRgb(0x05, 0x0D, 0x24);
+
+    /// <summary>Strong border: the one that delimits a control against its surface (DESIGN).</summary>
+    public static readonly Color BorderStrong = Color.FromRgb(0x3A, 0x3F, 0x4D);
+
+    /// <summary>
+    /// Variante CLARA del verde de la LAN, para las pocas superficies que la necesitan
+    /// (DESIGN, UX-DR-41).
+    /// </summary>
+    public static readonly Color AccentLanLight = Color.FromRgb(0x12, 0x7A, 0x57);
+
+    /// <summary>Radius of a SMALL text field or of a label, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double RadiusSmall = 4;
+
+    /// <summary>Radius of a CONTROL, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double RadiusControl = 8;
+
+    /// <summary>Radius of a CARD or of a PANEL, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double RadiusCard = 12;
+
+    /// <summary>Radius of a DIALOG, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double RadiusDialog = 16;
+
+    /// <summary>Radius of a PILL: the only shape that is round (DESIGN, UX-DR-4).</summary>
+    public const double RadiusFull = 9999;
+
+    /// <summary>Spacing scale 1, in pixels: 4 (DESIGN).</summary>
+    public const double Spacing1 = 4;
+
+    /// <summary>Spacing scale 2, in pixels: 8 (DESIGN).</summary>
+    public const double Spacing2 = 8;
+
+    /// <summary>Spacing scale 3, in pixels: 12 (DESIGN).</summary>
+    public const double Spacing3 = 12;
+
+    /// <summary>Spacing scale 4, in pixels: 16 (DESIGN).</summary>
+    public const double Spacing4 = 16;
+
+    /// <summary>Spacing scale 5, in pixels: 24 (DESIGN).</summary>
+    public const double Spacing5 = 24;
+
+    /// <summary>Spacing scale 6, in pixels: 32 (DESIGN).</summary>
+    public const double Spacing6 = 32;
+
+    /// <summary>Spacing scale 7, in pixels: 48 (DESIGN).</summary>
+    public const double Spacing7 = 48;
+
+    /// <summary>Separator BETWEEN columns, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double SeparatorGutter = 24;
+
+    /// <summary>Separator INSIDE a panel, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double SeparatorPanel = 16;
+
+    /// <summary>Separator INSIDE a card or a dialog, in pixels (DESIGN, UX-DR-4).</summary>
+    public const double SeparatorCard = 20;
+
+    /// <summary>Size of the DISPLAY typography, in pixels (DESIGN).</summary>
+    public const double DisplayFontSize = 32;
+
+    /// <summary>Size of the HEADLINE typography, in pixels (DESIGN).</summary>
+    public const double HeadlineFontSize = 22;
+
+    /// <summary>Size of the LABEL typography, in pixels (DESIGN).</summary>
+    public const double LabelFontSize = 12;
+
+    /// <summary>
+    /// Opacity of the shadow that the ONLY shadow admits: the one of the modal dialog and
+    /// of the drop-down menu, over the sunken surface (DESIGN, UX-DR-3).
+    /// </summary>
+    public const byte OverlayShadowOpacity = 0x66;
+
     /// <summary>
     /// Whether the DEFAULT theme of the client is the DARK one (DESIGN, UX-DR-1, UX-DR-41).
     ///

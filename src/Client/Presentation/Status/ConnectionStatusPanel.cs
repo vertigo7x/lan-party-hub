@@ -88,11 +88,7 @@ public sealed class ConnectionStatusPanel : UserControl
         _presenceBadge = new Border
         {
             CornerRadius = new CornerRadius(DesignTokens.StatusBadgeRadius),
-            Padding = new Thickness(
-                DesignTokens.StatusBadgePaddingHorizontal,
-                2,
-                DesignTokens.StatusBadgePaddingHorizontal,
-                2),
+            Padding = new Thickness(DesignTokens.StatusBadgePaddingHorizontal, 2, DesignTokens.StatusBadgePaddingHorizontal, 2),
             Child = _presenceText,
         };
 
@@ -125,8 +121,8 @@ public sealed class ConnectionStatusPanel : UserControl
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 8,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing2,
             Children =
             {
                 new TextBlock

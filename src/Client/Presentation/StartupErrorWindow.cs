@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Presentation.Design;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -28,8 +29,8 @@ public sealed class StartupErrorWindow : Window
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 12,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 new TextBlock

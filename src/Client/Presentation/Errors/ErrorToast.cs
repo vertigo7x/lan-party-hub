@@ -35,9 +35,9 @@ public sealed class ErrorToast : Border
     {
         ArgumentNullException.ThrowIfNull(viewModel);
 
-        Margin = new Thickness(16, 16, 16, 0);
-        Padding = new Thickness(12);
-        CornerRadius = new CornerRadius(8);
+        Margin = new Thickness(DesignTokens.Spacing4, DesignTokens.Spacing4, DesignTokens.Spacing4, 0);
+        Padding = new Thickness(DesignTokens.Spacing3);
+        CornerRadius = new CornerRadius(DesignTokens.RadiusControl);
         Background = new SolidColorBrush(DesignTokens.StateDanger);
         IsVisible = false;
 
@@ -73,7 +73,7 @@ public sealed class ErrorToast : Border
         Child = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Spacing = 4,
+            Spacing = DesignTokens.Spacing1,
             Children =
             {
                 _cause,
