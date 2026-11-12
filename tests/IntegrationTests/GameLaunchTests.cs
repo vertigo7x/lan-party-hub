@@ -52,6 +52,9 @@ public sealed class GameLaunchTests : IDisposable
     private readonly string _workingDirectory;
     private readonly string _databasePath;
     private readonly string _installDirectory;
+
+    /// <summary>Raíz de instalación de ESTE juego: la carpeta que lo confine (FR-8).</summary>
+    private readonly string _gameRoot;
     private readonly string _downloadsDirectory;
     private readonly string _manifestsDirectory;
 
@@ -65,6 +68,7 @@ public sealed class GameLaunchTests : IDisposable
 
         _databasePath = Path.Combine(_workingDirectory, "state.sqlite");
         _installDirectory = Path.Combine(_workingDirectory, "install");
+        _gameRoot = Path.Combine(_installDirectory, GameId);
         _downloadsDirectory = Path.Combine(_workingDirectory, "downloads");
         _manifestsDirectory = Path.Combine(_workingDirectory, "manifests");
 
@@ -126,7 +130,7 @@ public sealed class GameLaunchTests : IDisposable
 
         // Los argumentos LLEGARON al hijo, en ORDEN (AC1).
         var arguments = await File.ReadAllTextAsync(
-            Path.Combine(_installDirectory, "args.txt"),
+            Path.Combine(_gameRoot, "args.txt"),
             HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
@@ -146,12 +150,12 @@ public sealed class GameLaunchTests : IDisposable
 
         // El directorio de trabajo del proceso es la RAÍZ de la instalación (AC1, AD-9).
         var workingDirectory = await File.ReadAllTextAsync(
-            Path.Combine(_installDirectory, "cwd.txt"),
+            Path.Combine(_gameRoot, "cwd.txt"),
             HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
         Assert.Contains(
-            Path.GetFullPath(_installDirectory),
+            Path.GetFullPath(_gameRoot),
             workingDirectory,
             StringComparison.OrdinalIgnoreCase);
     }
@@ -174,7 +178,7 @@ public sealed class GameLaunchTests : IDisposable
         Assert.True(outcome.IsRejected);
         Assert.Equal(ErrorCatalog.GameLaunchExecutableMissingCode, outcome.Error!.Code);
 
-        var expected = Path.Combine(_installDirectory, "game", "no-existe.exe");
+        var expected = Path.Combine(_gameRoot, "game", "no-existe.exe");
 
         Assert.Contains(expected, outcome.Reason!, StringComparison.OrdinalIgnoreCase);
 
@@ -370,7 +374,7 @@ public sealed class GameLaunchTests : IDisposable
         // Los argumentos que LLEGARON al proceso son los de la versión INSTALADA, no los
         // de la otra versión (AC1).
         var arguments = await File.ReadAllTextAsync(
-            Path.Combine(_installDirectory, "args.txt"),
+            Path.Combine(_gameRoot, "args.txt"),
             HostInterpreter.ProbeEncoding,
             TestContext.Current.CancellationToken);
 
@@ -383,8 +387,8 @@ public sealed class GameLaunchTests : IDisposable
     /// </summary>
     private async Task WaitForProbeAsync()
     {
-        var arguments = Path.Combine(_installDirectory, "args.txt");
-        var workingDirectory = Path.Combine(_installDirectory, "cwd.txt");
+        var arguments = Path.Combine(_gameRoot, "args.txt");
+        var workingDirectory = Path.Combine(_gameRoot, "cwd.txt");
 
         for (var attempt = 0; attempt < 100; attempt++)
         {
@@ -432,7 +436,7 @@ public sealed class GameLaunchTests : IDisposable
 
         // El INTERPRETE REAL se copia DENTRO de la raíz de instalación, así que el
         // confine de AD-9 se respeta de verdad (AD-9).
-        var executable = Path.Combine(_installDirectory, executablePath);
+        var executable = Path.Combine(_gameRoot, executablePath);
 
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
 
@@ -455,14 +459,14 @@ public sealed class GameLaunchTests : IDisposable
 
         if (runsProbe)
         {
-            var probe = Path.Combine(_installDirectory, HostInterpreter.ProbeRelativePath);
+            var probe = Path.Combine(_gameRoot, HostInterpreter.ProbeRelativePath);
 
             await File.WriteAllTextAsync(
                 probe,
                 HostInterpreter.ProbeContent,
                 TestContext.Current.CancellationToken);
 
-            probePath = Path.GetRelativePath(_installDirectory, probe);
+            probePath = Path.GetRelativePath(_gameRoot, probe);
         }
 
         IReadOnlyList<string> launchArguments = runsProbe
@@ -480,8 +484,8 @@ public sealed class GameLaunchTests : IDisposable
                 GameId,
                 Version,
                 InstallationState.Installed,
-                _installDirectory,
-                InstallationCertification.DeriveInstallDirectoryId(_installDirectory)),
+                _gameRoot,
+                InstallationCertification.DeriveInstallDirectoryId(_gameRoot)),
             TestContext.Current.CancellationToken);
 
         // El manifiesto FIRMADO que declara la configuración de lanzamiento (AD-2).

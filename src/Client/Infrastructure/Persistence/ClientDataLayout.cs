@@ -1,17 +1,23 @@
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Install;
 
 namespace LANPartyHub.Client.Infrastructure.Persistence;
 
 /// <summary>
-/// Layout of the data folder of the client (AD-9, AD-17).
+/// Layout of the data folder of the client (AD-9, AD-17, FR-8).
 ///
 /// <para>
 /// The data folder of the client is <c>%LOCALAPPDATA%\LanPartyHub</c> and it holds exactly
-/// four entries: the installation root, the folder of the partial downloads, the cache of the
-/// signed manifests and the SQLite file of the client. The installation root is the only
-/// directory that the rule of extraction confines; the folder of the partial downloads has a
-/// fixed path and it lives outside that root, so the progress survives a restart (AD-9,
+/// four entries: the base of the installation, the folder of the partial downloads, the cache
+/// of the signed manifests and the SQLite file of the client. The installation base is the
+/// only directory that the rule of extraction confines; the folder of the partial downloads has a
+/// fixed path and it lives outside that base, so the progress survives a restart (AD-9,
 /// AD-11).
+/// </para>
+/// <para>
+/// La BASE de instalación agrupa los juegos y cada juego tiene su PROPIA raíz, una carpeta
+/// hija con el identificador del juego como nombre: un juego no puede leer, escribir,
+/// sustituir ni borrar el árbol de otro, aunque compartan volumen (AD-9, FR-8).
 /// </para>
 /// <para>
 /// The root that lives in the data folder is the default one and it always exists, but the
@@ -29,7 +35,7 @@ public sealed class ClientDataLayout : IClientDataLayout
     /// <summary>Name of the data folder of the client, under the local application data.</summary>
     public const string FolderName = "LanPartyHub";
 
-    /// <summary>Name of the installation root, inside the data folder.</summary>
+    /// <summary>Name of the base of the installation, inside the data folder.</summary>
     public const string InstallFolderName = "install";
 
     /// <summary>Name of the folder of the partial downloads, inside the data folder.</summary>
@@ -219,6 +225,10 @@ public sealed class ClientDataLayout : IClientDataLayout
                 exception);
         }
     }
+
+    /// <inheritdoc />
+    public string GameInstallDirectory(string gameId) =>
+        InstallPathConfine.GameRoot(InstallDirectory, gameId);
 
     /// <inheritdoc />
     public string PartialFilePath(string packageId)

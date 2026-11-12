@@ -452,7 +452,7 @@ public sealed class GameLaunchServiceTests : IDisposable
 
         public int InspectCount { get; private set; }
 
-        public string RootPath => _inspection?.RootPath ?? string.Empty;
+        public string GameRootPath(string gameId) => _inspection?.RootPath ?? string.Empty;
 
         public Task<InstallationInspection?> InspectAsync(string gameId, CancellationToken cancellationToken)
         {
@@ -522,7 +522,9 @@ public sealed class GameLaunchServiceTests : IDisposable
 
         public string RootPath { get; }
 
-        public string ResolveInsideRoot(string relativePath) => ResolveInside(RootPath, relativePath);
+        public string GameRootPath(string gameId) => RootPath;
+
+        public string ResolveInsideGameRoot(string gameId, string relativePath) => ResolveInside(RootPath, relativePath);
 
         public string ResolveInside(string rootPath, string relativePath)
         {
@@ -536,7 +538,7 @@ public sealed class GameLaunchServiceTests : IDisposable
             return candidate;
         }
 
-        public bool IsInsideRoot(string relativePath) => IsInside(RootPath, relativePath);
+        public bool IsInsideGameRoot(string gameId, string relativePath) => IsInside(RootPath, relativePath);
 
         public bool IsInside(string rootPath, string relativePath)
         {

@@ -437,7 +437,7 @@ public sealed class InstallationRepairServiceTests : IDisposable
             coordinator,
             stateStore,
             treeWriter,
-            layout.InstallDirectory,
+            layout.GameInstallDirectory(GameId),
             packagePath);
     }
 
@@ -524,7 +524,7 @@ public sealed class InstallationRepairServiceTests : IDisposable
             downloadIntents,
             transferEngine,
             manifests,
-            layout.InstallDirectory,
+            layout.GameInstallDirectory(GameId),
             packagePath);
     }
 
@@ -920,6 +920,9 @@ public sealed class InstallationRepairServiceTests : IDisposable
         public string Folder => _folder;
 
         public string InstallDirectory => _installDirectory;
+
+        public string GameInstallDirectory(string gameId) =>
+            LANPartyHub.Client.Domain.Install.InstallPathConfine.GameRoot(_installDirectory, gameId);
 
         public string DownloadsDirectory => Path.Combine(_folder, "downloads");
 

@@ -25,13 +25,13 @@ public sealed class InstallRootSwitcher : IInstallRootSwitcher
     /// <summary>
     /// Suffix of the folder of PREPARATION, that is a sibling of the active root.
     /// </summary>
-    public const string StagingSuffix = ".preparacion";
+    public const string StagingSuffix = InstallPathConfine.PreparationSuffix;
 
     /// <summary>
     /// Suffix of the folder that holds the root REPLACED, while the new one takes its
     /// place.
     /// </summary>
-    public const string ReplacedSuffix = ".sustituida";
+    public const string ReplacedSuffix = InstallPathConfine.ReplacedSuffix;
 
     private readonly ILogger<InstallRootSwitcher> _logger;
 
@@ -42,6 +42,44 @@ public sealed class InstallRootSwitcher : IInstallRootSwitcher
         ArgumentNullException.ThrowIfNull(logger);
 
         _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public bool MoveRoot(string currentRoot, string targetRoot)
+    {
+        if (string.IsNullOrWhiteSpace(currentRoot) || string.IsNullOrWhiteSpace(targetRoot))
+        {
+            return false;
+        }
+
+        var source = Path.GetFullPath(currentRoot);
+        var target = Path.GetFullPath(targetRoot);
+
+        if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Sin arbol en el sitio viejo no hay nada que llevar, y con arbol en el sitio
+        // nuevo el de su juego ya esta en su sitio: mover seria pisarlo.
+        if (!Directory.Exists(source) || Directory.Exists(target))
+        {
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            Directory.Move(source, target);
+        }
+        catch (IOException)
+        {
+            // Un movimiento que no cabe en el mismo volumen no se fuerza: el arbol se
+            // queda donde estaba y el juego se reinstala.
+            return false;
+        }
+
+        return true;
     }
 
     /// <inheritdoc />
