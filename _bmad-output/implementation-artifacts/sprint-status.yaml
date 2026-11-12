@@ -97,6 +97,7 @@ development_status:
   10-2-actualización-a-versión-completa: done
   10-3-reparación-de-una-instalación-interrumpida: backlog
   10-4-raíz-de-instalación-por-juego: backlog
+  10-5-la-fila-de-instalación-guarda-su-propia-raíz: backlog
   epic-10-retrospective: optional
 
   epic-11: backlog
