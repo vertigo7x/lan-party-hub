@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace LANPartyHub.Shared.Contracts;
 
 /// <summary>
@@ -130,6 +132,38 @@ public static class StateDisplayMap
     /// Text of the state of a package whose bytes do NOT match the signed manifest: the
     /// package is DAMAGED (AD-8, AC1).
     /// </summary>
+    /// <summary>Prefix of the text of a download that RESUMES (UX-DR-6).</summary>
+    public const string ResumingPrefix = "Reanudando desde ";
+
+    /// <summary>Format of a time that went by: «hace 2 min» (UX-DR-6, NFR-2).</summary>
+    public const string MinutesAgoFormat = "hace {0} min";
+
+    /// <summary>
+    /// The text of a download that RESUMES, as «Reanudando desde 42 % · 3,2 GB de 7,6 GB»
+    /// (UX-DR-6).
+    /// </summary>
+    /// <param name="progressText">Text of the progress that the download resumes.</param>
+    /// <returns>The text of the resumed download.</returns>
+    public static string GetResumingText(string progressText) => $"{ResumingPrefix}{progressText}";
+
+    /// <summary>
+    /// The text of a time that went by, as «hace 2 min» (UX-DR-6, NFR-2).
+    /// </summary>
+    /// <para>
+    /// El tiempo se dice SIEMPRE en minutos y NUNCA en segundos: la velocidad de la
+    /// descarga no está validada, así que un «en 30 segundos» sería una promesa que el
+    /// cliente no puede cumplir (NFR-2).
+    /// </para>
+    /// </summary>
+    /// <param name="elapsed">Time that has gone by.</param>
+    /// <returns>The text of the elapsed time.</returns>
+    public static string GetTimeAgoText(TimeSpan elapsed)
+    {
+        var minutes = (int)Math.Max(0, Math.Round(elapsed.TotalMinutes, MidpointRounding.AwayFromZero));
+
+        return string.Format(CultureInfo.InvariantCulture, MinutesAgoFormat, minutes);
+    }
+
     public const string CorruptedPackageText = "Paquete dañado: el hash no coincide";
 
     /// <summary>
