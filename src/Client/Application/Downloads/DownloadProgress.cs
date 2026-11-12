@@ -96,8 +96,8 @@ public sealed class DownloadProgress
     /// <summary>
     /// The text of the progress, as «&lt;n&gt; % · &lt;a&gt; GB de &lt;t&gt; GB» (UX-DR-5).
     /// </summary>
-    public string Text => TotalBytes is null
-        ? $"{Percentage} % · {SizesText}"
+    public string Text => Percentage >= 100
+        ? $"{Percentage} % · {FormatGigabytes(BytesTransferred)} GB"
         : $"{Percentage} % · {SizesText}";
 
     /// <summary>

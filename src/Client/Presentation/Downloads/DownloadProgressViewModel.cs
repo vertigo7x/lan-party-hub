@@ -171,7 +171,14 @@ public sealed class DownloadProgressViewModel
     /// The text of the progress, as «&lt;n&gt; % · &lt;a&gt; GB de &lt;t&gt; GB»
     /// (UX-DR-5).
     /// </summary>
-    public string ProgressText => Progress.Text;
+    /// <summary>
+    /// The progress of the download, as «42 % · 3,2 GB de 7,6 GB»: la MISMA forma que la
+    /// de la instalación, y la que la barra dibuja (UX-DR-5, UX-DR-13).
+    /// </summary>
+    public string ProgressText => SizeFormatter.FormatProgress(
+        Progress.Percentage,
+        Progress.BytesTransferred,
+        Progress.TotalBytes);
 
     /// <summary>
     /// True when the operation is being RESUMED after a restart of the machine, so the
