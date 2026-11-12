@@ -171,8 +171,8 @@ public sealed class ConnectionSurface : UserControl
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 12,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 new TextBlock

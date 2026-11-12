@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using LANPartyHub.Client.Presentation.Design;
 
 namespace LANPartyHub.Client.Presentation.Catalog;
 
@@ -55,26 +56,26 @@ public sealed class CatalogCardSkeleton : Border
 
         Height = coverHeight + NameBarHeight + MetaBarHeight + 24;
 
-        CornerRadius = new CornerRadius(12);
+        CornerRadius = new CornerRadius(DesignTokens.RadiusCard);
         Background = new SolidColorBrush(Color.FromArgb(0x14, 0x1A, 0x1F, 0x24));
 
         Child = new StackPanel
         {
-            Spacing = 8,
+            Spacing = DesignTokens.SeparatorCard,
             Children =
             {
                 new Border
                 {
                     Width = coverWidth,
                     Height = coverHeight,
-                    CornerRadius = new CornerRadius(12),
+                    CornerRadius = new CornerRadius(DesignTokens.RadiusCard),
                     Background = new SolidColorBrush(Color.FromArgb(0x0F, 0x1A, 0x1F, 0x24)),
                 },
                 new Border
                 {
                     Width = coverWidth - 24,
                     Height = NameBarHeight,
-                    CornerRadius = new CornerRadius(4),
+                    CornerRadius = new CornerRadius(DesignTokens.RadiusSmall),
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Background = new SolidColorBrush(Color.FromArgb(0x1F, 0x1A, 0x1F, 0x24)),
                 },
@@ -82,7 +83,7 @@ public sealed class CatalogCardSkeleton : Border
                 {
                     Width = (coverWidth - 24) / 2,
                     Height = MetaBarHeight,
-                    CornerRadius = new CornerRadius(4),
+                    CornerRadius = new CornerRadius(DesignTokens.RadiusSmall),
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Background = new SolidColorBrush(Color.FromArgb(0x14, 0x1A, 0x1F, 0x24)),
                 },

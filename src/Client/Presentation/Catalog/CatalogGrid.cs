@@ -1,3 +1,4 @@
+using LANPartyHub.Client.Presentation.Design;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -45,7 +46,7 @@ public sealed class CatalogGrid : UserControl
     public const int SkeletonCount = 6;
 
     /// <summary>Space between two cards of the grid, in pixels.</summary>
-    public const double CardSpacing = 16;
+    public const double CardSpacing = DesignTokens.SeparatorGutter;
 
     /// <summary>
     /// Smallest width that a card can have, in pixels. A card narrower than this would
@@ -81,7 +82,7 @@ public sealed class CatalogGrid : UserControl
 
         Content = new StackPanel
         {
-            Spacing = 12,
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 new ScrollViewer
@@ -266,7 +267,7 @@ public sealed class CatalogGrid : UserControl
 
         var content = new StackPanel
         {
-            Spacing = 8,
+            Spacing = DesignTokens.Spacing2,
             Width = coverWidth,
             Children =
             {
@@ -274,7 +275,7 @@ public sealed class CatalogGrid : UserControl
                 {
                     Width = coverWidth,
                     Height = coverHeight,
-                    CornerRadius = new CornerRadius(12),
+                    CornerRadius = new CornerRadius(DesignTokens.RadiusCard),
                     Background = new SolidColorBrush(Color.FromArgb(0x0F, 0x1A, 0x1F, 0x24)),
                     Child = new TextBlock
                     {
@@ -283,7 +284,7 @@ public sealed class CatalogGrid : UserControl
                         TextAlignment = TextAlignment.Center,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(12),
+                        Margin = new Thickness(DesignTokens.Spacing3),
                     },
                 },
                 name,
@@ -310,8 +311,8 @@ public sealed class CatalogGrid : UserControl
         return new Border
         {
             Width = coverWidth,
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(0, 0, 0, 8),
+            CornerRadius = new CornerRadius(DesignTokens.RadiusCard),
+            Padding = new Thickness(0, 0, 0, DesignTokens.Spacing2),
             Child = button,
         };
     }

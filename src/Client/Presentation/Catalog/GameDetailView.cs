@@ -99,11 +99,7 @@ public sealed class GameDetailView : UserControl
         {
             Height = DesignTokens.StatusBadgeHeight,
             CornerRadius = new CornerRadius(DesignTokens.StatusBadgeRadius),
-            Padding = new Thickness(
-                DesignTokens.StatusBadgePaddingHorizontal,
-                0,
-                DesignTokens.StatusBadgePaddingHorizontal,
-                0),
+            Padding = new Thickness(DesignTokens.StatusBadgePaddingHorizontal, 0, DesignTokens.StatusBadgePaddingHorizontal, 0),
             Child = _badgeText,
         };
 
@@ -183,8 +179,8 @@ public sealed class GameDetailView : UserControl
 
         Content = new StackPanel
         {
-            Margin = new Thickness(16),
-            Spacing = 12,
+            Margin = new Thickness(DesignTokens.Spacing4),
+            Spacing = DesignTokens.Spacing3,
             Children =
             {
                 _title,
@@ -263,7 +259,7 @@ public sealed class GameDetailView : UserControl
     /// <returns>The control of the fact.</returns>
     private static Control BuildFact(string label, Control value) => new StackPanel
     {
-        Spacing = 4,
+        Spacing = DesignTokens.Spacing1,
         Children =
         {
             new TextBlock
@@ -283,7 +279,7 @@ public sealed class GameDetailView : UserControl
     /// <returns>The control of the fact of the size.</returns>
     private Control BuildSizeFact() => new StackPanel
     {
-        Spacing = 4,
+        Spacing = DesignTokens.Spacing1,
         Children =
         {
             new TextBlock
@@ -295,7 +291,7 @@ public sealed class GameDetailView : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 4,
+                Spacing = DesignTokens.Spacing1,
                 Children =
                 {
                     _sizeValue,
