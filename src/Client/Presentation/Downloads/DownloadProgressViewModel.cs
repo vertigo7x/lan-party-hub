@@ -46,7 +46,7 @@ public sealed class DownloadProgressViewModel
     /// muestra «Reanudando desde 42 % · 3,2 GB de 7,6 GB» (AD-10, AD-25).
     /// </para>
     /// </summary>
-    public const string ResumingPrefixText = "Reanudando desde ";
+    public const string ResumingPrefixText = StateDisplayMap.ResumingPrefix;
 
     /// <summary>
     /// Separator between the microcopy of the state and the size of the package, as in

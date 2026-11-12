@@ -154,4 +154,31 @@ public sealed class StateDisplayMapTests
             Assert.False(string.IsNullOrWhiteSpace(StateDisplayMap.GetText(code)));
         }
     }
+
+    /// <summary>
+    /// El texto de una descarga que REANUDA lo compone la tabla: «Reanudando desde 42 % ·
+    /// 3,2 GB de 7,6 GB» (UX-DR-6).
+    /// </summary>
+    [Fact]
+    public void The_text_of_a_resumed_download_comes_from_the_table()
+    {
+        Assert.Equal(
+            "Reanudando desde 42 % · 3,2 GB de 7,6 GB",
+            StateDisplayMap.GetResumingText("42 % · 3,2 GB de 7,6 GB"));
+    }
+
+    /// <summary>
+    /// Un tiempo que ha pasado se dice en MINUTOS, nunca en segundos: la velocidad de la
+    /// descarga no está validada (UX-DR-6, NFR-2).
+    /// </summary>
+    [Theory]
+    [InlineData(0, "hace 0 min")]
+    [InlineData(120, "hace 2 min")]
+    [InlineData(45, "hace 1 min")]
+    [InlineData(7200, "hace 120 min")]
+    public void A_time_that_went_by_is_always_in_minutes(int seconds, string expected)
+    {
+        Assert.Equal(expected, StateDisplayMap.GetTimeAgoText(TimeSpan.FromSeconds(seconds)));
+    }
+
 }
