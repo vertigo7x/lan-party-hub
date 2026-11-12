@@ -48,7 +48,7 @@ public static class InstallPathConfine
     /// 0x1F incluidos: en Linux el host sólo rechaza el 0x00 y la barra, así que sin
     /// ellos el conjunto de la regla no sería el de la plataforma del cliente.
     /// </remarks>
-    private static readonly char[] WindowsInvalidFileNameChars =
+    internal static readonly char[] WindowsInvalidFileNameChars =
         new[] { '"', '<', '>', '|', ':', '*', '?', '\\', '/' }
             .Concat(Enumerable.Range(0, 32).Select(index => (char)index))
             .ToArray();
@@ -130,6 +130,15 @@ public static class InstallPathConfine
         // se rechaza (AD-9).
         if (string.Equals(gameId, ".", StringComparison.Ordinal)
             || string.Equals(gameId, "..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // El sufijo RESERVADO de la raíz hermana es parte del nombre de la carpeta del
+        // juego: un identificador que lo terminara NOMBRARÍA la raíz de preparación de
+        // otro juego, y la sustitución de ese otro la tocaría (AD-9, FR-8).
+        if (gameId.EndsWith(PreparationSuffix, StringComparison.OrdinalIgnoreCase)
+            || gameId.EndsWith(ReplacedSuffix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
