@@ -1162,6 +1162,26 @@ def plan_prompt(story, plan: Path) -> str:
             "tests/UnitTests/InstallationProgressProjectionTests.cs",
             "tests/UnitTests/AvaloniaSurfaceCollection.cs",
         ),
+        "11.4": (
+            "src/Shared/Contracts/StateDisplayMap.cs",
+            "src/Shared/Contracts/ErrorCatalog.cs",
+            "src/Client/Presentation/Status/GameRunStatusViewModel.cs",
+            "src/Client/Presentation/Status/ConnectionStatusPanelViewModel.cs",
+            "src/Client/Presentation/Status/ConnectionStatusPanel.cs",
+            "src/Client/Presentation/Errors/ErrorMessageViewModel.cs",
+            "src/Client/Presentation/Errors/ErrorToast.cs",
+            "src/Client/Presentation/Downloads/DownloadProgressViewModel.cs",
+            "src/Client/Presentation/Downloads/DownloadProgressControl.cs",
+            "src/Client/Presentation/Install/InstallProgressViewModel.cs",
+            "src/Client/Presentation/Install/InstallProgressControl.cs",
+            "src/Client/Presentation/GameLauncher/GamePlayActionsViewModel.cs",
+            "tests/UnitTests/StateDisplayMapTests.cs",
+            "tests/UnitTests/ErrorCatalogTests.cs",
+            "tests/UnitTests/GameRunStatusViewModelTests.cs",
+            "tests/UnitTests/DownloadProgressTests.cs",
+            "tests/UnitTests/InstallProgressTests.cs",
+            "tests/UnitTests/ValidationFailurePresentationTests.cs",
+        ),
     }
     candidates = candidates_by_story.get(story.short_id, ())
     available = [path for path in candidates if (REPO_ROOT / path).is_file()]
