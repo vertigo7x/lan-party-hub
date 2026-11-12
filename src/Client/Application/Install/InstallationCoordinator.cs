@@ -523,7 +523,7 @@ public sealed class InstallationCoordinator
         // Una instalación que quedó en la raíz COMPARTIDA se lleva a la raíz de SU
         // juego: si no, el juego PARECERÍA no instalado y se volvería a descargar
         // entero (FR-8, AD-9).
-        await MoveLegacyTreeAsync(gameId, rootPath, cancellationToken).ConfigureAwait(false);
+        await MoveLegacyTreeAsync(gameId, rootPath, manifest, cancellationToken).ConfigureAwait(false);
 
         Directory.CreateDirectory(rootPath);
 
@@ -985,6 +985,7 @@ public sealed class InstallationCoordinator
     private async Task MoveLegacyTreeAsync(
         string gameId,
         string targetRoot,
+        InstallationManifest manifest,
         CancellationToken cancellationToken)
     {
         var registered = await _stateStore
@@ -996,13 +997,104 @@ public sealed class InstallationCoordinator
             return;
         }
 
-        if (_switcher.MoveRoot(registered.InstallPath, targetRoot))
+        var legacyRoot = registered.InstallPath;
+
+        if (PathsAreTheSame(legacyRoot, targetRoot))
         {
-            _logger.LogInformation(
-                "La instalación del juego {GameId} se ha llevado de '{PreviousRoot}' a la raíz de su juego.",
-                gameId,
-                registered.InstallPath);
+            return;
         }
+
+        // La raíz ANTIGUA era COMPARTIDA: el árbol del juego son las rutas que declara
+        // SU manifiesto, no la raíz entera. Mover la raíz entera se llevaría por
+        // delante el árbol de los OTROS juegos, que es justo el S0 (FR-8, AD-9).
+        foreach (var entry in TopLevelEntriesOf(manifest))
+        {
+            var source = Path.Combine(legacyRoot, entry);
+            var target = Path.Combine(targetRoot, entry);
+
+            if (PathsAreTheSame(source, target))
+            {
+                continue;
+            }
+
+            if (!Directory.Exists(source) && !File.Exists(source))
+            {
+                continue;
+            }
+
+            if (Directory.Exists(target) || File.Exists(target))
+            {
+                continue;
+            }
+
+            if (_switcher.MoveRoot(source, target))
+            {
+                _logger.LogInformation(
+                    "La entrada '{Entry}' de la instalación del juego {GameId} se ha llevado de '{PreviousRoot}' a la raíz de su juego.",
+                    entry,
+                    gameId,
+                    source);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The TOP LEVEL entries that the manifest of a videogame declares: they are the tree
+    /// of that game, and nothing else (FR-8, AD-9).
+    /// </summary>
+    /// <param name="manifest">Signed manifest of the package that is being installed.</param>
+    /// <returns>The names of the entries of the tree of the game.</returns>
+    private static IReadOnlyList<string> TopLevelEntriesOf(InstallationManifest manifest)
+    {
+        var entries = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var operation in manifest.Operations)
+        {
+            var path = operation switch
+            {
+                InstallationManifest.CreateDirectory create => create.Path,
+                InstallationManifest.WriteConfig write => write.Path,
+                InstallationManifest.Verify verify => verify.Path,
+                InstallationManifest.CopyFile copy => copy.DestinationPath,
+                InstallationManifest.Extract extract => extract.DestinationPath,
+                _ => null,
+            };
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            var normalized = path.Replace('\\', '/').TrimStart('/');
+            var separator = normalized.IndexOf('/', StringComparison.Ordinal);
+            var entry = separator > 0 ? normalized[..separator] : normalized;
+
+            if (!string.IsNullOrWhiteSpace(entry))
+            {
+                entries.Add(entry);
+            }
+        }
+
+        return entries.ToArray();
+    }
+
+    /// <summary>
+    /// Whether two paths point to the SAME place, with the comparison that the platform
+    /// of the client uses (AD-9, AD-17).
+    /// </summary>
+    /// <param name="left">First path.</param>
+    /// <param name="right">Second path.</param>
+    /// <returns><c>true</c> when both paths are the same place.</returns>
+    private static bool PathsAreTheSame(string left, string right)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        var first = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var second = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return string.Equals(first, second, comparison);
     }
 
     /// <summary>

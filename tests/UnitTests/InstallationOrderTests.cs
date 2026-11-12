@@ -369,6 +369,61 @@ public sealed class InstallationOrderTests : IDisposable
     /// <param name="pathsConfinedToRoot">Whether every written path stayed inside the root.</param>
     /// <param name="withoutAnchor">Whether the client has NO fixed anchor.</param>
     /// <returns>The fixture of the installation.</returns>
+    /// <summary>
+    /// La migración del árbol heredado mueve SOLO el subárbol del juego: la raíz
+    /// ANTIGUA era compartida, así que moverla entera se llevaría por delante el árbol
+    /// de los OTROS juegos, que es justo el S0 (FR-8, AD-9).
+    /// </summary>
+    [Fact]
+    public async Task The_legacy_tree_moves_without_taking_the_other_games_with_it()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        // La raíz COMPARTIDA de antes: los dos juegos vivían dentro de ella.
+        var sharedRoot = Path.GetDirectoryName(fixture.RootPath)!;
+
+        var treeOfThisGame = Path.Combine(sharedRoot, "game");
+        var treeOfOtherGame = Path.Combine(sharedRoot, "otro");
+
+        Directory.CreateDirectory(treeOfThisGame);
+        Directory.CreateDirectory(treeOfOtherGame);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(treeOfThisGame, "game.exe"),
+            "ejecutable",
+            TestContext.Current.CancellationToken);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(treeOfOtherGame, "otro.exe"),
+            "otro ejecutable",
+            TestContext.Current.CancellationToken);
+
+        // La fila heredada apunta a la raíz COMPARTIDA, que es lo que persistía la 10.2.
+        fixture.StateStore.SavedInstallations.Add(
+            new ClientInstallation(
+                GameId,
+                Version,
+                InstallationState.Installed,
+                sharedRoot,
+                InstallationCertification.DeriveInstallDirectoryId(sharedRoot)));
+
+        await fixture.Coordinator.InstallAsync(
+            GameId,
+            PackageId,
+            Version,
+            TestContext.Current.CancellationToken);
+
+        // El árbol del OTRO juego sigue en la raíz compartida, en su sitio.
+        Assert.True(File.Exists(Path.Combine(treeOfOtherGame, "otro.exe")));
+
+        // Y el de este juego ya no está en la raíz compartida: se ha llevado a la suya.
+        Assert.False(Directory.Exists(treeOfThisGame));
+
+        // La base compartida sigue siendo la base: no se ha movido entera.
+        Assert.True(Directory.Exists(sharedRoot));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootPath, "game")));
+    }
+
     private async Task<InstallationFixture> CreateFixtureAsync(
         bool tamperWithSignature = false,
         bool tamperWithOperation = false,

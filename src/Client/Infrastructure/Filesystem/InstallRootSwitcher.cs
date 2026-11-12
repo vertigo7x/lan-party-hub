@@ -62,13 +62,25 @@ public sealed class InstallRootSwitcher : IInstallRootSwitcher
 
         // Sin arbol en el sitio viejo no hay nada que llevar, y con arbol en el sitio
         // nuevo el de su juego ya esta en su sitio: mover seria pisarlo.
-        if (!Directory.Exists(source) || Directory.Exists(target))
+        if (!Directory.Exists(source) && !File.Exists(source))
+        {
+            return false;
+        }
+
+        if (Directory.Exists(target) || File.Exists(target))
         {
             return false;
         }
 
         try
         {
+            if (File.Exists(source))
+            {
+                File.Move(source, target);
+
+                return true;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             Directory.Move(source, target);
         }
