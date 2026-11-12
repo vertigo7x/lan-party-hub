@@ -239,6 +239,52 @@ public sealed class DownloadProgressViewModel
     public double BarFraction => Progress.Fraction;
 
     /// <summary>
+    /// The SIGNIFICANT steps of the percentage that the screen reader announces (AC4,
+    /// UX-DR-39).
+    /// </summary>
+    /// <remarks>
+    /// El lector de pantalla NO anuncia cada `tick` del progreso: se anuncia cuando el
+    /// porcentaje CRUZA uno de estos pasos, porque un anuncio por cada tick sería ruido
+    /// (AC4, UX-DR-39).
+    /// </remarks>
+    public static readonly int[] AnnouncedPercentages = [10, 25, 50, 75, 100];
+
+    /// <summary>
+    /// The last percentage that was announced to the screen reader, so the same step is
+    /// not announced twice (AC4, UX-DR-39).
+    /// </summary>
+    public int? AnnouncedPercentage { get; private set; }
+
+    /// <summary>
+    /// Says whether the progress has reached a NEW significant step, and remembers it so
+    /// the screen reader announces it once (AC4, UX-DR-39).
+    /// </summary>
+    /// <returns>True when there is a new significant step to announce.</returns>
+    public bool ConsumeSignificantPercentage()
+    {
+        var percentage = (int)Math.Round(BarFraction * 100);
+
+        var step = 0;
+
+        foreach (var candidate in AnnouncedPercentages)
+        {
+            if (percentage >= candidate)
+            {
+                step = candidate;
+            }
+        }
+
+        if (step == 0 || step == AnnouncedPercentage)
+        {
+            return false;
+        }
+
+        AnnouncedPercentage = step;
+
+        return true;
+    }
+
+    /// <summary>
     /// True when the operation is running and the action «Pausar» está disponible
     /// (UX-DR-6).
     /// </summary>
