@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Client.Application;
 using LANPartyHub.Client.Application.CatalogSync;
@@ -113,7 +114,15 @@ public sealed class App : Avalonia.Application
     }
 
     /// <inheritdoc />
-    public override void Initialize() => Styles.Add(new FluentTheme());
+    public override void Initialize()
+    {
+        Styles.Add(new FluentTheme());
+
+        // La paleta del DISENO es oscura: sin pedir el tema oscuro, el texto por defecto
+        // del tema sería claro sobre las superficies oscuras de la paleta y no se leería
+        // (AC1, UX-DR-38).
+        RequestedThemeVariant = ThemeVariant.Dark;
+    }
 
     /// <inheritdoc />
     public override void OnFrameworkInitializationCompleted()

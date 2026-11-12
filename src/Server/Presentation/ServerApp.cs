@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Server.Application.Catalog;
 using LANPartyHub.Server.Application.Clients;
@@ -47,7 +48,14 @@ public sealed class ServerApp : Avalonia.Application
     }
 
     /// <inheritdoc />
-    public override void Initialize() => Styles.Add(new FluentTheme());
+    public override void Initialize()
+    {
+        Styles.Add(new FluentTheme());
+
+        // La paleta del DISENO es oscura: el organizador lee su tabla sobre las mismas
+        // superficies que el cliente (AC1, UX-DR-38).
+        RequestedThemeVariant = ThemeVariant.Dark;
+    }
 
     /// <inheritdoc />
     public override void OnFrameworkInitializationCompleted()

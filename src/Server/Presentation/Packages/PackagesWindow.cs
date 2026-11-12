@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using LANPartyHub.Server.Presentation.Design;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Server.Application.Packages;
@@ -344,7 +345,7 @@ public sealed class PackagesWindow : Window
         {
             Padding = new Thickness(12),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x2C, 0x37, 0xFF)),
+            BorderBrush = new SolidColorBrush(ServerDesignTokens.BorderHairline),
             Child = content,
         };
     }
