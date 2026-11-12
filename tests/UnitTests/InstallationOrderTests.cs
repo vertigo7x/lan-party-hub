@@ -434,7 +434,7 @@ public sealed class InstallationOrderTests : IDisposable
             coordinator,
             manifestCache,
             stateStore,
-            layout.InstallDirectory,
+            layout.GameInstallDirectory(GameId),
             layout.PartialFilePath(PackageId),
             layout.ManifestsDirectory,
             packageBytes);
@@ -685,6 +685,9 @@ public sealed class InstallationOrderTests : IDisposable
         public string Folder => _folder;
 
         public string InstallDirectory => _installDirectory;
+
+        public string GameInstallDirectory(string gameId) =>
+            LANPartyHub.Client.Domain.Install.InstallPathConfine.GameRoot(_installDirectory, gameId);
 
         public string DownloadsDirectory => Path.Combine(_folder, "downloads");
 

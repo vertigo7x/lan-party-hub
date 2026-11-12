@@ -121,7 +121,7 @@ public sealed class GameLaunchService
 
         try
         {
-            executablePath = _paths.ResolveInsideRoot(inspection.LaunchSettings.ExecutablePath);
+            executablePath = _paths.ResolveInsideGameRoot(gameId, inspection.LaunchSettings.ExecutablePath);
         }
         catch (InstallPathOutsideRootException exception)
         {
@@ -230,7 +230,7 @@ public sealed class GameLaunchService
 
         try
         {
-            workingDirectory = _paths.ResolveInsideRoot(declared);
+            workingDirectory = _paths.ResolveInsideGameRoot(gameId, declared);
 
             return true;
         }

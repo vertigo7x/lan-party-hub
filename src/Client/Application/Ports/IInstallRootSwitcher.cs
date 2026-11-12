@@ -66,4 +66,20 @@ public interface IInstallRootSwitcher
     /// <param name="activeRoot">Canonical absolute path of the active installation root.</param>
     /// <param name="stagingRoot">Canonical absolute path of the PREPARED root.</param>
     void DiscardStagingRoot(string activeRoot, string stagingRoot);
+
+    /// <summary>
+    /// MOVES a tree from one root to another by RENAME, and returns whether it moved
+    /// (FR-8, AD-9).
+    ///
+    /// <para>
+    /// El árbol de un juego que quedó en la raíz COMPARTIDA se lleva a la raíz de SU
+    /// juego: si no, el juego PARECE no instalado y el cliente lo vuelve a descargar
+    /// entero. El cambio de nombre no puede dejar el árbol a medias, así que o se mueve
+    /// entero o no se mueve (AC4, AD-9).
+    /// </para>
+    /// </summary>
+    /// <param name="currentRoot">Path where the tree currently lives.</param>
+    /// <param name="targetRoot">Path where the tree has to live.</param>
+    /// <returns><c>true</c> when the tree moved.</returns>
+    bool MoveRoot(string currentRoot, string targetRoot);
 }

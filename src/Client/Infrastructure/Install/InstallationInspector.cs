@@ -63,7 +63,7 @@ public sealed class InstallationInspector : IInstallationInspector
     }
 
     /// <inheritdoc />
-    public string RootPath => _paths.RootPath;
+    public string GameRootPath(string gameId) => _paths.GameRootPath(gameId);
 
     /// <inheritdoc />
     public async Task<InstallationInspection?> InspectAsync(
@@ -81,6 +81,10 @@ public sealed class InstallationInspector : IInstallationInspector
             return null;
         }
 
+        // La raíz EFECTIVA de una instalación es la de SU juego, y se deriva del
+        // identificador del juego: no de la carpeta compartida (FR-8, AD-9).
+        var rootPath = _paths.GameRootPath(gameId);
+
         var manifest = await LoadSignedManifestAsync(
                 gameId,
                 registered.InstalledVersion,
@@ -97,13 +101,13 @@ public sealed class InstallationInspector : IInstallationInspector
                 gameId);
 
             return new InstallationInspection(
-                registered.InstallPath,
+                rootPath,
                 NotCertified(),
                 new InstallationManifest.LaunchSettings(string.Empty, [], string.Empty));
         }
 
-        var verifyPassed = VerifyInstalledTree(manifest);
-        var pathsConfinedToRoot = PathsAreConfined(manifest);
+        var verifyPassed = VerifyInstalledTree(manifest, rootPath);
+        var pathsConfinedToRoot = PathsAreConfined(manifest, rootPath);
 
         // AC5, AD-1: la certificación es la ÚNICA definición de instalación válida, y las
         // TRES condiciones se evaluan JUNTAS. La primera condición se afirma porque el
@@ -115,7 +119,7 @@ public sealed class InstallationInspector : IInstallationInspector
             pathsConfinedToRoot: pathsConfinedToRoot,
             repairablePackageAvailable: false);
 
-        return new InstallationInspection(registered.InstallPath, verdict, manifest.Launch);
+        return new InstallationInspection(rootPath, verdict, manifest.Launch);
     }
 
     /// <summary>
@@ -188,7 +192,7 @@ public sealed class InstallationInspector : IInstallationInspector
     ///
     /// <param name="manifest">Signed manifest of the package.</param>
     /// <returns><c>true</c> when the tree passes the verification.</returns>
-    private bool VerifyInstalledTree(InstallationManifest manifest)
+    private bool VerifyInstalledTree(InstallationManifest manifest, string rootPath)
     {
         foreach (var operation in manifest.Operations)
         {
@@ -199,7 +203,7 @@ public sealed class InstallationInspector : IInstallationInspector
 
             try
             {
-                var path = _paths.ResolveInsideRoot(verify.Path);
+                var path = _paths.ResolveInside(rootPath, verify.Path);
 
                 if (!File.Exists(path))
                 {
@@ -222,7 +226,7 @@ public sealed class InstallationInspector : IInstallationInspector
     ///
     /// <param name="manifest">Signed manifest of the package.</param>
     /// <returns><c>true</c> when every path is confined.</returns>
-    private bool PathsAreConfined(InstallationManifest manifest)
+    private bool PathsAreConfined(InstallationManifest manifest, string rootPath)
     {
         foreach (var operation in manifest.Operations)
         {
@@ -233,7 +237,7 @@ public sealed class InstallationInspector : IInstallationInspector
                     continue;
                 }
 
-                if (!_paths.IsInsideRoot(path))
+                if (!_paths.IsInside(rootPath, path))
                 {
                     return false;
                 }
@@ -244,7 +248,7 @@ public sealed class InstallationInspector : IInstallationInspector
         // aplica a ella igual (AD-9, AC1).
         var executable = manifest.Launch?.ExecutablePath;
 
-        if (!string.IsNullOrWhiteSpace(executable) && !_paths.IsInsideRoot(executable))
+        if (!string.IsNullOrWhiteSpace(executable) && !_paths.IsInside(rootPath, executable))
         {
             return false;
         }

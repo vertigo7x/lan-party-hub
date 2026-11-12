@@ -188,7 +188,9 @@ public sealed class InstallationRepairService
 
         machine.TryTransitionTo(InstallationState.Installing);
 
-        var rootPath = _paths.RootPath;
+        // La reparación del juego ocurre dentro de la raíz de ESE juego: la de otro
+        // juego no se toca (FR-8, AD-9).
+        var rootPath = _paths.GameRootPath(gameId);
 
         Directory.CreateDirectory(rootPath);
 

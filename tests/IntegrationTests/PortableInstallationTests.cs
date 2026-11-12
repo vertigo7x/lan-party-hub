@@ -40,6 +40,9 @@ public sealed class PortableInstallationTests : IDisposable
     private readonly string _workingDirectory;
     private readonly string _databasePath;
     private readonly string _installDirectory;
+
+    /// <summary>Raíz de instalación de ESTE juego: la carpeta que lo confine (FR-8).</summary>
+    private readonly string _gameRoot;
     private readonly string _downloadsDirectory;
     private readonly string _manifestsDirectory;
 
@@ -53,6 +56,7 @@ public sealed class PortableInstallationTests : IDisposable
 
         _databasePath = Path.Combine(_workingDirectory, "state.sqlite");
         _installDirectory = Path.Combine(_workingDirectory, "install");
+        _gameRoot = Path.Combine(_installDirectory, GameId);
         _downloadsDirectory = Path.Combine(_workingDirectory, "downloads");
         _manifestsDirectory = Path.Combine(_workingDirectory, "manifests");
 
@@ -80,7 +84,7 @@ public sealed class PortableInstallationTests : IDisposable
         Assert.True(result.Verdict!.IsInstalled);
 
         // El archivo del paquete está DENTRO de la raíz autorizada (AC1).
-        var extracted = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var extracted = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         Assert.True(File.Exists(extracted));
 
@@ -152,7 +156,7 @@ public sealed class PortableInstallationTests : IDisposable
             result.Error!.Code);
 
         // AC2: la operación privilegiada NO se ejecutó, así que su archivo NO existe.
-        Assert.False(File.Exists(Path.Combine(_installDirectory, "config", "options.ini")));
+        Assert.False(File.Exists(Path.Combine(_gameRoot, "config", "options.ini")));
     }
 
     /// <summary>
@@ -211,7 +215,7 @@ public sealed class PortableInstallationTests : IDisposable
 
         // Y la operación privilegiada se escribió esta vez, porque el jugador la
         // confirmó.
-        Assert.True(File.Exists(Path.Combine(_installDirectory, "config", "options.ini")));
+        Assert.True(File.Exists(Path.Combine(_gameRoot, "config", "options.ini")));
     }
 
     /// <summary>
@@ -315,13 +319,13 @@ public sealed class PortableInstallationTests : IDisposable
         // declara un `..` queda CONFINADA, porque el destino final se resuelve y se
         // comprueba contra la raíz antes de escribir.
         Assert.False(File.Exists(Path.Combine(_workingDirectory, "escape.txt")));
-        Assert.False(File.Exists(Path.Combine(_installDirectory, "..", "escape.txt")));
+        Assert.False(File.Exists(Path.Combine(_gameRoot, "..", "escape.txt")));
 
         // Y todo lo que se escribió está DENTRO de la raíz autorizada (AD-9).
-        foreach (var file in Directory.EnumerateFiles(_installDirectory, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(_gameRoot, "*", SearchOption.AllDirectories))
         {
             Assert.StartsWith(
-                _installDirectory,
+                _gameRoot,
                 file,
                 StringComparison.OrdinalIgnoreCase);
         }
@@ -710,6 +714,9 @@ public sealed class PortableInstallationTests : IDisposable
         public string Folder => _folder;
 
         public string InstallDirectory => _installDirectory;
+
+        public string GameInstallDirectory(string gameId) =>
+            LANPartyHub.Client.Domain.Install.InstallPathConfine.GameRoot(_installDirectory, gameId);
 
         public string DownloadsDirectory { get; }
 

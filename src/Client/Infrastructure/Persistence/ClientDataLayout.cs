@@ -1,4 +1,5 @@
 using LANPartyHub.Client.Application.Ports;
+using LANPartyHub.Client.Domain.Install;
 
 namespace LANPartyHub.Client.Infrastructure.Persistence;
 
@@ -224,6 +225,10 @@ public sealed class ClientDataLayout : IClientDataLayout
                 exception);
         }
     }
+
+    /// <inheritdoc />
+    public string GameInstallDirectory(string gameId) =>
+        InstallPathConfine.GameRoot(InstallDirectory, gameId);
 
     /// <inheritdoc />
     public string PartialFilePath(string packageId)

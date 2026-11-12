@@ -30,6 +30,9 @@ public sealed class InstallLayoutTests : IDisposable
 {
     private const string PackageId = "0193f2a1-b2c3-4d4e-5f60-718293a4b5c6";
 
+    /// <summary>Identifier of the videogame whose installation root is exercised.</summary>
+    private const string GameId = "0193f2a1-b2c3-4d4e-5f60-718293a4b5c6";
+
     private readonly string _dataFolder;
     private readonly string _installDirectory;
     private readonly string _outsideFolder;
@@ -119,8 +122,8 @@ public sealed class InstallLayoutTests : IDisposable
 
         var resolver = new InstallPathResolver(layout);
 
-        Assert.True(resolver.IsInsideRoot("game/data.bin"));
-        Assert.False(resolver.IsInsideRoot("../fuera-de-la-raiz/data.bin"));
+        Assert.True(resolver.IsInsideGameRoot(GameId, "game/data.bin"));
+        Assert.False(resolver.IsInsideGameRoot(GameId, "../fuera-de-la-raiz/data.bin"));
     }
 
     /// <summary>
@@ -148,7 +151,7 @@ public sealed class InstallLayoutTests : IDisposable
 
         var outcome = await writer.ApplyAsync(
             manifest,
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
@@ -159,7 +162,7 @@ public sealed class InstallLayoutTests : IDisposable
         // Nada se escribió FUERA de la raíz: ni el archivo absoluto, ni la carpeta
         // declarada por la operación que sí era relativa (AD-27).
         Assert.False(File.Exists(absolute));
-        Assert.False(Directory.Exists(Path.Combine(_installDirectory, "game")));
+        Assert.False(Directory.Exists(Path.Combine(_installDirectory, GameId, "game")));
     }
 
     /// <summary>
@@ -184,7 +187,7 @@ public sealed class InstallLayoutTests : IDisposable
 
         var outcome = await writer.ApplyAsync(
             manifest,
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
@@ -218,14 +221,14 @@ public sealed class InstallLayoutTests : IDisposable
 
         var outcome = await writer.ApplyAsync(
             manifest,
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
         Assert.True(outcome.PathsConfinedToRoot);
         Assert.Null(outcome.RejectedPath);
 
-        Assert.True(File.Exists(Path.Combine(_installDirectory, "game", "config.ini")));
+        Assert.True(File.Exists(Path.Combine(_installDirectory, GameId, "game", "config.ini")));
     }
 
     /// <summary>
@@ -254,7 +257,7 @@ public sealed class InstallLayoutTests : IDisposable
 
         var outcome = await writer.ApplyAsync(
             manifest,
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
@@ -264,7 +267,7 @@ public sealed class InstallLayoutTests : IDisposable
         Assert.Null(outcome.RejectedPath);
         Assert.True(outcome.VerifyPassed);
 
-        Assert.True(File.Exists(Path.Combine(_installDirectory, "game", "config.ini")));
+        Assert.True(File.Exists(Path.Combine(_installDirectory, GameId, "game", "config.ini")));
     }
 
     /// <summary>
@@ -288,15 +291,15 @@ public sealed class InstallLayoutTests : IDisposable
         // La primera escritura es legítima y ocurre dentro de la raíz.
         await writer.ApplyAsync(
             ManifestWith(new InstallationManifest.WriteConfig("game/config.ini", "valor")),
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
-        Assert.True(File.Exists(Path.Combine(_installDirectory, "game", "config.ini")));
+        Assert.True(File.Exists(Path.Combine(_installDirectory, GameId, "game", "config.ini")));
 
-        // Ahora aparece un ENLACE que saca a la raíz, y la escritura posterior se
-        // rechaza.
-        var link = Path.Combine(_installDirectory, "escape");
+        // Ahora aparece un ENLACE que saca de la raíz del JUEGO, y la escritura
+        // posterior se rechaza.
+        var link = Path.Combine(resolver.GameRootPath(GameId), "escape");
 
         if (!TryCreateDirectoryLink(link, _outsideFolder))
         {
@@ -307,7 +310,7 @@ public sealed class InstallLayoutTests : IDisposable
 
         var outcome = await writer.ApplyAsync(
             ManifestWith(new InstallationManifest.WriteConfig("escape/datos.txt", "valor")),
-            resolver.RootPath,
+            resolver.GameRootPath(GameId),
             packagePath: null,
             TestContext.Current.CancellationToken);
 
@@ -335,12 +338,12 @@ public sealed class InstallLayoutTests : IDisposable
 
         layout.SetInstallDirectory(newRoot);
 
-        Assert.Equal(Path.GetFullPath(newRoot), resolver.RootPath);
-        Assert.True(resolver.IsInsideRoot("game/data.bin"));
+        Assert.Equal(Path.GetFullPath(Path.Combine(newRoot, GameId)), resolver.GameRootPath(GameId));
+        Assert.True(resolver.IsInsideGameRoot(GameId, "game/data.bin"));
 
         // La raíz ANTERIOR ya no confina: una ruta que estaba dentro de ella ahora queda
         // fuera, porque el confine se comprueba contra la raíz vigente (AD-9).
-        Assert.False(resolver.IsInsideRoot(Path.Combine(_installDirectory, "game", "data.bin")));
+        Assert.False(resolver.IsInsideGameRoot(GameId, Path.Combine(_installDirectory, GameId, "game", "data.bin")));
     }
 
     /// <summary>
@@ -430,4 +433,82 @@ public sealed class InstallLayoutTests : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// DOS juegos instalados en el MISMO cliente y en el MISMO disco: la raíz de cada uno
+    /// es la SUYA, y la sustitución del árbol de uno NO toca el árbol del otro
+    /// (FR-8, FR-11, AD-9).
+    ///
+    /// <para>
+    /// Esta es la prueba del S0: con la raíz COMPARTIDA, la sustitución por cambio de
+    /// nombre de un juego se llevaba por delante el árbol del otro, porque las dos
+    /// instalaciones vivían en la misma carpeta.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Updating_one_game_leaves_the_tree_of_the_other_untouched()
+    {
+        const string otherGameId = "11223344-5566-7788-99aa-bbccddeeff00";
+
+        var layout = ClientDataLayout.Create(_dataFolder, _installDirectory);
+
+        layout.EnsureCreated();
+
+        var resolver = new InstallPathResolver(layout);
+        var writer = new ManifestTreeWriter(
+            resolver,
+            NullLogger<ManifestTreeWriter>.Instance);
+        var switcher = new InstallRootSwitcher(
+            NullLogger<InstallRootSwitcher>.Instance);
+
+        var rootOfThis = resolver.GameRootPath(GameId);
+        var rootOfOther = resolver.GameRootPath(otherGameId);
+
+        // Los dos juegos están instalados, cada uno en SU raíz.
+        await writer.ApplyAsync(
+            ManifestWith(new InstallationManifest.WriteConfig("game/config.ini", "juego-uno")),
+            rootOfThis,
+            packagePath: null,
+            TestContext.Current.CancellationToken);
+
+        await writer.ApplyAsync(
+            ManifestWith(new InstallationManifest.WriteConfig("game/config.ini", "juego-dos")),
+            rootOfOther,
+            packagePath: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(Path.Combine(rootOfThis, "game", "config.ini")));
+        Assert.True(File.Exists(Path.Combine(rootOfOther, "game", "config.ini")));
+
+        // Se actualiza el juego UNO: su árbol nuevo se prepara en una raíz HERMANA de la
+        // SUYA, y nunca al lado de la del otro juego.
+        var staging = switcher.PrepareStagingRoot(rootOfThis);
+
+        Assert.Equal(Path.Combine(_installDirectory, GameId + ".preparacion"), staging);
+        Assert.NotEqual(Path.Combine(_installDirectory, otherGameId + ".preparacion"), staging);
+
+        await writer.ApplyAsync(
+            ManifestWith(new InstallationManifest.WriteConfig("game/config.ini", "juego-uno-nuevo")),
+            staging,
+            packagePath: null,
+            TestContext.Current.CancellationToken);
+
+        switcher.CommitStagingRoot(rootOfThis, staging);
+
+        // El árbol del juego UNO es el nuevo...
+        Assert.Equal(
+            "juego-uno-nuevo",
+            await File.ReadAllTextAsync(
+                Path.Combine(rootOfThis, "game", "config.ini"),
+                TestContext.Current.CancellationToken));
+
+        // ...y el del juego DOS sigue en su sitio, con SU contenido (FR-11, AD-9).
+        Assert.True(Directory.Exists(rootOfOther));
+        Assert.Equal(
+            "juego-dos",
+            await File.ReadAllTextAsync(
+                Path.Combine(rootOfOther, "game", "config.ini"),
+                TestContext.Current.CancellationToken));
+    }
+
 }

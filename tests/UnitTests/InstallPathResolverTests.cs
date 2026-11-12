@@ -19,6 +19,9 @@ namespace LANPartyHub.UnitTests;
 /// </summary>
 public sealed class InstallPathResolverTests : IDisposable
 {
+    /// <summary>Identifier of the videogame whose installation root is exercised.</summary>
+    private const string GameId = "0193f2a1-b2c3-4d4e-5f60-718293a4b5c6";
+
     private readonly List<string> _temporaryFolders = [];
 
     /// <summary>
@@ -30,10 +33,10 @@ public sealed class InstallPathResolverTests : IDisposable
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        var resolved = resolver.ResolveInsideRoot("game/data.bin");
+        var resolved = resolver.ResolveInside(root, "game/data.bin");
 
         Assert.StartsWith(root, resolved, StringComparison.OrdinalIgnoreCase);
-        Assert.True(resolver.IsInsideRoot("game/data.bin"));
+        Assert.True(resolver.IsInside(root, "game/data.bin"));
     }
 
     /// <summary>
@@ -46,8 +49,8 @@ public sealed class InstallPathResolverTests : IDisposable
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        Assert.True(resolver.IsInsideRoot("."));
-        Assert.True(resolver.IsInsideRoot(string.Empty) is false);
+        Assert.True(resolver.IsInside(root, "."));
+        Assert.True(resolver.IsInside(root, string.Empty) is false);
     }
 
     /// <summary>
@@ -59,11 +62,11 @@ public sealed class InstallPathResolverTests : IDisposable
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        Assert.False(resolver.IsInsideRoot("../fuera.txt"));
-        Assert.False(resolver.IsInsideRoot("game/../../fuera.txt"));
+        Assert.False(resolver.IsInside(root, "../fuera.txt"));
+        Assert.False(resolver.IsInside(root, "game/../../fuera.txt"));
 
         var exception = Assert.Throws<InstallPathOutsideRootException>(
-            () => resolver.ResolveInsideRoot("../fuera.txt"));
+            () => resolver.ResolveInside(root, "../fuera.txt"));
 
         // El rechazo nombra la ruta CANÓNICA que lo intentó (AD-9).
         Assert.Equal("../fuera.txt", exception.RelativePath);
@@ -83,8 +86,8 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var absolute = Path.Combine(Path.GetTempPath(), "fuera-de-la-raiz.txt");
 
-        Assert.False(resolver.IsInsideRoot(absolute));
-        Assert.Throws<InstallPathOutsideRootException>(() => resolver.ResolveInsideRoot(absolute));
+        Assert.False(resolver.IsInside(root, absolute));
+        Assert.Throws<InstallPathOutsideRootException>(() => resolver.ResolveInside(root, absolute));
     }
 
     /// <summary>
@@ -99,7 +102,7 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var inside = Path.Combine(root, "game", "data.bin");
 
-        Assert.True(resolver.IsInsideRoot(inside));
+        Assert.True(resolver.IsInside(root, inside));
     }
 
     /// <summary>
@@ -119,7 +122,7 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = CreateResolver(root);
 
-        Assert.False(resolver.IsInsideRoot(Path.Combine(sibling, "datos.txt")));
+        Assert.False(resolver.IsInside(root, Path.Combine(sibling, "datos.txt")));
     }
 
     /// <summary>
@@ -132,8 +135,8 @@ public sealed class InstallPathResolverTests : IDisposable
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        var first = resolver.ResolveInsideRoot("game/data.bin");
-        var second = resolver.ResolveInsideRoot("./game/sub/../data.bin");
+        var first = resolver.ResolveInside(root, "game/data.bin");
+        var second = resolver.ResolveInside(root, "./game/sub/../data.bin");
 
         Assert.Equal(first, second);
     }
@@ -164,7 +167,7 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = CreateResolver(root);
 
-        Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
+        Assert.False(resolver.IsInside(root, Path.Combine("enlace", "datos.txt")));
     }
 
     /// <summary>
@@ -200,10 +203,10 @@ public sealed class InstallPathResolverTests : IDisposable
         var resolver = CreateResolver(root);
 
         // El archivo final NO existe: el enlace que se atraviesa es el intermedio.
-        Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "datos.txt")));
+        Assert.False(resolver.IsInside(root, Path.Combine("enlace", "datos.txt")));
 
         var exception = Assert.Throws<InstallPathOutsideRootException>(
-            () => resolver.ResolveInsideRoot(Path.Combine("enlace", "datos.txt")));
+            () => resolver.ResolveInside(root, Path.Combine("enlace", "datos.txt")));
 
         // El rechazo nombra la ruta CANÓNICA que lo intentó: la del destino real del
         // enlace, que es la que sale de la raíz (AD-9).
@@ -241,7 +244,7 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = CreateResolver(root);
 
-        Assert.False(resolver.IsInsideRoot(Path.Combine("enlace", "nivel2", "datos.txt")));
+        Assert.False(resolver.IsInside(root, Path.Combine("enlace", "nivel2", "datos.txt")));
     }
 
     /// <summary>
@@ -266,7 +269,7 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = CreateResolver(root);
 
-        Assert.True(resolver.IsInsideRoot(Path.Combine("dentro", "datos.txt")));
+        Assert.True(resolver.IsInside(root, Path.Combine("dentro", "datos.txt")));
     }
 
     /// <summary>
@@ -290,8 +293,10 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = CreateResolver(link);
 
-        Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
-        Assert.True(resolver.IsInsideRoot(Path.Combine("game", "data.bin")));
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(root, GameId)),
+            resolver.GameRootPath(GameId));
+        Assert.True(resolver.IsInside(link, Path.Combine("game", "data.bin")));
     }
 
     /// <summary>
@@ -304,8 +309,8 @@ public sealed class InstallPathResolverTests : IDisposable
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        Assert.Throws<ArgumentException>(() => resolver.ResolveInsideRoot("   "));
-        Assert.False(resolver.IsInsideRoot("   "));
+        Assert.Throws<ArgumentException>(() => resolver.ResolveInside(root, "   "));
+        Assert.False(resolver.IsInside(root, "   "));
     }
 
     /// <summary>
@@ -324,8 +329,8 @@ public sealed class InstallPathResolverTests : IDisposable
 
         var resolver = new InstallPathResolver(layout);
 
-        Assert.Throws<ArgumentException>(() => resolver.RootPath);
-        Assert.Throws<ArgumentException>(() => resolver.ResolveInsideRoot("game/data.bin"));
+        Assert.Throws<ArgumentException>(() => resolver.GameRootPath(GameId));
+        Assert.Throws<ArgumentException>(() => resolver.ResolveInsideGameRoot(GameId, "game/data.bin"));
     }
 
     /// <summary>
@@ -343,6 +348,8 @@ public sealed class InstallPathResolverTests : IDisposable
 
         public string StateDatabasePath => string.Empty;
 
+        public string GameInstallDirectory(string gameId) => string.Empty;
+
         public string PartialFilePath(string packageId) => string.Empty;
 
         public void EnsureCreated()
@@ -355,15 +362,74 @@ public sealed class InstallPathResolverTests : IDisposable
     }
 
     /// <summary>
-    /// The root of the resolver is the CANONICAL path of the configured root (AD-9).
+    /// The root of a GAME is the CANONICAL path of that game's folder inside the
+    /// configured root (AD-9, FR-8).
     /// </summary>
     [Fact]
-    public void The_root_of_the_resolver_is_the_canonical_path()
+    public void The_root_of_a_game_is_the_canonical_path_of_its_folder()
     {
         var root = CreateTemporaryFolder();
         var resolver = CreateResolver(root);
 
-        Assert.Equal(Path.GetFullPath(root), resolver.RootPath);
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(root, GameId)),
+            resolver.GameRootPath(GameId));
+    }
+
+    /// <summary>
+    /// Dos juegos del MISMO cliente tienen dos raíces DISTINTAS: la raíz de una
+    /// instalación se deriva del juego y no de una carpeta compartida (FR-8, AD-9).
+    /// </summary>
+    [Fact]
+    public void Two_games_of_the_same_client_have_two_roots()
+    {
+        var root = CreateTemporaryFolder();
+        var resolver = CreateResolver(root);
+
+        Assert.NotEqual(resolver.GameRootPath("juego-1"), resolver.GameRootPath("juego-2"));
+
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(root, "juego-1")),
+            resolver.GameRootPath("juego-1"));
+    }
+
+    /// <summary>
+    /// La escritura de un juego se resuelve contra la raíz de ESE juego, y el confine
+    /// se comprueba contra ESA raíz: un juego no puede escribir en la raíz de otro
+    /// (FR-8, NFR-5, AD-9).
+    /// </summary>
+    [Fact]
+    public void The_write_of_a_game_is_confined_to_its_own_root()
+    {
+        var root = CreateTemporaryFolder();
+        var resolver = CreateResolver(root);
+
+        var resolved = resolver.ResolveInsideGameRoot("juego-1", "game/data.bin");
+
+        Assert.StartsWith(
+            resolver.GameRootPath("juego-1"),
+            resolved,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(resolver.IsInsideGameRoot("juego-1", "game/data.bin"));
+
+        // La ruta del juego 1 que SALE de su raíz hacia la del juego 2 se rechaza.
+        Assert.Throws<InstallPathOutsideRootException>(
+            () => resolver.ResolveInsideGameRoot("juego-1", "../juego-2/datos.txt"));
+        Assert.False(resolver.IsInsideGameRoot("juego-1", "../juego-2/datos.txt"));
+    }
+
+    /// <summary>
+    /// Un identificador de juego que termina en el sufijo RESERVADO de la raíz hermana
+    /// se rechaza: nombraría la raíz de preparación de otro juego (AD-9, FR-8).
+    /// </summary>
+    [Fact]
+    public void A_game_id_that_ends_with_the_reserved_suffix_is_rejected()
+    {
+        var root = CreateTemporaryFolder();
+        var resolver = CreateResolver(root);
+
+        Assert.Throws<ArgumentException>(() => resolver.GameRootPath("juego.preparacion"));
+        Assert.Throws<ArgumentException>(() => resolver.GameRootPath("juego.sustituida"));
     }
 
     /// <summary>

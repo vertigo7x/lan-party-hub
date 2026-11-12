@@ -516,7 +516,14 @@ public sealed class InstallationCoordinator
 
         // PASO 3: SOLO ENTONCES se crean el directorio de instalación y el archivo
         // parcial (AD-8, AC1, AC3).
-        var rootPath = _paths.RootPath;
+        // La raíz de esta instalación es la de SU juego: de ella cuelgan la raíz de
+        // preparación, la de sustitución y todo lo que se escribe (FR-8, AD-9).
+        var rootPath = _paths.GameRootPath(gameId);
+
+        // Una instalación que quedó en la raíz COMPARTIDA se lleva a la raíz de SU
+        // juego: si no, el juego PARECERÍA no instalado y se volvería a descargar
+        // entero (FR-8, AD-9).
+        await MoveLegacyTreeAsync(gameId, rootPath, cancellationToken).ConfigureAwait(false);
 
         Directory.CreateDirectory(rootPath);
 
@@ -962,6 +969,43 @@ public sealed class InstallationCoordinator
     }
 
     /// <summary>
+    /// Moves the tree of an installation that lives in the SHARED root to the root of
+    /// ITS game (FR-8, AD-9).
+    ///
+    /// <para>
+    /// El árbol se movió en el pasado, cuando la raíz de instalación era una carpeta
+    /// COMÚN a todos los juegos del cliente. Con una raíz por juego, ese árbol se queda
+    /// en la base común y el juego PARECE no instalado: el cliente lo volvería a
+    /// descargar entero. La fila conserva su ruta hasta que la 10.5 la actualice.
+    /// </para>
+    /// </summary>
+    /// <param name="gameId">Identifier of the videogame.</param>
+    /// <param name="targetRoot">Canonical absolute path of the root of the game.</param>
+    /// <param name="cancellationToken">Token that cancels the operation.</param>
+    private async Task MoveLegacyTreeAsync(
+        string gameId,
+        string targetRoot,
+        CancellationToken cancellationToken)
+    {
+        var registered = await _stateStore
+            .LoadInstallationAsync(gameId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (registered is null || string.IsNullOrWhiteSpace(registered.InstallPath))
+        {
+            return;
+        }
+
+        if (_switcher.MoveRoot(registered.InstallPath, targetRoot))
+        {
+            _logger.LogInformation(
+                "La instalación del juego {GameId} se ha llevado de '{PreviousRoot}' a la raíz de su juego.",
+                gameId,
+                registered.InstallPath);
+        }
+    }
+
+    /// <summary>
     /// Tells whether the tree that is already installed SATISFIES the <c>verify</c>
     /// operation of the manifest (AC1, AD-7).
     /// </summary>
@@ -979,7 +1023,7 @@ public sealed class InstallationCoordinator
 
             try
             {
-                var path = _paths.ResolveInsideRoot(verify.Path);
+                var path = _paths.ResolveInside(rootPath, verify.Path);
 
                 if (!File.Exists(path))
                 {

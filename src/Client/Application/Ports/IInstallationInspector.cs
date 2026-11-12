@@ -21,10 +21,11 @@ namespace LANPartyHub.Client.Application.Ports;
 public interface IInstallationInspector
 {
     /// <summary>
-    /// Canonical absolute path of the installation root that confines the installation
-    /// (AD-9).
+    /// Canonical absolute path of the installation root of a videogame, the folder that
+    /// confines ITS installation (AD-9, FR-8).
     /// </summary>
-    string RootPath { get; }
+    /// <param name="gameId">Identifier of the videogame.</param>
+    string GameRootPath(string gameId);
 
     /// <summary>
     /// Reads the installation that the client registered for a videogame, and CERTIFIES

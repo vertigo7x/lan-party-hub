@@ -153,4 +153,39 @@ public sealed class ClientDataLayoutTests : IDisposable
                 () => cache.LoadAsync(packageId, TestContext.Current.CancellationToken).GetAwaiter().GetResult());
         }
     }
+
+    /// <summary>
+    /// El layout cuelga una raíz POR JUEGO de la base común: dos juegos del mismo
+    /// cliente tienen dos raíces, y cada una dentro de la base (FR-8, AD-9).
+    /// </summary>
+    [Fact]
+    public void The_layout_holds_one_root_per_game()
+    {
+        var layout = ClientDataLayout.Create(_dataFolder, _installDirectory);
+
+        var first = layout.GameInstallDirectory("juego-1");
+        var second = layout.GameInstallDirectory("juego-2");
+
+        Assert.NotEqual(first, second);
+        Assert.Equal(Path.Combine(Path.GetFullPath(_installDirectory), "juego-1"), first);
+        Assert.Equal(Path.Combine(Path.GetFullPath(_installDirectory), "juego-2"), second);
+    }
+
+    /// <summary>
+    /// Un identificador de juego que NO puede ser nombre de carpeta se rechaza: su
+    /// raíz saldría de la base común, y una raíz que sale de la base no confine nada
+    /// (AD-9).
+    /// </summary>
+    [Theory]
+    [InlineData("juego/con/separador")]
+    [InlineData("juego\\con\\separador")]
+    [InlineData("juego.preparacion")]
+    [InlineData("juego.sustituida")]
+    public void A_game_id_that_cannot_be_a_folder_name_is_rejected(string gameId)
+    {
+        var layout = ClientDataLayout.Create(_dataFolder, _installDirectory);
+
+        Assert.Throws<ArgumentException>(() => layout.GameInstallDirectory(gameId));
+    }
+
 }

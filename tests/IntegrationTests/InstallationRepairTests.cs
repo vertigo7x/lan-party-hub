@@ -42,6 +42,9 @@ public sealed class InstallationRepairTests : IDisposable
     private readonly string _workingDirectory;
     private readonly string _databasePath;
     private readonly string _installDirectory;
+
+    /// <summary>Raíz de instalación de ESTE juego: la carpeta que lo confine (FR-8).</summary>
+    private readonly string _gameRoot;
     private readonly string _downloadsDirectory;
     private readonly string _manifestsDirectory;
 
@@ -55,6 +58,7 @@ public sealed class InstallationRepairTests : IDisposable
 
         _databasePath = Path.Combine(_workingDirectory, "state.sqlite");
         _installDirectory = Path.Combine(_workingDirectory, "install");
+        _gameRoot = Path.Combine(_installDirectory, GameId);
         _downloadsDirectory = Path.Combine(_workingDirectory, "downloads");
         _manifestsDirectory = Path.Combine(_workingDirectory, "manifests");
 
@@ -73,7 +77,7 @@ public sealed class InstallationRepairTests : IDisposable
         var fixture = await CreateFixtureAsync();
 
         // La instalación EXISTE y es válida: el archivo del juego está en la raíz.
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         Assert.True(File.Exists(installed));
 
@@ -107,7 +111,7 @@ public sealed class InstallationRepairTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         File.Delete(installed);
 
@@ -141,7 +145,7 @@ public sealed class InstallationRepairTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         File.Delete(installed);
 
@@ -171,7 +175,7 @@ public sealed class InstallationRepairTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         File.Delete(installed);
 
@@ -201,7 +205,7 @@ public sealed class InstallationRepairTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         File.Delete(installed);
 
@@ -224,7 +228,7 @@ public sealed class InstallationRepairTests : IDisposable
     {
         var fixture = await CreateFixtureAsync();
 
-        var installed = Path.Combine(_installDirectory, "game", "data", "level1.bin");
+        var installed = Path.Combine(_gameRoot, "game", "data", "level1.bin");
 
         File.Delete(installed);
 
@@ -579,6 +583,9 @@ public sealed class InstallationRepairTests : IDisposable
         public string Folder => _folder;
 
         public string InstallDirectory => _installDirectory;
+
+        public string GameInstallDirectory(string gameId) =>
+            LANPartyHub.Client.Domain.Install.InstallPathConfine.GameRoot(_installDirectory, gameId);
 
         public string DownloadsDirectory { get; }
 

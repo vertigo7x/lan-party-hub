@@ -223,4 +223,69 @@ public sealed class InstallRootSwitcherTests : IDisposable
 
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>
+    /// La raíz de PREPARACIÓN es hermana de la raíz del JUEGO que se está instalando, y
+    /// nunca hermana de la de otro juego: por eso la sustitución de un juego no toca el
+    /// árbol de otro (FR-8, FR-11, AD-9).
+    /// </summary>
+    [Fact]
+    public void The_preparation_root_is_a_sibling_of_the_root_of_its_game()
+    {
+        var folder = CreateTemporaryFolder();
+        var switcher = new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance);
+
+        var rootOfThis = Path.Combine(folder, "juego-uno");
+        var rootOfOther = Path.Combine(folder, "juego-dos");
+
+        var staging = switcher.PrepareStagingRoot(rootOfThis);
+
+        Assert.Equal(Path.Combine(folder, "juego-uno" + InstallRootSwitcher.StagingSuffix), staging);
+        Assert.NotEqual(Path.Combine(folder, "juego-dos" + InstallRootSwitcher.StagingSuffix), staging);
+    }
+
+    /// <summary>
+    /// El árbol de un juego que quedó en la raíz COMPARTIDA se lleva a la raíz de SU
+    /// juego con un cambio de nombre: si no se moviera, el juego parecería no
+    /// instalado (FR-8, AD-9).
+    /// </summary>
+    [Fact]
+    public void The_tree_of_a_game_is_moved_to_the_root_of_that_game()
+    {
+        var folder = CreateTemporaryFolder();
+        var switcher = new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance);
+
+        var shared = Path.Combine(folder, "compartida");
+        var target = Path.Combine(folder, "juego-uno");
+
+        Directory.CreateDirectory(Path.Combine(shared, "game"));
+        File.WriteAllText(Path.Combine(shared, "game", "datos.bin"), "contenido");
+
+        Assert.True(switcher.MoveRoot(shared, target));
+
+        Assert.False(Directory.Exists(shared));
+        Assert.True(File.Exists(Path.Combine(target, "game", "datos.bin")));
+    }
+
+    /// <summary>
+    /// Un movimiento que no tiene sentido NO se fuerza: si el árbol ya está en su
+    /// sitio, o si no hay árbol que llevar, no se mueve nada (AD-9).
+    /// </summary>
+    [Fact]
+    public void A_move_without_a_tree_or_to_the_same_place_does_nothing()
+    {
+        var folder = CreateTemporaryFolder();
+        var switcher = new InstallRootSwitcher(NullLogger<InstallRootSwitcher>.Instance);
+
+        var target = Path.Combine(folder, "juego-uno");
+
+        Directory.CreateDirectory(target);
+
+        // No hay arbol en el sitio viejo.
+        Assert.False(switcher.MoveRoot(Path.Combine(folder, "no-existe"), target));
+
+        // El arbol ya esta donde tiene que estar.
+        Assert.False(switcher.MoveRoot(target, target));
+    }
+
 }
