@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia.Media;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Server.Presentation.Design;
 using Xunit;
 
 namespace LANPartyHub.UnitTests;
@@ -96,6 +97,69 @@ public sealed class ContrastTests
         // El botón fantasma no tiene relleno: su texto es lo que lo identifica.
         Assert.True(ContrastOf("InkSecondary", "SurfaceBase") >= 4.5);
     }
+
+
+    /// <summary>
+    /// The palette of the ORGANIZER meets the same minimum of AA (AC1, UX-DR-38).
+    /// </summary>
+    [Fact]
+    public void The_palette_of_the_organizer_meets_the_minimum_of_AA()
+    {
+        // El servidor es un deployable aparte y lleva sus propios tokens, pero los
+        // MISMOS valores que manda el DISENO: el organizador lee su tabla con la misma
+        // paleta que el cliente (AC1, UX-DR-38).
+        Assert.True(ServerContrast("InkPrimary", "SurfaceBase") >= 4.5);
+        Assert.True(ServerContrast("InkSecondary", "SurfaceBase") >= 4.5);
+        Assert.True(ServerContrast("InkPrimary", "SurfaceRaised") >= 4.5);
+        Assert.True(ServerContrast("AccentActionInk", "AccentAction") >= 4.5);
+        Assert.True(ServerContrast("SurfaceBase", "StateDanger") >= 4.5);
+        Assert.True(ServerContrast("AccentAction", "SurfaceBase") >= 3.0);
+    }
+
+    /// <summary>
+    /// The contrast of a pair of the palette of the organizer (AC1).
+    /// </summary>
+    /// <param name="foreground">Name of the foreground colour.</param>
+    /// <param name="background">Name of the background colour.</param>
+    /// <returns>The ratio of contrast, from 1:1 to 21:1.</returns>
+    private static double ServerContrast(string foreground, string background)
+    {
+        static double LuminanceOf(Color colour)
+        {
+            static double Channel(byte value)
+            {
+                var normalized = value / 255.0;
+
+                return normalized <= 0.03928
+                    ? normalized / 12.92
+                    : Math.Pow((normalized + 0.055) / 1.055, 2.4);
+            }
+
+            return 0.2126 * Channel(colour.R) + 0.7152 * Channel(colour.G) + 0.0722 * Channel(colour.B);
+        }
+
+        var a = LuminanceOf(ServerColourOf(foreground));
+        var b = LuminanceOf(ServerColourOf(background));
+
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
+
+    /// <summary>
+    /// The colour of the tokens of the organizer with the given name (AC1).
+    /// </summary>
+    /// <param name="name">Name of the colour.</param>
+    /// <returns>The colour of the token.</returns>
+    private static Color ServerColourOf(string name) => name switch
+    {
+        "AccentAction" => ServerDesignTokens.AccentAction,
+        "AccentActionInk" => ServerDesignTokens.AccentActionInk,
+        "SurfaceBase" => ServerDesignTokens.SurfaceBase,
+        "SurfaceRaised" => ServerDesignTokens.SurfaceRaised,
+        "InkPrimary" => ServerDesignTokens.InkPrimary,
+        "InkSecondary" => ServerDesignTokens.InkSecondary,
+        "StateDanger" => ServerDesignTokens.StateDanger,
+        _ => throw new ArgumentOutOfRangeException(nameof(name), name, "El color no está en la paleta del organizador."),
+    };
 
     /// <summary>
     /// The contrast of a pair of colours, con la fórmula de WCAG 2.2 (AC1).

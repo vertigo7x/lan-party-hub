@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using LANPartyHub.Server.Presentation.Design;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -85,7 +86,7 @@ public sealed class ClientsWindow : Window
     /// texto: la fila dice lo que pasa y el color lo refuerza (AD-25, UX-DR-31).
     /// </para>
     /// </summary>
-    public static readonly Color StateDangerColor = Color.FromRgb(0xF2, 0x54, 0x5B);
+    public static readonly Color StateDangerColor = ServerDesignTokens.StateDanger;
 
     private readonly ListClients _listClients;
     private readonly StackPanel _rows;
@@ -140,7 +141,7 @@ public sealed class ClientsWindow : Window
             Name = DetailName,
             Padding = new Thickness(12),
             BorderThickness = new Thickness(0, SeparatorThickness, 0, 0),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x2C, 0x37, 0xFF)),
+            BorderBrush = new SolidColorBrush(ServerDesignTokens.BorderHairline),
             Child = _detailText,
             IsVisible = false,
         };
@@ -320,7 +321,7 @@ public sealed class ClientsWindow : Window
             Height = RowHeight,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0, 0, 0, SeparatorThickness),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x2C, 0x37, 0xFF)),
+            BorderBrush = new SolidColorBrush(ServerDesignTokens.BorderHairline),
             Child = grid,
         };
 

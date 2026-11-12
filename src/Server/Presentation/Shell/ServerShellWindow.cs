@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using LANPartyHub.Server.Presentation.Design;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Server.Presentation.Catalog;
@@ -52,6 +53,9 @@ public sealed class ServerShellWindow : Window
         Width = 1280;
         Height = 800;
 
+        // El fondo de la ventana es la superficie base de la paleta del DISENO (AC1).
+        Background = new SolidColorBrush(ServerDesignTokens.SurfaceBase);
+
         _area = new Grid();
 
         var navigation = new StackPanel { Spacing = 4 };
@@ -65,7 +69,7 @@ public sealed class ServerShellWindow : Window
         {
             Width = NavigationColumnWidth,
             Padding = new Thickness(8),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x2C, 0x37, 0xFF)),
+            BorderBrush = new SolidColorBrush(ServerDesignTokens.BorderHairline),
             BorderThickness = new Thickness(0, 0, 1, 0),
             Child = navigation,
         };
@@ -148,12 +152,12 @@ public sealed class ServerShellWindow : Window
             var active = pair.Key == section;
 
             pair.Value.Background = active
-                ? new SolidColorBrush(Color.FromArgb(0xFF, 0x3B, 0x82, 0xF6))
+                ? new SolidColorBrush(ServerDesignTokens.AccentAction)
                 : Brushes.Transparent;
 
             pair.Value.Foreground = active
-                ? new SolidColorBrush(Color.FromArgb(0xFF, 0x14, 0x16, 0x1C))
-                : new SolidColorBrush(Color.FromArgb(0xFF, 0xF2, 0xF4, 0xF8));
+                ? new SolidColorBrush(ServerDesignTokens.AccentActionInk)
+                : new SolidColorBrush(ServerDesignTokens.InkPrimary);
         }
     }
 
