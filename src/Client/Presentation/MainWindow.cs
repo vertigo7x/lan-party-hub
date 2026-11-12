@@ -90,7 +90,7 @@ public sealed class MainWindow : Window
             Text = settings?.InstallDirectory ?? string.Empty,
         };
 
-        var save = new Button { Content = "Guardar" };
+        var save = Buttons.Primary("Guardar");
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
 
         save.Click += async (_, _) =>

@@ -66,11 +66,8 @@ public sealed class CatalogSyncBanner : StackPanel
             TextWrapping = TextWrapping.Wrap,
         };
 
-        _synchronize = new Button
-        {
-            Content = SynchronizeNowAction,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        _synchronize = Buttons.Secondary(SynchronizeNowAction);
+        _synchronize.VerticalAlignment = VerticalAlignment.Center;
 
         _synchronize.Click += async (_, _) =>
         {

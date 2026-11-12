@@ -103,12 +103,13 @@ public sealed class CatalogSurface : UserControl
 
         _grid = new CatalogGrid();
 
-        _clearFilters = new Button { Content = CatalogSurfaceViewModel.ClearFiltersText };
-        _emptyAction = new Button();
+        // Quitar filtros y la paginación son acciones TERCIARIAS (UX-DR-8).
+        _clearFilters = Buttons.Ghost(CatalogSurfaceViewModel.ClearFiltersText);
+        _emptyAction = Buttons.Primary();
         _emptyText = new TextBlock { TextWrapping = TextWrapping.Wrap };
 
-        _previous = new Button { Content = "Anterior" };
-        _next = new Button { Content = "Siguiente" };
+        _previous = Buttons.Ghost("Anterior");
+        _next = Buttons.Ghost("Siguiente");
         _pageText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
 
         // La ficha vive en la MISMA superficie que la rejilla: el clic en la tarjeta abre

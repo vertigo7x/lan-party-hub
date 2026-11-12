@@ -86,13 +86,11 @@ public sealed class LibrarySurface : UserControl
             IsVisible = false,
         };
 
-        _emptyAction = new Button
-        {
-            Content = LibrarySurfaceViewModel.ViewCatalogActionText,
-            Height = DesignTokens.FieldInputHeight,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            IsVisible = false,
-        };
+        // En la biblioteca vacía esta acción es la ÚNICA vía, así que es la primaria
+        // (UX-DR-8).
+        _emptyAction = Buttons.Primary(LibrarySurfaceViewModel.ViewCatalogActionText);
+        _emptyAction.HorizontalAlignment = HorizontalAlignment.Left;
+        _emptyAction.IsVisible = false;
 
         _list = new StackPanel { Spacing = DesignTokens.Spacing3 };
 
