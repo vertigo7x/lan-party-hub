@@ -3201,6 +3201,11 @@ so que actualizar un juego no arrase las demás instalaciones de mi biblioteca.
 Una raíz por juego que se mueve o que se sustituye no puede arrastrar a las demás: la sustitución
 de un juego **no** puede tocar el árbol de otro, ni siquiera si comparten volumen.
 
+El nombre de la carpeta del juego no puede terminar en el sufijo reservado de la raíz hermana
+(`.preparacion` o `.sustituida`): `juego.preparacion` nombraría la raíz de preparación de otro
+juego, y la sustitución de ese otro la tocaría. Es un fallo de NOMBRE, no de ruta: dentro de la
+raíz de su propio juego la ruta es legal.
+
 **Pruebas necesarias:**
 
 **Integración.** La coexistencia de dos juegos en el mismo cliente, y la actualización de uno de
