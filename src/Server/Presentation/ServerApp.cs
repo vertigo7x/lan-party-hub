@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using LANPartyHub.Server.Application.Catalog;
@@ -8,6 +9,7 @@ using LANPartyHub.Server.Host;
 using LANPartyHub.Server.Presentation.Catalog;
 using LANPartyHub.Server.Presentation.Clients;
 using LANPartyHub.Server.Presentation.Packages;
+using LANPartyHub.Server.Presentation.Shell;
 using LANPartyHub.Server.Presentation.Trust;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -78,21 +80,29 @@ public sealed class ServerApp : Avalonia.Application
 
             var window = new CatalogWindow(new CatalogViewModel(), registerGame, modifyGame, listGames, trustAnchor);
 
-            desktop.MainWindow = window;
+            // El shell del organizador es UNA ventana con una columna de navegación a la
+            // izquierda y el área principal a la derecha: las TRES secciones —Catálogo,
+            // Clientes y Paquetes— viven en ella (AC4, UX-DR-12).
+            var clients = new ClientsWindow(
+                new ClientsViewModel { MinimumProtocolVersion = configuration.MinimumProtocolVersion },
+                listClients);
 
-            // The section of the packages is reachable from the window of the catalog: the
-            // organizer publishes the package of a videogame that is already in the
-            // catalog (AD-1, AC1).
-            window.Opened += async (_, _) =>
-            {
-                var packages = new PackagesWindow(
-                    new PackagesViewModel(),
-                    publishPackage,
-                    listPackages,
-                    withdrawGame);
+            var packages = new PackagesWindow(
+                new PackagesViewModel(),
+                publishPackage,
+                listPackages,
+                withdrawGame);
 
-                await packages.ShowDialog(window).ConfigureAwait(true);
-            };
+            var shell = new ServerShellWindow();
+
+            shell.RegisterContent(ServerSection.Catalogo, TakeContent(window));
+            shell.RegisterContent(ServerSection.Clientes, TakeContent(clients));
+            shell.RegisterContent(ServerSection.Paquetes, TakeContent(packages));
+
+            desktop.MainWindow = shell;
+
+            // La sección de los paquetes es una SECCION de la navegación del organizador
+            // (AC4, UX-DR-12), así que ya no se abre como un diálogo aparte.
 
             // AD-29: la sección de clientes es la vista de organización de los equipos
             // de la LAN, y la alcanza el organizador desde la navegación.
@@ -107,6 +117,18 @@ public sealed class ServerApp : Avalonia.Application
 
                 await clients.ShowDialog(window).ConfigureAwait(true);
             };
+
+            // El contenido de una ventana se MUEVE al área principal del shell: así las
+            // tres secciones comparten la ventana y el organizador no pierde de vista la
+            // tabla de clientes (AC4, UX-DR-12).
+            static Avalonia.Controls.Control TakeContent(Avalonia.Controls.Window section)
+            {
+                var content = (Avalonia.Controls.Control)section.Content!;
+
+                section.Content = null;
+
+                return content;
+            }
 
             desktop.ShutdownRequested += (_, _) => scope.Dispose();
         }

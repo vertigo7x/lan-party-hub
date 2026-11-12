@@ -195,6 +195,18 @@ public sealed class CatalogSurface : UserControl
     }
 
     /// <summary>
+    /// Focuses the SEARCH of the catalog, para que `Ctrl+F` la alcance desde cualquier
+    /// superficie (AC3, UX-DR-11).
+    /// </summary>
+    public void FocusSearch() => _search.Focus();
+
+    /// <summary>
+    /// Clears the SEARCH of the catalog, para que `Esc` la vacíe cuando no hay ningún
+    /// diálogo encima (AC3, UX-DR-11).
+    /// </summary>
+    public void ClearSearch() => _search.Text = string.Empty;
+
+    /// <summary>
     /// Shows the state of the synchronization of the catalog in the surface (AC3, AC4).
     ///
     /// <para>
