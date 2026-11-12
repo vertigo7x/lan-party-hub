@@ -1,8 +1,14 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using LANPartyHub.Client.Application.Downloads;
 using LANPartyHub.Client.Domain.StateMachines;
+using LANPartyHub.Client.Presentation;
+using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Design;
+using LANPartyHub.Client.Presentation.Library;
+using LANPartyHub.Client.Presentation.Shell;
 using LANPartyHub.Client.Presentation.Downloads;
 using LANPartyHub.Shared.Contracts;
 using Xunit;
@@ -87,6 +93,58 @@ public sealed class AccessibilityTests
         // Los botones primarios y los campos de entrada miden 36 px (AC7).
         Assert.Equal(36, DesignTokens.ButtonHeight);
         Assert.Equal(36, DesignTokens.FieldInputHeight);
+    }
+
+
+    /// <summary>
+    /// The ORDER of the navigation follows the READING order of the surface, and every
+    /// entry is reachable with the keyboard (AC2, UX-DR-38).
+    /// </summary>
+    [AvaloniaFact]
+    public void The_navigation_follows_the_reading_order_and_is_reachable()
+    {
+        var window = new MainWindow(
+            connectionSurface: new ConnectionSurface(new ConnectionSurfaceViewModel()),
+            librarySurface: new LibrarySurface(new LibrarySurfaceViewModel()));
+
+        window.Show();
+
+        Dispatcher.UIThread.RunJobs();
+
+        var entries = window.GetVisualDescendants()
+            .OfType<Button>()
+            .Where(button => button.Name is not null && button.Name.StartsWith("Nav", StringComparison.Ordinal))
+            .ToArray();
+
+        // El orden de tabulacion sigue el orden de LECTURA de la superficie: las
+        // entradas de la columna van en el orden en el que se leen, y ese orden es el
+        // de las superficies del cliente (AC2, UX-DR-38).
+        var surfaces = Enum.GetValues<ClientSurface>().ToList();
+
+        var positions = entries
+            .Select(button => surfaces.IndexOf(SurfaceOf(button.Name!)))
+            .ToList();
+
+        Assert.DoesNotContain(-1, positions);
+        Assert.Equal(positions.OrderBy(position => position), positions);
+
+        // Y todas son alcanzables con el teclado: el `Tab` las alcanza porque son
+        // controles enfocables (AC2, UX-DR-38).
+        Assert.All(entries, entry => Assert.True(entry.IsEffectivelyEnabled));
+
+        window.Close();
+    }
+
+    /// <summary>
+    /// The surface of an entry of the navigation, leida de su nombre (AC2).
+    /// </summary>
+    /// <param name="name">Name of the entry.</param>
+    /// <returns>The surface of the entry.</returns>
+    private static ClientSurface SurfaceOf(string name)
+    {
+        var surface = name["Nav".Length..];
+
+        return Enum.Parse<ClientSurface>(surface, ignoreCase: false);
     }
 
     /// <summary>

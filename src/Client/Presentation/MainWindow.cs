@@ -214,16 +214,20 @@ public sealed class MainWindow : Window
 
         // La superficie del catálogo vive DEBAJO del aviso de sincronización: el aviso no
         // bloquea la navegación y la superficie del catálogo tampoco (AC3, UX-DR-32).
+        // El orden de la columna es el orden de LECTURA de la superficie, y el de las
+        // superficies del cliente (AC2, UX-DR-38): Conexión, Catálogo, Biblioteca y
+        // Configuración y diagnóstico.
+        //
+        // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
+        // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
+        // manualmente» (AC3, UX-DR-30).
+        RegisterSurface(ClientSurface.Conexion, "Conexión", connectionSurface);
+
         RegisterSurface(ClientSurface.Catalogo, "Catálogo", catalogSurface);
 
         // AC8: la Biblioteca vive en la MISMA columna que el catálogo, con sus
         // instalaciones y su estado vacío accionable (UX-DR-28).
         RegisterSurface(ClientSurface.Biblioteca, "Biblioteca", librarySurface);
-
-        // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
-        // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
-        // manualmente» (AC3, UX-DR-30).
-        RegisterSurface(ClientSurface.Conexion, "Conexión", connectionSurface);
 
         RegisterSurface(ClientSurface.Configuracion, "Configuración y diagnóstico", settingsPanel);
 
