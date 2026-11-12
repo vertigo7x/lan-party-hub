@@ -100,7 +100,7 @@ public sealed class DownloadProgressControl : UserControl
                 {
                     Text = "Descarga",
                     FontSize = DesignTokens.TitleFontSize,
-                    FontWeight = FontWeight.SemiBold,
+                    FontWeight = DesignTokens.TitleFontWeight,
                 },
                 _stateText,
                 _bar,

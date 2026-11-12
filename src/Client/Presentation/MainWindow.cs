@@ -170,7 +170,7 @@ public sealed class MainWindow : Window
                     {
                         Text = "Configuración y diagnóstico",
                         FontSize = DesignTokens.TitleFontSize,
-                        FontWeight = FontWeight.SemiBold,
+                        FontWeight = DesignTokens.HeadlineFontWeight,
                     },
                     diagnosticsView,
                 },

@@ -84,7 +84,7 @@ public sealed class InstallProgressControl : UserControl
                 {
                     Text = "Instalación",
                     FontSize = DesignTokens.TitleFontSize,
-                    FontWeight = FontWeight.SemiBold,
+                    FontWeight = DesignTokens.TitleFontWeight,
                 },
                 _phaseText,
                 _bar,

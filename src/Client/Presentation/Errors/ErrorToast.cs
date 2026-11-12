@@ -59,7 +59,7 @@ public sealed class ErrorToast : Border
         {
             Text = viewModel.AttemptedAction,
             Foreground = foreground,
-            FontWeight = FontWeight.SemiBold,
+            FontWeight = DesignTokens.TitleFontWeight,
             TextWrapping = TextWrapping.Wrap,
         };
 

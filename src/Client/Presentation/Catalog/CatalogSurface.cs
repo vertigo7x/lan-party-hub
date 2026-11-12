@@ -148,7 +148,7 @@ public sealed class CatalogSurface : UserControl
                 {
                     Text = "Catálogo",
                     FontSize = 22,
-                    FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                    FontWeight = DesignTokens.HeadlineFontWeight,
                 },
                 new StackPanel
                 {

@@ -249,7 +249,7 @@ public sealed class CatalogGrid : UserControl
             Text = game.Name,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 1,
-            FontWeight = FontWeight.SemiBold,
+            FontWeight = DesignTokens.HeadlineFontWeight,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
 
@@ -280,7 +280,10 @@ public sealed class CatalogGrid : UserControl
                     Child = new TextBlock
                     {
                         Text = game.Name,
-                        TextWrapping = TextWrapping.Wrap,
+                        // El nombre se trunca a UNA línea con elipsis y NUNCA se
+                        // envuelve a tres (UX-DR-2, UX-DR-10).
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxLines = 1,
                         TextAlignment = TextAlignment.Center,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,

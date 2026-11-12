@@ -37,7 +37,7 @@ public sealed class StartupErrorWindow : Window
                 {
                     Text = "El cliente no pudo arrancar",
                     FontSize = 18,
-                    FontWeight = FontWeight.Bold,
+                    FontWeight = DesignTokens.DisplayFontWeight,
                 },
                 new TextBlock
                 {

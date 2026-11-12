@@ -79,7 +79,7 @@ public sealed class DownloadCancelDialog : UserControl
                     {
                         Text = "Cancelar la descarga",
                         FontSize = DesignTokens.TitleFontSize,
-                        FontWeight = FontWeight.SemiBold,
+                        FontWeight = DesignTokens.TitleFontWeight,
                     },
                     _message,
                     new StackPanel

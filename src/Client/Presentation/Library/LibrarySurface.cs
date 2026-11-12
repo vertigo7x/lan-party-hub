@@ -106,7 +106,7 @@ public sealed class LibrarySurface : UserControl
                 {
                     Text = "Biblioteca",
                     FontSize = DesignTokens.TitleFontSize,
-                    FontWeight = FontWeight.SemiBold,
+                    FontWeight = DesignTokens.TitleFontWeight,
                 },
                 _emptyText,
                 _emptyAction,

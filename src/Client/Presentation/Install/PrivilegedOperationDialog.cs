@@ -92,7 +92,7 @@ public sealed class PrivilegedOperationDialog : UserControl
                     {
                         Text = "Confirmación necesaria",
                         FontSize = DesignTokens.TitleFontSize,
-                        FontWeight = FontWeight.SemiBold,
+                        FontWeight = DesignTokens.TitleFontWeight,
                     },
                     new TextBlock
                     {

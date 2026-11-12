@@ -246,6 +246,133 @@ public static class DesignTokens
     /// <summary>Separator INSIDE a card or a dialog, in pixels (DESIGN, UX-DR-4).</summary>
     public const double SeparatorCard = 20;
 
+    /// <summary>
+    /// The SEVEN weights that Inter declares, and the role of each one in the interface
+    /// (DESIGN, UX-DR-2).
+    ///
+    /// <para>
+    /// La tipografia de la interfaz son siete estilos de Inter, cada uno con su peso: el
+    /// <c>display</c>, el <c>headline</c>, el <c>title</c>, el <c>body</c>, el
+    /// <c>body-strong</c>, el <c>label</c> y el <c>meta</c>. El peso vive en el token y
+    /// no escrito a mano en el componente: un peso escrito a mano es un token fuera del
+    /// diseno (AC1).
+    /// </para>
+    /// </summary>
+    public enum TextStyle
+    {
+        /// <summary>The display typography: the greatest size of the interface.</summary>
+        Display,
+
+        /// <summary>The headline typography: the title of a surface.</summary>
+        Headline,
+
+        /// <summary>The title typography: the title of an item.</summary>
+        Title,
+
+        /// <summary>The body typography: the text that the player reads.</summary>
+        Body,
+
+        /// <summary>The strong body typography: the text that the player must notice.</summary>
+        BodyStrong,
+
+        /// <summary>The label typography: the label of a control.</summary>
+        Label,
+
+        /// <summary>The meta typography: the unit and the secondary metadata.</summary>
+        Meta,
+    }
+
+    /// <summary>Weight of the DISPLAY typography (DESIGN).</summary>
+    public static readonly FontWeight DisplayFontWeight = FontWeight.Bold;
+
+    /// <summary>Weight of the HEADLINE typography (DESIGN).</summary>
+    public static readonly FontWeight HeadlineFontWeight = FontWeight.SemiBold;
+
+    /// <summary>Weight of the TITLE typography (DESIGN).</summary>
+    public static readonly FontWeight TitleFontWeight = FontWeight.SemiBold;
+
+    /// <summary>Weight of the BODY typography (DESIGN).</summary>
+    public static readonly FontWeight BodyFontWeight = FontWeight.Normal;
+
+    /// <summary>Weight of the STRONG BODY typography (DESIGN).</summary>
+    public static readonly FontWeight BodyStrongFontWeight = FontWeight.SemiBold;
+
+    /// <summary>Weight of the LABEL typography (DESIGN).</summary>
+    public static readonly FontWeight LabelFontWeight = FontWeight.Medium;
+
+    /// <summary>Weight of the META typography (DESIGN).</summary>
+    public static readonly FontWeight MetaFontWeight = FontWeight.Medium;
+
+    /// <summary>Weight of the MONOSPACED typography (DESIGN).</summary>
+    public static readonly FontWeight MonoFontWeight = FontWeight.Normal;
+
+    /// <summary>
+    /// The size of a text style, in pixels (DESIGN, UX-DR-2).
+    /// </summary>
+    /// <param name="style">Style of the text.</param>
+    /// <returns>The size of that style, in pixels.</returns>
+    public static double FontSizeOf(TextStyle style) => style switch
+    {
+        TextStyle.Display => DisplayFontSize,
+        TextStyle.Headline => HeadlineFontSize,
+        TextStyle.Title => TitleFontSize,
+        TextStyle.Body => BodyFontSize,
+        TextStyle.BodyStrong => BodyStrongFontSize,
+        TextStyle.Label => LabelFontSize,
+        TextStyle.Meta => MetaFontSize,
+        _ => throw new ArgumentOutOfRangeException(nameof(style), style, "Unknown text style."),
+    };
+
+    /// <summary>
+    /// The weight of a text style (DESIGN, UX-DR-2).
+    /// </summary>
+    /// <param name="style">Style of the text.</param>
+    /// <returns>The weight of that style.</returns>
+    public static FontWeight FontWeightOf(TextStyle style) => style switch
+    {
+        TextStyle.Display => DisplayFontWeight,
+        TextStyle.Headline => HeadlineFontWeight,
+        TextStyle.Title => TitleFontWeight,
+        TextStyle.Body => BodyFontWeight,
+        TextStyle.BodyStrong => BodyStrongFontWeight,
+        TextStyle.Label => LabelFontWeight,
+        TextStyle.Meta => MetaFontWeight,
+        _ => throw new ArgumentOutOfRangeException(nameof(style), style, "Unknown text style."),
+    };
+
+    /// <summary>
+    /// Applies the typography of a text style to a block of text: its family, its size
+    /// and its weight (DESIGN, UX-DR-2).
+    /// </summary>
+    /// <param name="text">Block of text to style.</param>
+    /// <param name="style">Style of the text.</param>
+    public static void Apply(Avalonia.Controls.TextBlock text, TextStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        text.FontFamily = new FontFamily(InterfaceFontFamily);
+        text.FontSize = FontSizeOf(style);
+        text.FontWeight = FontWeightOf(style);
+    }
+
+    /// <summary>
+    /// Applies the MONOSPACED typography to a block of text: the one that carries a
+    /// literal that has to align in a column (DESIGN, UX-DR-2).
+    /// </summary>
+    /// <param name="text">Block of text to style.</param>
+    public static void ApplyMono(Avalonia.Controls.TextBlock text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        text.FontFamily = new FontFamily(MonoFontFamily);
+        text.FontSize = MonoFontSize;
+        text.FontWeight = MonoFontWeight;
+    }
+
+    /// <summary>
+    /// The weight of the MONOSPACED typography, and the seven weights of Inter, live
+    /// here and not written in the components (DESIGN, UX-DR-1, AC1).
+    /// </summary>
     /// <summary>Size of the DISPLAY typography, in pixels (DESIGN).</summary>
     public const double DisplayFontSize = 32;
 
