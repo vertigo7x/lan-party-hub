@@ -1147,6 +1147,21 @@ def plan_prompt(story, plan: Path) -> str:
             "tests/UnitTests/CatalogPresentationTests.cs",
             "tests/UnitTests/AvaloniaSurfaceCollection.cs",
         ),
+        "11.3": (
+            "_bmad-output/planning-artifacts/ux-designs/ux-lan-party-hub-2026-10-26/DESIGN.md",
+            "src/Client/Presentation/Design/DesignTokens.cs",
+            "src/Client/Presentation/Formatting/SizeFormatter.cs",
+            "src/Client/Presentation/Downloads/DownloadProgressViewModel.cs",
+            "src/Client/Presentation/Downloads/DownloadProgressControl.cs",
+            "src/Client/Presentation/Install/InstallProgressViewModel.cs",
+            "src/Client/Presentation/Install/InstallProgressControl.cs",
+            "src/Client/Presentation/Catalog/GameDetailViewModel.cs",
+            "tests/UnitTests/SizeFormatterTests.cs",
+            "tests/UnitTests/DownloadProgressTests.cs",
+            "tests/UnitTests/InstallProgressTests.cs",
+            "tests/UnitTests/InstallationProgressProjectionTests.cs",
+            "tests/UnitTests/AvaloniaSurfaceCollection.cs",
+        ),
     }
     candidates = candidates_by_story.get(story.short_id, ())
     available = [path for path in candidates if (REPO_ROOT / path).is_file()]
