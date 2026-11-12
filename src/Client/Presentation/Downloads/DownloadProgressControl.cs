@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Presentation.Design;
@@ -121,6 +123,11 @@ public sealed class DownloadProgressControl : UserControl
             },
         };
 
+        // El `Espacio` pausa o reanuda la descarga ENFOCADA (AC3, UX-DR-11). El manejador
+        // va en fase de TUNEL porque el boton focused se come la tecla antes de que la
+        // fase de burbuja llegue al control.
+        AddHandler(InputElement.KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+
         _viewModel.Changed += Render;
 
         Render();
@@ -225,4 +232,47 @@ public sealed class DownloadProgressControl : UserControl
         Foreground = new SolidColorBrush(foreground),
         IsEnabled = false,
     };
+
+    /// <summary>
+    /// The `Espacio` PAUSES or RESUMES the focused download (AC3, UX-DR-11).
+    ///
+    /// <para>
+    /// La primitiva actúa sobre la descarga ENFOCADA: pausa si puede pausar y reanuda si
+    /// está pausada. Nunca hace las dos cosas ni actsúa sobre una descarga que no está
+    /// enfocada (AC3).
+    /// </para>
+    /// </summary>
+    /// <param name="sender">Sender of the event.</param>
+    /// <param name="eventArgs">Arguments of the event.</param>
+    private void OnKeyDown(object? sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key != Key.Space || eventArgs.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
+        // La primitiva actúa sobre la descarga ENFOCADA y sobre ninguna otra: si el foco
+        // está en otro control, la tecla no es de esta descarga (AC3).
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+
+        if (focused is not null && focused != this && focused != _pauseButton && focused != _resumeButton)
+        {
+            return;
+        }
+
+        var action = _viewModel.CanPause
+            ? _pauseButton
+            : _viewModel.CanResume
+                ? _resumeButton
+                : null;
+
+        if (action is null || !action.IsEnabled)
+        {
+            return;
+        }
+
+        eventArgs.Handled = true;
+
+        action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    }
 }

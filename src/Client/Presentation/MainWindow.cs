@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LANPartyHub.Client.Application;
@@ -9,6 +10,7 @@ using LANPartyHub.Client.Presentation.Connection;
 using LANPartyHub.Client.Presentation.Design;
 using LANPartyHub.Client.Presentation.Diagnostics;
 using LANPartyHub.Client.Presentation.Library;
+using LANPartyHub.Client.Presentation.Shell;
 using LANPartyHub.Client.Presentation.Status;
 
 namespace LANPartyHub.Client.Presentation;
@@ -40,6 +42,9 @@ public sealed class MainWindow : Window
     private readonly LibrarySurface? _librarySurface;
     private readonly ConnectionStatusPanel? _statusPanel;
     private readonly DiagnosticsLogView? _diagnosticsView;
+    private readonly ShellViewModel _shell = new();
+    private readonly Dictionary<ClientSurface, Border> _surfaceHosts = [];
+    private readonly Dictionary<ClientSurface, Button> _navigationButtons = [];
 
     /// <summary>
     /// Creates the main window of the client.
@@ -147,6 +152,33 @@ public sealed class MainWindow : Window
             },
         };
 
+        // La navegacion es una COLUMNA, no una barra inferior (AC1, UX-DR-9), y las
+        // superficies se muestran de una en una: la columna dice donde esta el jugador.
+        var navigation = new StackPanel { Spacing = DesignTokens.Spacing1 };
+        var surfaceArea = new Grid();
+
+        void RegisterSurface(ClientSurface surface, string label, Control? control)
+        {
+            if (control is null)
+            {
+                return;
+            }
+
+            var host = new Border { Child = control };
+
+            surfaceArea.Children.Add(host);
+            _surfaceHosts[surface] = host;
+
+            var button = Buttons.Ghost(label);
+
+            button.Name = NavigationButtonName(surface);
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            button.Click += (_, _) => _shell.Navigate(surface);
+
+            _navigationButtons[surface] = button;
+            navigation.Children.Add(button);
+        }
+
         var layout = new StackPanel { Spacing = 0 };
 
         if (banner is not null)
@@ -154,14 +186,16 @@ public sealed class MainWindow : Window
             layout.Children.Add(banner);
         }
 
-        layout.Children.Add(content);
-
         // AC1, NFR-7: el VISOR de diagnóstico vive en la sección de «Configuración y
         // diagnóstico» de la ventana, junto al directorio de instalación, así que el
         // equipo ve los errores que su cliente registró sin salir de la aplicación.
+        var settingsPanel = new StackPanel { Spacing = DesignTokens.Spacing2 };
+
+        settingsPanel.Children.Add(content);
+
         if (diagnosticsView is not null)
         {
-            layout.Children.Add(new StackPanel
+            settingsPanel.Children.Add(new StackPanel
             {
                 Spacing = DesignTokens.Spacing1,
                 Children =
@@ -179,30 +213,107 @@ public sealed class MainWindow : Window
 
         // La superficie del catálogo vive DEBAJO del aviso de sincronización: el aviso no
         // bloquea la navegación y la superficie del catálogo tampoco (AC3, UX-DR-32).
-        if (catalogSurface is not null)
-        {
-            layout.Children.Add(catalogSurface);
-        }
+        RegisterSurface(ClientSurface.Catalogo, "Catálogo", catalogSurface);
 
         // AC8: la Biblioteca vive en la MISMA columna que el catálogo, con sus
         // instalaciones y su estado vacío accionable (UX-DR-28).
-        if (librarySurface is not null)
-        {
-            layout.Children.Add(librarySurface);
-        }
+        RegisterSurface(ClientSurface.Biblioteca, "Biblioteca", librarySurface);
 
         // AD-3: la superficie de Conexión ofrece los servidores que el descubrimiento
         // encontró y, cuando no hay ninguno, la acción primaria «Introducir dirección
         // manualmente» (AC3, UX-DR-30).
-        if (connectionSurface is not null)
+        RegisterSurface(ClientSurface.Conexion, "Conexión", connectionSurface);
+
+        RegisterSurface(ClientSurface.Configuracion, "Configuración y diagnóstico", settingsPanel);
+
+        // La columna de la izquierda es la NAVEGACION, y el aviso de sincronización vive
+        // ENCIMA del contenido: el aviso no bloquea la navegación (AC3, UX-DR-32).
+        layout.Children.Add(surfaceArea);
+
+        // AC1: la ventana tiene TRES COLUMNAS. La navegación a la izquierda, el
+        // contenido en el centro y el panel PERSISTENTE de la conexión a la derecha, con
+        // una anchura FIJA: el panel no se colapsa, no se esconde en un menú ni en un
+        // modal (AC1, UX-DR-11, UX-DR-29).
+        Content = BuildColumns(navigation, layout, statusPanel);
+
+        _shell.Navigated += (_, _) => ShowSurface(_shell.Current);
+
+        KeyDown += OnShellKeyDown;
+
+        ShowSurface(_shell.Current);
+    }
+
+    /// <summary>
+    /// Shows ONE surface at a time and highlights the one in front, para que la columna
+    /// diga donde esta el jugador (AC1, UX-DR-9).
+    /// </summary>
+    /// <param name="surface">The surface to show.</param>
+    private void ShowSurface(ClientSurface surface)
+    {
+        foreach (var pair in _surfaceHosts)
         {
-            layout.Children.Add(connectionSurface);
+            pair.Value.IsVisible = pair.Key == surface;
         }
 
-        // AC1: la ventana tiene DOS COLUMNAS. El contenido vive a la izquierda y el panel
-        // PERSISTENTE de la conexión a la derecha, con una anchura FIJA: el panel no se
-        // colapsa, no se esconde en un menú ni en un modal (AC1, UX-DR-11).
-        Content = BuildColumns(layout, statusPanel);
+        foreach (var pair in _navigationButtons)
+        {
+            var active = pair.Key == surface;
+
+            pair.Value.Background = active
+                ? new SolidColorBrush(DesignTokens.AccentAction)
+                : Brushes.Transparent;
+
+            pair.Value.Foreground = active
+                ? new SolidColorBrush(DesignTokens.AccentActionInk)
+                : new SolidColorBrush(DesignTokens.InkSecondary);
+        }
+    }
+
+    /// <summary>
+    /// The KEYBOARD primitives of the navigation (AC3, UX-DR-11).
+    ///
+    /// <para>
+    /// `Ctrl+1`…`Ctrl+4` y `Ctrl+,` saltan de superficie, `Ctrl+F` enfoca la busqueda
+    /// del catalogo desde cualquier superficie y `Esc` la limpia cuando no hay ningun
+    /// dialogo encima.
+    /// </para>
+    /// </summary>
+    /// <param name="sender">Sender of the event.</param>
+    /// <param name="eventArgs">Arguments of the event.</param>
+    private void OnShellKeyDown(object? sender, KeyEventArgs eventArgs)
+    {
+        // Un dialogo que ya ha resuelto el `Esc` no llega aqui: el foco esta dentro del
+        // dialogo y su manejador marca el evento como resuelto (AC3).
+        if (eventArgs.Handled)
+        {
+            return;
+        }
+
+        var target = ShellViewModel.SurfaceForShortcut(eventArgs.Key, eventArgs.KeyModifiers);
+
+        if (target is not null)
+        {
+            _shell.Navigate(target.Value);
+            eventArgs.Handled = true;
+
+            return;
+        }
+
+        // `Ctrl+F` enfoca la busqueda del catalogo desde CUALQUIER superficie (AC3).
+        if (eventArgs.Key == Key.F && eventArgs.KeyModifiers == KeyModifiers.Control)
+        {
+            _catalogSurface?.FocusSearch();
+            eventArgs.Handled = true;
+
+            return;
+        }
+
+        // `Esc` limpia la busqueda cuando no hay ningun dialogo encima (AC3).
+        if (eventArgs.Key == Key.Escape && eventArgs.KeyModifiers == KeyModifiers.None)
+        {
+            _catalogSurface?.ClearSearch();
+            eventArgs.Handled = true;
+        }
     }
 
     /// <summary>
@@ -215,14 +326,31 @@ public sealed class MainWindow : Window
     /// it.
     /// </param>
     /// <returns>The grid of the window.</returns>
-    private static Grid BuildColumns(Control content, ConnectionStatusPanel? statusPanel)
+    private static Grid BuildColumns(
+        Control navigation,
+        Control content,
+        ConnectionStatusPanel? statusPanel)
     {
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
         };
 
-        Grid.SetColumn(content, 0);
+        var navigationColumn = new Border
+        {
+            Name = NavigationColumnName,
+            Width = NavigationColumnWidth,
+            Padding = new Thickness(DesignTokens.Spacing2),
+            BorderBrush = new SolidColorBrush(DesignTokens.BorderHairline),
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = navigation,
+        };
+
+        Grid.SetColumn(navigationColumn, 0);
+
+        grid.Children.Add(navigationColumn);
+
+        Grid.SetColumn(content, 1);
 
         grid.Children.Add(content);
 
@@ -237,7 +365,7 @@ public sealed class MainWindow : Window
                 Child = statusPanel,
             };
 
-            Grid.SetColumn(column, 1);
+            Grid.SetColumn(column, 2);
 
             grid.Children.Add(column);
         }
@@ -249,6 +377,25 @@ public sealed class MainWindow : Window
     /// Fixed width of the column of the persistent panel of the connection (AC1).
     /// </summary>
     public const double StatusPanelWidth = 320;
+
+    /// <summary>
+    /// Fixed width of the column of the NAVIGATION (AC1, UX-DR-9).
+    /// </summary>
+    public const double NavigationColumnWidth = 200;
+
+    /// <summary>
+    /// The name of the column of the navigation, para que las pruebas la encuentren sin
+    /// depender del texto (AC1).
+    /// </summary>
+    public const string NavigationColumnName = "ClientNavigation";
+
+    /// <summary>
+    /// The name of the button of a surface in the column of the navigation, para que las
+    /// pruebas la pulsen sin depender del texto (AC1, AC2).
+    /// </summary>
+    /// <param name="surface">The surface of the button.</param>
+    /// <returns>The name of the button.</returns>
+    public static string NavigationButtonName(ClientSurface surface) => $"Nav{surface}";
 
     /// <summary>
     /// The persistent panel of the connection, or <c>null</c> when the window is built
