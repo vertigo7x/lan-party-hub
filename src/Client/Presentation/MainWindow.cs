@@ -46,6 +46,7 @@ public sealed class MainWindow : Window
     private readonly ShellViewModel _shell = new();
     private readonly Dictionary<ClientSurface, Border> _surfaceHosts = [];
     private readonly Dictionary<ClientSurface, Button> _navigationButtons = [];
+    private Border? _statusColumn;
 
     /// <summary>
     /// Creates the main window of the client.
@@ -243,9 +244,30 @@ public sealed class MainWindow : Window
 
         _shell.Navigated += (_, _) => ShowSurface(_shell.Current);
 
+        // AC2, UX-DR-42: en una ventana ESTRECHA el panel derecho se reduce a la linea de
+        // presencia y la operacion en curso, sin desaparecer.
+        SizeChanged += (_, _) => ApplyCompactLayout(Bounds.Width < NarrowWindowWidth);
+
+        ApplyCompactLayout(false);
+
         KeyDown += OnShellKeyDown;
 
         ShowSurface(_shell.Current);
+    }
+
+    /// <summary>
+    /// Reduces the panel of the state when the window is narrow, y lo devuelve entero
+    /// cuando hay sitio (AC2, UX-DR-42).
+    /// </summary>
+    /// <param name="compact">Whether the window is narrow.</param>
+    private void ApplyCompactLayout(bool compact)
+    {
+        _statusPanel?.SetCompact(compact);
+
+        if (_statusColumn is not null)
+        {
+            _statusColumn.Width = compact ? CompactStatusPanelWidth : StatusPanelWidth;
+        }
     }
 
     /// <summary>
@@ -355,7 +377,7 @@ public sealed class MainWindow : Window
     /// it.
     /// </param>
     /// <returns>The grid of the window.</returns>
-    private static Grid BuildColumns(
+    private Grid BuildColumns(
         Control navigation,
         Control content,
         ConnectionStatusPanel? statusPanel)
@@ -396,6 +418,8 @@ public sealed class MainWindow : Window
 
             Grid.SetColumn(column, 2);
 
+            _statusColumn = column;
+
             grid.Children.Add(column);
         }
 
@@ -406,6 +430,17 @@ public sealed class MainWindow : Window
     /// Fixed width of the column of the persistent panel of the connection (AC1).
     /// </summary>
     public const double StatusPanelWidth = 320;
+
+    /// <summary>
+    /// Width of the window below which the panel of the state becomes COMPACT (AC2,
+    /// UX-DR-42).
+    /// </summary>
+    public const double NarrowWindowWidth = 1024;
+
+    /// <summary>
+    /// Width of the column of the state when the panel is COMPACT (AC2, UX-DR-42).
+    /// </summary>
+    public const double CompactStatusPanelWidth = 240;
 
     /// <summary>
     /// Fixed width of the column of the NAVIGATION (AC1, UX-DR-9).

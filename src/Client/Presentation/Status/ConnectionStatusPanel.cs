@@ -37,6 +37,9 @@ public sealed class ConnectionStatusPanel : UserControl
     private readonly GameRunStatusViewModel? _gameRunStatusViewModel;
     private readonly Border _presenceBadge;
     private readonly TextBlock _presenceText;
+    private readonly Control _serverNameRow;
+    private readonly Control _addressRow;
+    private readonly Control _serverVersionRow;
     private readonly TextBlock _presenceValue;
     private readonly TextBlock _unavailableNotice;
     private readonly TextBlock _retryCountdown;
@@ -119,6 +122,12 @@ public sealed class ConnectionStatusPanel : UserControl
         // (AC1).
         _presenceValue = new TextBlock();
 
+        // Las filas de detalle se construyen ANTES del contenido, para que el modo
+        // compacto pueda ocultarlas enteras (AC2, UX-DR-42).
+        var serverNameRow = BuildRow(ConnectionStatusPanelViewModel.ServerNameLabelText, _serverName);
+        var addressRow = BuildRow(ConnectionStatusPanelViewModel.AddressLabelText, _address);
+        var serverVersionRow = BuildRow(ConnectionStatusPanelViewModel.ServerVersionLabelText, _serverVersion);
+
         Content = new StackPanel
         {
             Margin = new Thickness(DesignTokens.Spacing4),
@@ -135,12 +144,16 @@ public sealed class ConnectionStatusPanel : UserControl
                 _unavailableNotice,
                 _retryCountdown,
                 BuildRow(ConnectionStatusPanelViewModel.PresenceLabelText, _presenceValue),
-                BuildRow(ConnectionStatusPanelViewModel.ServerNameLabelText, _serverName),
-                BuildRow(ConnectionStatusPanelViewModel.AddressLabelText, _address),
-                BuildRow(ConnectionStatusPanelViewModel.ServerVersionLabelText, _serverVersion),
+                serverNameRow,
+                addressRow,
+                serverVersionRow,
                 BuildRow(ConnectionStatusPanelViewModel.LastOperationLabelText, _lastOperation),
             },
         };
+
+        _serverNameRow = serverNameRow;
+        _addressRow = addressRow;
+        _serverVersionRow = serverVersionRow;
 
         // AC2, UX-DR-6: la fila del estado de ejecución SÓLO existe cuando el panel
         // conoce el view model del juego en ejecución, así que el panel no inventa el
@@ -172,6 +185,39 @@ public sealed class ConnectionStatusPanel : UserControl
         _viewModel.Changed += Render;
 
         Render();
+    }
+
+    /// <summary>
+    /// True when the panel is COMPACT: the window is narrow and the panel keeps ONLY the
+    /// presence line and the operation in progress, without disappearing (AC2, UX-DR-42).
+    /// </summary>
+    public bool IsCompact { get; private set; }
+
+    /// <summary>
+    /// Reduces the panel to the presence line and the operation in progress when the
+    /// window is narrow, y lo devuelve entero cuando hay sitio (AC2, UX-DR-42).
+    ///
+    /// <para>
+    /// El panel REDUCE, no desaparece: el jugador sigue viendo si esta conectado y que
+    /// esta pasando, porque una ventana estrecha no puede quitarle esa informacion
+    /// (AC2, UX-DR-42).
+    /// </para>
+    /// </summary>
+    /// <param name="compact">Whether the window is narrow.</param>
+    public void SetCompact(bool compact)
+    {
+        if (IsCompact == compact)
+        {
+            return;
+        }
+
+        IsCompact = compact;
+
+        // En la version compacta se quedan la presencia y la operacion en curso: el
+        // nombre, la direccion y la version del servidor sobran (AC2, UX-DR-42).
+        _serverNameRow.IsVisible = !compact;
+        _addressRow.IsVisible = !compact;
+        _serverVersionRow.IsVisible = !compact;
     }
 
     /// <summary>
