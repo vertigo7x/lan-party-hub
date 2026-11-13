@@ -116,7 +116,7 @@ development_status:
   12-2-s-1-descubrimiento-validación-de-mdns-junto-a-la-dirección-m: in-progress
   12-3-s-5-reanudación-de-paquetes-grandes-validación-del-offset-pe: in-progress
   12-4-s-4-rendimiento-y-recursos-medición-en-lugar-de-suposición-n: in-progress
-  12-5-s-3-poc-p2p-decisión-de-fase-posterior-no-bloqueante: backlog
+  12-5-s-3-poc-p2p-decisión-de-fase-posterior-no-bloqueante: in-progress
   epic-12-retrospective: optional
 
   epic-13: backlog
