@@ -112,7 +112,7 @@ development_status:
   epic-11-retrospective: optional
 
   epic-12: backlog
-  12-1-s-2-raíz-de-confianza-validación-del-bootstrap-out-of-band-b: backlog
+  12-1-s-2-raíz-de-confianza-validación-del-bootstrap-out-of-band-b: done
   12-2-s-1-descubrimiento-validación-de-mdns-junto-a-la-dirección-m: backlog
   12-3-s-5-reanudación-de-paquetes-grandes-validación-del-offset-pe: backlog
   12-4-s-4-rendimiento-y-recursos-medición-en-lugar-de-suposición-n: backlog
