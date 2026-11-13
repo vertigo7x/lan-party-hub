@@ -92,7 +92,7 @@ development_status:
   9-4-diagnóstico-correlacionado-en-el-cliente: done
   epic-9-retrospective: optional
 
-  epic-10: in-progress
+  epic-10: done
   10-1-detección-de-versión-desactualizada: done
   10-2-actualización-a-versión-completa: done
   10-3-reparación-de-una-instalación-interrumpida: done
