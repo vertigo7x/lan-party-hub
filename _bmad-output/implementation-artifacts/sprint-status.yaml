@@ -100,7 +100,7 @@ development_status:
   10-5-la-fila-de-instalación-guarda-su-propia-raíz: backlog
   epic-10-retrospective: optional
 
-  epic-11: backlog
+  epic-11: done
   11-1-sistema-de-tokens-y-tema: done
   11-2-tipografía-y-datos-literales: done
   11-3-regla-única-de-tamaños-y-progreso: done
